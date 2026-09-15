@@ -16,8 +16,20 @@ tileset — no flags are hardcoded in level data.
 | `sticky`    | bool   | arrows bounce off these (see `config.arrows.max_bounces`)      |
 | `friction`  | bool   | slippery ground (low friction, like pico-8 flag 2)             |
 | `arrow_pass`| bool   | arrows (player and enemy) fly through, but it still blocks the player and enemies — arrow slits |
+| `phase`     | bool   | switch-flipped platform: every instance of a `phase` tile in the level toggles solid<->non-solid together on any switch strike (see below) |
 | `kind`      | string | entity role, one of the kinds below (classifies tile objects placed on Object Layers) |
 | `slope`     | string | slope collision shape: `/floor`, `\floor`, `\ceil` or `/ceil`. Slope tiles must NOT have the `solid` property; slope collision is handled by the game. |
+
+### Phase tiles
+
+A tile flagged `phase` (plus `solid`) is a platform controlled by
+switches. There is one designated phase tile per level and no wiring:
+**every** switch strike — any switch, any group — flips the global
+phase state, so all placed instances of that tile become non-solid (or
+solid again) together. Non-solid phase tiles block nothing (players,
+enemies, player and enemy arrows) and are drawn translucent
+(`config.phase.alpha`). Phase tiles start solid on level load; only
+arrow strikes flip them (a spring switch popping back does not).
 
 ### `kind` values
 

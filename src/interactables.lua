@@ -7,7 +7,8 @@
 --   * a switch strike opens its group's doors while every switch of the
 --     group is on, and closes them again otherwise
 --   * a switch strike also extends every spring in its group, vaulting
---     whoever is standing on one
+--     whoever is standing on one, and flips the level's phase tiles
+--     (switch-flipped platforms) solid<->non-solid
 
 local config = require("src.config")
 
@@ -113,6 +114,13 @@ function Interactables.eval_switch_doors(ents, group)
   for _, door in ipairs(ents.doors) do
     if door.g == group then door.open = all_on end
   end
+end
+
+-- Every switch strike flips the level's phase tiles (all instances of
+-- the tileset's "phase" tile) solid<->non-solid together, regardless of
+-- which switch was struck or its group.
+function Interactables.toggle_phase_tiles(world)
+  world.phase_solid = not world.phase_solid
 end
 
 return Interactables

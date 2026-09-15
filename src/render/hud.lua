@@ -17,19 +17,27 @@ return function(ctx, blit)
   love.graphics.push()
   love.graphics.translate(blit.ox, blit.oy)
   love.graphics.scale(blit.scale)
+  if not config.enemies.enabled then
+    love.graphics.setColor(pcol(8))
+    love.graphics.print("enemies off", 2, 14)
+    love.graphics.setColor(1, 1, 1, 1)
+  end
+  -- equipped arrow type: always shown top-right (rope colour when rope)
+  local p = ctx.player
+  if p.arrow_kind == "rope" then
+    love.graphics.setColor(pcol(config.rope.colour))
+  else
+    love.graphics.setColor(pcol(7))
+  end
+  love.graphics.print(p.arrow_kind, vw - 40, 2)
   if ctx.input:down("aim") then
-    local p = ctx.player
     love.graphics.setColor(pcol(POWER_COLOURS[p.aim_power]))
-    love.graphics.print("pwr:" .. POWER_LABELS[p.aim_power], vw - 40, 2)
-    if p.arrow_kind == "rope" then
-      love.graphics.setColor(pcol(config.rope.colour))
-      love.graphics.print("rope", vw - 40, 10)
-    end
+    love.graphics.print("pwr:" .. POWER_LABELS[p.aim_power], vw - 40, 10)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.print("z:aim  lr:ang  ud:pwr", 2, vh - 12)
   else
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print("x:jump  z:bow", 2, vh - 12)
+    love.graphics.print("x:jump  z:bow  c:arrow", 2, vh - 12)
   end
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.pop()

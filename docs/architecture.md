@@ -112,6 +112,14 @@ resizable — the blit re-fits every frame.
 - **Mid-loop resets.** Player death clears the arrow lists; the arrow
   update loops read the list fresh each iteration and bail out when it
   is reset mid-loop. Player respawn reuses the same player table.
+- **Jump corner forgiveness.** When a rising body clips a ledge with
+  exactly one head corner, `resolve_y` slides it horizontally around
+  the corner (up to `player.corner_nudge_px`, destination head corners
+  verified free) instead of snapping below the tile and zeroing the
+  velocity — jumps taken under ledges reach their full height. Both
+  corners covered (a real overhang) or a blocked/over-cap slide falls
+  back to the normal head bump. Inert for enemies, which never move
+  upward.
 - **Doors and springs own tiles.** A door's state alone decides its
   tile's solidity; springs are standable pads solid across the bottom
   `springs.pad_height` px of their tile (matching the inactive sprite's
@@ -119,7 +127,15 @@ resizable — the blit re-fits every frame.
   landing bodies on the pad surface; switch tiles are recessed (arrows
   fly in, bodies don't). Switches that drive springs are momentary —
   they pop back to inactive when every spring of their group has reset,
-  so they can be shot again; door switches latch.
+  so they can be shot again; every strike flips a switch on<->off.
+- **Phase tiles flip with switch strikes.** Tiles flagged `phase` on the
+  tileset (one designated tile per level, e.g. the platform ring, tile
+  135) all toggle solid<->non-solid together on any switch strike,
+  regardless of the switch's group; while non-solid they collide with
+  nothing (bodies, arrows) and render translucent (`phase.alpha`).
+  `World.phase_solid` is the single state flag, checked in
+  `solid_at` and the map draw; spring pop-backs don't flip it — only
+  arrow strikes do.
 - **The archer brain** (below) runs archers; melee enemies just patrol.
 - **Patrols are bounded.** Every enemy patrols at most
   `enemies.roam_tiles` (10) tiles from its spawn anchor (`home_x`,

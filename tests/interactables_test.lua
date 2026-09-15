@@ -8,6 +8,8 @@
 --      on the pad (and does not vault a player standing beside it)
 --   3. the struck switch pops back to inactive once the spring resets,
 --      and can be shot again
+--   4. every switch strike toggles the switch (on<->off), and flips the
+--      level's phase tiles solid<->non-solid together
 --
 -- Usage (from the project root): luajit tests/interactables_test.lua
 
@@ -76,7 +78,7 @@ do
   p.x, p.y, p.vx, p.vy = spring.x + 2, spring.y - 24, 0, 0
   run_steps(env, 20)  -- landed on the pad
   strike(env, g, switch)
-  assert_true(switch.on, "the strike latches the switch on")
+  assert_true(switch.on, "the strike turns the switch on")
   local ext = g.ctx.config.springs.extension_frames
   assert_true(spring.ext == ext - 1,
     "the strike extends the spring (ext " .. tostring(spring.ext) .. ")")
@@ -112,6 +114,35 @@ do
   strike(env, g, switch)
   assert_true(switch.on and spring.ext == ext - 1,
     "the reset switch strikes again (re-extends the spring)")
+end
+
+-- ==== 4. switch strikes toggle the switch and flip the phase tiles ====
+do
+  local env, g, spring, switch = setup()
+  local w = g.ctx.world
+  -- a spare switch to strike (strikes of ANY switch flip phase tiles)
+  local any_switch = g.ctx.ents.switches[1]
+  -- an empty, object-free cell: (8,8) in level1's upper-left sky region
+  local c, r = 8, 8
+  local px, py = c*8 + 4, r*8 + 4
+  w:set_tile(c, r, 135)  -- the tileset's designated phase tile
+  assert_true(w:is_phase(135), "tile 135 is flagged as a phase tile")
+  assert_true(w.phase_solid, "phase tiles start solid on level load")
+  assert_true(w:solid_at(px, py),
+    "a placed phase tile blocks bodies while solid")
+  -- first strike: the switch turns on, phase tiles dissolve
+  strike(env, g, any_switch)
+  assert_true(not w.phase_solid, "a switch strike dissolves the phase tiles")
+  assert_true(not w:solid_at(px, py),
+    "a non-solid phase tile no longer blocks bodies")
+  assert_true(not w:solid_for_arrow(px, py),
+    "arrows fly through a non-solid phase tile")
+  -- second strike: the switch turns off, phase tiles restore
+  strike(env, g, any_switch)
+  assert_true(not switch.on and not any_switch.on,
+    "a second strike toggles the struck switch back off")
+  assert_true(w.phase_solid and w:solid_at(px, py),
+    "a second strike re-solidifies the phase tiles")
 end
 
 print(("interactables tests: %d passed, %d failed"):format(PASS, FAIL))

@@ -31,7 +31,7 @@ function Player.new(spawn)
     key = nil,  -- carried key object (taken from the world or an arrow)
     hp = config.player.hearts * 2,   -- health in half-hearts (drawn top-left)
     invuln = 0,  -- post-hit invulnerability steps remaining
-    arrow_kind = "normal",  -- currently selected arrow type ("normal"/"rope")
+    arrow_kind = "normal",  -- currently selected arrow type ("normal"/"rope"/"propel")
     rope = nil,  -- attached rope: { arrow = <anchored rope arrow>, length = px }
     rope_cd = 0, -- steps before another rope can attach (post-detach grace)
   }
@@ -217,7 +217,11 @@ function Player.physics(ctx)
     end
   end
 
-  p.vy = p.vy + config.physics.gravity
+  -- heavier gravity on descent (vy > 0): the tail end of each jump
+  -- drops fast, which reads as a snappier arc
+  local g = config.physics.gravity
+  if p.vy > 0 then g = g * config.physics.fall_gravity_scale end
+  p.vy = p.vy + g
   p.vy = math.min(p.vy, config.physics.max_fall_speed)
 
   -- rope pendulum: when the rope is taut, remove the outward radial
@@ -287,12 +291,14 @@ function Player.physics(ctx)
 
   -- key interactions: pick a key up from the world, or grab it off any
   -- key-carrying arrow the player touches (flying or stuck); then carry
-  -- it to a lock personally
+  -- it to a lock personally. Proximity boxes are padded so brushing past
+  -- a key or lock still counts.
   if not p.key then
+    local kpad = config.keys.pickup_pad
     for _, k in ipairs(ctx.ents.keys) do
       if not k.taken
-      and p.x < k.x+tw and p.x+p.w > k.x
-      and p.y < k.y+tw and p.y+p.h > k.y then
+      and p.x < k.x+tw+kpad and p.x+p.w > k.x-kpad
+      and p.y < k.y+tw+kpad and p.y+p.h > k.y-kpad then
         k.taken = true
         p.key   = k
         break
@@ -311,11 +317,12 @@ function Player.physics(ctx)
     end
   end
   if p.key then
+    local lpad = config.keys.lock_pad
     for _, lock in ipairs(ctx.ents.locks) do
       if not lock.triggered
       and Interactables.key_fits_lock(p.key, lock)
-      and p.x < lock.x+tw and p.x+p.w > lock.x
-      and p.y < lock.y+tw and p.y+p.h > lock.y then
+      and p.x < lock.x+tw+lpad and p.x+p.w > lock.x-lpad
+      and p.y < lock.y+tw+lpad and p.y+p.h > lock.y-lpad then
         Interactables.trigger_lock(ctx.ents, lock)
         p.key.used = true  -- consumed; not released on death
         p.key      = nil
@@ -337,6 +344,18 @@ function Player.physics(ctx)
 
   -- fell off the bottom of the world -> respawn
   if p.y > world.px_h + config.world.void_margin then Player.die(ctx) end
+end
+
+-- Arrow selection: cycles the equipped arrow type (normal -> rope ->
+-- propel -> normal) on the dedicated button. Runs every step, entirely
+-- outside of aim mode, so the player can cycle arrow types whenever
+-- they like.
+function Player.arrow_step(ctx)
+  local p = ctx.player
+  if ctx.input:pressed("swap") then
+    p.arrow_kind = p.arrow_kind == "normal" and "rope"
+                 or p.arrow_kind == "rope" and "propel" or "normal"
+  end
 end
 
 -- One 30hz tick of bow aiming: entering aim mode, turning (analog stick
@@ -390,10 +409,6 @@ function Player.aim_step(ctx)
     if ctx.input:pressed("jump") and not p.rope then
       p.jbuf = config.player.jump_buffer_frames
     end
-  end
-  -- swap arrow type (normal <-> rope) on the dedicated button
-  if ctx.input:pressed("swap") then
-    p.arrow_kind = p.arrow_kind == "rope" and "normal" or "rope"
   end
   if p.jbuf > 0 then p.jbuf = p.jbuf - 1 end
 end

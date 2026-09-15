@@ -404,4 +404,10 @@
    <property name="solid" type="bool" value="true"/>
   </properties>
  </tile>
+ <tile id="135">
+  <properties>
+   <property name="solid" type="bool" value="true"/>
+   <property name="phase" type="bool" value="true"/>
+  </properties>
+ </tile>
 </tileset>

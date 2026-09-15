@@ -142,6 +142,7 @@ function tiled.load(path)
   local gff = {}
   for i = 1, n_tiles do gff[i] = 0 end
   local kinds_by_tile, slopes_by_tile = {}, {}
+  local phase_by_tile = {}
   -- (pairs: the tiles array is sparse -- one slot per local tile id)
   for _, tt in pairs(ts.tiles or {}) do
     local t = tt.id
@@ -153,6 +154,7 @@ function tiled.load(path)
       if p.arrow_pass then gff[t + 1] = gff[t + 1] + 8 end
       if p.kind     then kinds_by_tile[t]  = p.kind end
       if p.slope    then slopes_by_tile[t] = p.slope end
+      if p.phase    then phase_by_tile[t]  = true end
     end
   end
 
@@ -306,6 +308,7 @@ function tiled.load(path)
     map   = rows,          -- array of hex row strings (game's mget format)
     gff   = gff,           -- per-tile flag bytes (bit0 solid, 1 sticky, 2 friction)
     special = special,     -- kind name -> tile id
+    phase_tiles = phase_by_tile, -- tile ids flagged "phase" (switch-flipped platforms)
     slope_type = slope_type,
     objects = objects,     -- entities placed as objects on object layers
     map_layers = m.layers, -- raw layer list (tools/tests may inspect it)

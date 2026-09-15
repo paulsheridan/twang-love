@@ -3,7 +3,9 @@
 --
 -- Player arrows act as one-tile-wide platforms when embedded in vertical
 -- walls (see check_platforms), can carry keys to locks, and bounce off
--- sticky surfaces a limited number of times before spinning out.
+-- sticky surfaces a limited number of times before spinning out. Propel
+-- arrows are harmless: they shove whatever they hit (enemies and the
+-- player, bounce-backs included) along the arrow's impact vector.
 
 local config = require("src.config")
 local Util   = require("src.util")
@@ -106,6 +108,10 @@ function Arrows.fire(ctx, angle, kind)
     p.key = nil
   end
   table.insert(ents.arrows, arrow)
+
+  -- firing a propel arrow cuts an attached rope (it is a mobility tool;
+  -- the shove itself happens on impact, not on fire)
+  if kind == "propel" and p.rope then p.rope = nil end
 end
 
 -- One 30hz step of a player arrow's flight. Stuck arrows only age.
@@ -220,12 +226,14 @@ function Arrows.step_one(ctx, a)
 
     a.x, a.y = nx, ny
 
-    -- key pickup by arrow tip (rope arrows never carry keys)
+    -- key pickup by arrow tip (rope arrows never carry keys); the pad
+    -- grows the key's tile so a near-miss still snags it
     if not a.key and a.kind ~= "rope" then
+      local pad = config.keys.pickup_pad
       for _, k in ipairs(ents.keys) do
         if not k.taken
-        and nx >= k.x and nx < k.x+tw
-        and ny >= k.y and ny < k.y+tw then
+        and nx >= k.x-pad and nx < k.x+tw+pad
+        and ny >= k.y-pad and ny < k.y+tw+pad then
           a.key, k.taken = k, true
           break
         end
@@ -240,24 +248,28 @@ function Arrows.step_one(ctx, a)
         in_switch = true
         if a.last_switch ~= s then
           a.last_switch = s
-          if not s.on then
-            -- latching: one strike activates a switch permanently
-            s.on = true
-            Interactables.eval_switch_doors(ents, s.g)
+          -- every strike flips the switch: springs fire when it turns
+          -- on, doors re-evaluate either way, phase tiles flip with it
+          s.on = not s.on
+          Interactables.eval_switch_doors(ents, s.g)
+          if s.on then
             Interactables.trigger_springs(ents, ctx.player, s.g)
           end
+          Interactables.toggle_phase_tiles(ctx.world)
         end
       end
     end
     if not in_switch then a.last_switch = nil end
 
-    -- key-carrying arrow passes through a lock
+    -- key-carrying arrow passes through a lock (padded tile: the key
+    -- triggers on a near pass, not just a direct hit)
     if a.key then
+      local pad = config.keys.lock_pad
       for _, lock in ipairs(ents.locks) do
         if not lock.triggered
         and Interactables.key_fits_lock(a.key, lock)
-        and nx >= lock.x and nx < lock.x+tw
-        and ny >= lock.y and ny < lock.y+tw then
+        and nx >= lock.x-pad and nx < lock.x+tw+pad
+        and ny >= lock.y-pad and ny < lock.y+tw+pad then
           Interactables.trigger_lock(ents, lock)
           a.key.used = true  -- consumed; will not respawn if arrow expires
           a.key      = nil
@@ -266,11 +278,39 @@ function Arrows.step_one(ctx, a)
       end
     end
 
-    -- enemy hit
+    -- propel arrows shove whatever they hit along the arrow's impact
+    -- vector (an added impulse), player included: the tip must first
+    -- have left the player's box, so a bounced-back arrow can fling the
+    -- shooter while a freshly fired one cannot hit at spawn
+    if a.kind == "propel" then
+      local p = ctx.player
+      if nx >= p.x and nx < p.x+p.w and ny >= p.y and ny < p.y+p.h then
+        if a.player_clear then
+          p.vx, p.vy = p.vx + a.vx, p.vy + a.vy
+          if p.vy < 0 then
+            p.gr = false
+            p.j_frames = 0
+          end
+          Particles.poof(ents, a.x, a.y)
+          a.active = false
+          return
+        end
+      else
+        a.player_clear = true
+      end
+    end
+
+    -- enemy hit: propel arrows shove the enemy instead of killing it
     for i, e in ipairs(ents.enemies) do
       if nx >= e.x and nx < e.x+e.w and ny >= e.y and ny < e.y+e.h then
-        Particles.blood(ents, nx, ny, a.vx, a.vy)
-        table.remove(ents.enemies, i)
+        if a.kind == "propel" then
+          e.vx, e.vy = e.vx + a.vx, e.vy + a.vy
+          if e.vy < 0 then e.gr = false end
+          Particles.poof(ents, a.x, a.y)
+        else
+          Particles.blood(ents, nx, ny, a.vx, a.vy)
+          table.remove(ents.enemies, i)
+        end
         a.active = false
         return
       end

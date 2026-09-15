@@ -9,6 +9,10 @@
 -- Doors, springs and switches own tile solidity in special ways (see
 -- solid_at / solid_for_arrow); they are referenced from the level's
 -- entity lists, passed in at construction.
+--
+-- Phase tiles (tileset property "phase", e.g. platforms struck through
+-- by switch toggles) flip all instances solid<->non-solid together via
+-- World.phase_solid; see solid_at and Interactables.toggle_phase_tiles.
 
 local config = require("src.config")
 
@@ -30,6 +34,8 @@ function World.new(level, ents, tile_size)
   self.doors     = ents.doors
   self.springs   = ents.springs
   self.switches  = ents.switches
+  self.phase_tiles = level.phase_tiles or {}
+  self.phase_solid = true  -- phase tiles start solid; switch strikes flip this
   return self
 end
 
@@ -59,6 +65,11 @@ function World:solid(t)        return t ~= 0 and self:flag(t, 0) end
 function World:sticky(t)       return t ~= 0 and self:flag(t, 1) end
 function World:arrow_pass(t)   return t ~= 0 and self:flag(t, 3) end
 
+-- Is this tile id one of the switch-flipped phase tiles?
+function World:is_phase(t)
+  return t ~= 0 and self.phase_tiles[t] == true
+end
+
 -- Friction scale for a tile: slippery tiles slow movement, all others
 -- are normal ground.
 function World:friction(t)
@@ -83,7 +94,12 @@ function World:solid_at(x, y)
     end
   end
   local t = self:tile(c, r)
-  if t ~= 0 and self:solid(t) then return true end
+  -- phase tiles are switch-flipped: while the phase is off they stop
+  -- blocking anything (this covers arrows too, via solid_for_arrow)
+  if t ~= 0 and self:solid(t)
+  and not (self:is_phase(t) and not self.phase_solid) then
+    return true
+  end
   return false
 end
 
@@ -274,9 +290,35 @@ function World:resolve_y(obj)
       obj.fr = self:friction(tc)
     end
   elseif obj.vy < 0 then
-    if self:solid_at(obj.x, obj.y) or self:solid_at(obj.x+obj.w-1, obj.y) then
-      obj.y  = (math.floor(obj.y/self.tw)+1)*self.tw
-      obj.vy = 0
+    local hx_left  = self:solid_at(obj.x, obj.y)
+    local hx_right = self:solid_at(obj.x+obj.w-1, obj.y)
+    if hx_left or hx_right then
+      -- corner forgiveness: exactly one head corner clipped the edge of
+      -- a ceiling tile — slide horizontally around it (within
+      -- corner_nudge_px) when the beside space is open, so a jump taken
+      -- under a ledge keeps its full height. Covered corners or a
+      -- blocked/nudge-over-cap slide fall back to the bump below.
+      local shifted = false
+      if hx_right and not hx_left then
+        local shift = obj.x + obj.w
+                    - math.floor((obj.x+obj.w-1)/self.tw)*self.tw
+        if shift <= config.player.corner_nudge_px
+        and not self:solid_at(obj.x - shift, obj.y)
+        and not self:solid_at(obj.x - shift + obj.w - 1, obj.y) then
+          obj.x, shifted = obj.x - shift, true
+        end
+      elseif hx_left and not hx_right then
+        local shift = (math.floor(obj.x/self.tw)+1)*self.tw - obj.x
+        if shift <= config.player.corner_nudge_px
+        and not self:solid_at(obj.x + shift, obj.y)
+        and not self:solid_at(obj.x + shift + obj.w - 1, obj.y) then
+          obj.x, shifted = obj.x + shift, true
+        end
+      end
+      if not shifted then
+        obj.y  = (math.floor(obj.y/self.tw)+1)*self.tw
+        obj.vy = 0
+      end
     end
   end
 end

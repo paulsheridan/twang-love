@@ -100,6 +100,7 @@ function Game:step()
   self.step_count = self.step_count + 1
   ctx.input:step()
 
+  Player.arrow_step(ctx)
   Player.aim_step(ctx)
 
   local do_phys = not ctx.input:down("aim")
@@ -107,11 +108,31 @@ function Game:step()
   if do_phys then
     Player.physics(ctx)
     Arrows.update(ctx)
-    Enemies.update(ctx)
-    Arrows.update_enemy_arrows(ctx)
+    if config.enemies.enabled then
+      Enemies.update(ctx)
+      Arrows.update_enemy_arrows(ctx)
+    end
     Particles.update(ctx.ents)
     Interactables.update_springs(ctx.ents)
     Camera.update(ctx.cam, ctx.player, ctx.world)
+  end
+end
+
+-- Toggles all enemies on/off (controller Y / key e). Turning them off
+-- also disarms anything in flight or mid-shot: enemy arrows vanish and
+-- archers drop back to patrol, so nothing resumes mid-shot when the
+-- toggle comes back on.
+function Game:toggle_enemies()
+  config.enemies.enabled = not config.enemies.enabled
+  if not config.enemies.enabled then
+    self.ents.e_arrows = {}
+    for _, e in ipairs(self.ents.enemies) do
+      if e.type == "archer" then
+        e.state = "patrol"
+        e.volley = nil
+        e.aim_vx, e.aim_vy = nil, nil
+      end
+    end
   end
 end
 
@@ -159,6 +180,10 @@ function Game:keypressed(key, isrepeat)
   if not isrepeat and (key == "m" or key == "tab") then
     self.menu_open = not self.menu_open
   end
+  -- e toggles all enemies (same as the controller's Y button)
+  if not isrepeat and key == "e" then
+    self:toggle_enemies()
+  end
 end
 
 function Game:gamepadpressed(button)
@@ -167,6 +192,7 @@ function Game:gamepadpressed(button)
     return
   end
   if button == "back" then love.event.quit() return end
+  if button == "y" then self:toggle_enemies() return end
   self.input:latch_gamepad(button)
 end
 
@@ -230,6 +256,7 @@ function Game:snapshot(step)
     e_arrows = earr,
     enemies = ene,
     keys = ks, locks = ls, doors = ds, switches = sws, springs = sps,
+    phase = self.world.phase_solid,
     particles = #ents.particles,
     run_frame = run_frame, run_tick = run_tick,
   }

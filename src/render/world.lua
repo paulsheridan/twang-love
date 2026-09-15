@@ -23,14 +23,24 @@ local function draw_map(ctx)
   local mx = math.floor(cam.x / tw)
   local my = math.floor(cam.y / tw)
   love.graphics.setColor(1, 1, 1, 1)
+  local cur_alpha = 1
   for r = my, my + vh/tw do
     for c = mx, mx + vw/tw + 1 do
       local t = world:tile(c, r)
       if t ~= 0 then
+        -- non-solid phase tiles render translucent (draw alpha only
+        -- changes when it has to, to keep the visible-tile loop cheap)
+        local alpha = (world:is_phase(t) and not world.phase_solid)
+          and config.phase.alpha or 1
+        if alpha ~= cur_alpha then
+          love.graphics.setColor(1, 1, 1, alpha)
+          cur_alpha = alpha
+        end
         love.graphics.draw(Sprites.sheet(), Sprites.quad(t), c*tw, r*tw)
       end
     end
   end
+  if cur_alpha ~= 1 then love.graphics.setColor(1, 1, 1, 1) end
 end
 
 -- ==== interactables ====

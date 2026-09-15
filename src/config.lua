@@ -33,6 +33,8 @@ local Config = {
 
   physics = {
     gravity = 0.28,
+    fall_gravity_scale = 1.7, -- extra gravity while falling (vy > 0):
+                              -- heavier descent, snappier end of jump
     max_fall_speed = 3,
   },
 
@@ -54,6 +56,7 @@ local Config = {
     jump_accel_initial = 1.8,
     jump_accel = 0.9,
     jump_hold_frames = 6,
+    corner_nudge_px = 2,      -- head-corner clip: max slide around a ledge
     landing_frames = 6,
     run_cycle_steps = 6,
     run_cycle_frames = 4,
@@ -88,6 +91,11 @@ local Config = {
     preview_steps = 14,          -- aim trajectory preview dots
   },
 
+  keys = {
+    pickup_pad = 3,  -- px grown around a key for forgiving pickup proximity
+    lock_pad   = 4,  -- px grown around a lock for forgiving trigger proximity
+  },
+
   rope = {
     max_range = 56,            -- px an unattached rope arrow flies before expiring
     min_length = 8,            -- shortest allowed rope (px)
@@ -97,6 +105,7 @@ local Config = {
   },
 
   enemies = {
+    enabled = true,           -- global on/off toggle (controller Y / key e)
     width = 6,
     height = 8,
     melee_speed = 0.6,
@@ -126,6 +135,10 @@ local Config = {
     pad_height = 4,  -- solid band at the tile's bottom (px): the inactive
                      -- spring sprite only fills the tile's lower half, so
                      -- bodies stand on the pad instead of hovering
+  },
+
+  phase = {
+    alpha = 0.35,  -- draw alpha of phase tiles while they are non-solid
   },
 
   particles = {

@@ -21,7 +21,8 @@ love .
 | bow (hold to aim) | z | right bumper / right trigger |
 | aim angle (while aiming) | left/right | left stick (analog) |
 | power (while aiming) | up/down | physical dpad up/down |
-| swap arrow type | c | X |
+| cycle arrow type | c | X |
+| toggle enemies | e | Y |
 | fullscreen | f11 | — |
 | controls panel | m / tab | start |
 | quit | escape | back |
@@ -38,18 +39,27 @@ a monitor with a different resolution, so it stays crisp everywhere.
 
 ## Gameplay
 
-- Walk, jump (coyote time + jump buffering), and shoot arrows.
+- Walk, jump (coyote time + jump buffering, and head-corner forgiveness
+  that slides you around ledges you jumped beneath), and shoot arrows.
 - Arrows stick into walls, bounce off sticky surfaces, and can be stood
   on when embedded in vertical walls.
-- **Rope arrows** (press `c` to swap): limited-range arrows that anchor a
+- **Rope arrows** (press `c` to cycle): limited-range arrows that anchor a
   rope between you and wherever they stick. Swing pendulum-style — your
   speed carries into and out of the swing, left/right pumps it, and
   up/down reels the rope in/out. Press jump to let go and keep your
   momentum. Miss the wall and the arrow poofs at max range.
+- **Propel arrows** (press `c` twice): harmless shove arrows. Whatever
+  the arrow hits (an enemy, or you on a bounce-back) is flung along the
+  arrow's flight direction — fire down at a sticky surface and the
+  arrow bounces back into you for an upward boost. Firing also cuts any
+  attached rope. The arrow itself still flies, sticks, and can be stood
+  on.
 - Carry keys to locks (personally, or by shooting them from an arrow)
-  to open doors. Switches open/close doors while latched and trigger
-  spring vaults; spring switches pop back out once the spring resets,
-  ready to be shot again.
+  to open doors. Every arrow strike toggles a switch: its doors open
+  while every switch of its group is on, and close otherwise; switch
+  strikes also flip the level's phase-platform tiles and trigger spring
+  vaults (spring switches pop back out once the spring resets, ready to
+  be shot again).
 - **Archers hunt**: they spot you only in front of them, with clear line
   of sight and within range. Once spotted they draw briefly (you'll see
   their ballistic arc, like your own) and release a volley of three

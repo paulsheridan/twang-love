@@ -6,10 +6,10 @@ local pcol = Palette.rgb
 
 return function()
   love.graphics.setColor(0, 0, 0, 0.78)
-  love.graphics.rectangle("fill", 30, 34, 180, 74)
+  love.graphics.rectangle("fill", 30, 34, 180, 90)
   love.graphics.setColor(pcol(6))
   love.graphics.setLineWidth(1)
-  love.graphics.rectangle("line", 30.5, 34.5, 179, 73)
+  love.graphics.rectangle("line", 30.5, 34.5, 179, 89)
 
   love.graphics.setColor(pcol(10))
   love.graphics.print("controls", 98, 40)
@@ -22,5 +22,7 @@ return function()
 
   love.graphics.setColor(pcol(12))
   love.graphics.print("m / start: panel      x: back", 52, 94)
+  love.graphics.print("y / e: enemies on/off", 52, 102)
+  love.graphics.print("c: cycle arrows (normal/rope/propel)", 52, 110)
   love.graphics.setColor(1, 1, 1, 1)
 end

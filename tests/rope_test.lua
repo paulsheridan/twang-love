@@ -9,8 +9,10 @@
 --   4. winching: up shortens, down lengthens, within the clamps
 --   5. rope arrows poof at max_range in flight; normal arrows do not
 --   6. rope arrows are not platforms; normal stuck arrows still are
---   7. the swap button toggles arrow type and firing produces the kind
+--   7. the swap button cycles arrow types and firing produces the kind
 --   8. losing the anchor (arrow removed / wall opened) releases the rope
+--   9. propel arrows shove what they hit (enemies, and the player on
+--      bounce-backs) along the arrow's impact vector; firing is recoil-free
 --
 -- Usage (from the project root): luajit tests/rope_test.lua
 
@@ -242,7 +244,7 @@ do
     "a normal stuck arrow still acts as a platform (y " .. p.y .. ")")
 end
 
--- ==== 7. the swap button toggles arrow kind; firing honours it ====
+-- ==== 7. the swap button cycles arrow kind; firing honours it ====
 do
   local env = Harness.boot()
   local g = env.TWANG_TEST.game
@@ -250,9 +252,11 @@ do
   place_player(g, 40, 106)  -- standing on the spawn-area floor
   assert_true(p.arrow_kind == "normal", "starts with normal arrows")
   tap(env, "c")
-  assert_true(p.arrow_kind == "rope", "swap toggled to rope arrows")
+  assert_true(p.arrow_kind == "rope", "swap cycled to rope arrows")
   tap(env, "c")
-  assert_true(p.arrow_kind == "normal", "swap toggled back to normal arrows")
+  assert_true(p.arrow_kind == "propel", "swap cycled to propel arrows")
+  tap(env, "c")
+  assert_true(p.arrow_kind == "normal", "swap cycled back to normal arrows")
   -- fire a rope arrow: hold aim, then release
   tap(env, "c")
   local kd = env.TWANG_TEST.keys_down
@@ -294,6 +298,146 @@ do
   w:set_tile(6, 8, 0)
   run_steps(env, 1)
   assert_true(p.rope == nil, "opening the wall under the anchor releases the rope")
+end
+
+-- ==== 9. propel arrows shove what they hit along the impact vector ====
+-- Aims by holding aim one step (enters aim mode), forcing aim_angle
+-- directly, then releasing: the release step fires along that angle.
+local function fire_at(env, g, angle)
+  local kd = env.TWANG_TEST.keys_down
+  kd.z = true
+  run_steps(env, 1)
+  g.ctx.player.aim_angle = angle
+  kd.z = false
+  run_steps(env, 1)
+end
+
+local function select_propel(env)
+  tap(env, "c")
+  tap(env, "c")
+end
+
+do
+  -- airborne over a sticky pad: a straight-down shot bounces back up
+  -- and flings the player upward (arrow consumed by the shove)
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local p = g.ctx.player
+  local w = g.ctx.world
+  place_player(g, 50, 90)  -- mid-air over the spawn-area floor
+  p.gr = false
+  w:set_tile(6, 13, 10)    -- sticky tile right below the player
+  select_propel(env)
+  assert_true(p.arrow_kind == "propel", "propel arrows equipped")
+  fire_at(env, g, 0.25)
+  assert_true(#g.ctx.ents.arrows == 1 and g.ctx.ents.arrows[1].kind == "propel",
+    "the propel arrow spawned")
+  run_steps(env, 5)  -- fall, bounce off the sticky tile, rise into the player
+  assert_true(p.vy < -3,
+    "the bounce-back flung the player upward (vy " .. p.vy .. ")")
+  assert_true(not p.gr, "the flung player is airborne")
+  assert_true(#g.ctx.ents.arrows == 0, "the arrow was consumed by the shove")
+end
+do
+  -- direct enemy hit: the enemy survives and is shoved (added velocity),
+  -- arrow consumed; a normal arrow into the same setup still kills
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local p = g.ctx.player
+  place_player(g, 40, 106)  -- standing on the spawn-area floor, clear
+  run_steps(env, 2)
+  local e = {
+    x = 70, y = 60, vx = 0, vy = 0, w = 6, h = 8,
+    gr = false, facing = 1, type = "melee", home_x = 70, shoot_cd = 90,
+    state = "patrol",
+  }
+  table.insert(g.ctx.ents.enemies, e)
+  run_steps(env, 1)  -- the enemy is in open sky; it starts falling
+  local n0 = #g.ctx.ents.enemies
+  table.insert(g.ctx.ents.arrows, {
+    x = e.x + 1, y = e.y + 2, vx = 2, vy = -3,
+    active = true, stuck = false, bounced = 0,
+    sdx = 1, sdy = 0, spin = 0, lt = 300, kind = "propel",
+  })
+  run_steps(env, 1)
+  assert_true(#g.ctx.ents.enemies == n0, "the propel hit did not kill the enemy")
+  assert_true(e.vy < 0, "the shove launched the enemy upward (vy "
+    .. e.vy .. ")")
+  run_steps(env, 1)
+  assert_true(#g.ctx.ents.arrows == 0, "the arrow was consumed by the shove")
+end
+do
+  -- a normal arrow into the same setup still kills the enemy
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local p = g.ctx.player
+  place_player(g, 40, 106)
+  run_steps(env, 2)
+  local e = {
+    x = 70, y = 60, vx = 0, vy = 0, w = 6, h = 8,
+    gr = false, facing = 1, type = "melee", home_x = 70, shoot_cd = 90,
+    state = "patrol",
+  }
+  table.insert(g.ctx.ents.enemies, e)
+  run_steps(env, 1)
+  local n0 = #g.ctx.ents.enemies
+  table.insert(g.ctx.ents.arrows, {
+    x = e.x + 1, y = e.y + 2, vx = 2, vy = 0,
+    active = true, stuck = false, bounced = 0,
+    sdx = 1, sdy = 0, spin = 0, lt = 300, kind = "normal",
+  })
+  run_steps(env, 1)
+  assert_true(#g.ctx.ents.enemies == n0 - 1, "the normal arrow still killed")
+end
+do
+  -- grounded straight-down shot: sticks into the floor, no shove
+  -- (the floor is not sticky, so the arrow never comes back)
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local p = g.ctx.player
+  place_player(g, 40, 106)  -- standing on the spawn-area floor
+  run_steps(env, 2)
+  assert_true(p.gr, "grounded for the no-shove test")
+  select_propel(env)
+  fire_at(env, g, 0.25)
+  assert_true(#g.ctx.ents.arrows == 1, "the grounded fire still spawned an arrow")
+  run_steps(env, 3)
+  assert_true(p.vy > -1,
+    "a grounded shot never shoves the player (vy " .. p.vy .. ")")
+  local a = g.ctx.ents.arrows[1]
+  assert_true(a and a.stuck, "the arrow stuck in the floor instead")
+end
+do
+  -- firing a propel arrow releases an attached rope
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local p = g.ctx.player
+  rig_ceiling(g)
+  rig_rope_arrow(g)
+  place_player(g, 50, 96)
+  run_steps(env, 2)
+  assert_true(p.rope ~= nil, "attached for the propel-release test")
+  select_propel(env)
+  fire_at(env, g, 0.25)
+  assert_true(p.rope == nil, "the propel fire released the rope")
+end
+do
+  -- quiver full with nothing evictable: no arrow flies at all
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local p = g.ctx.player
+  place_player(g, 50, 90)
+  p.gr = false
+  select_propel(env)
+  for _ = 1, 3 do
+    table.insert(g.ctx.ents.arrows, {
+      x = 70, y = 100, vx = 1, vy = 0, active = true, stuck = false,
+      bounced = 0, sdx = 1, sdy = 0, spin = 0, lt = 300,
+      kind = "normal",
+    })
+  end
+  fire_at(env, g, 0.25)
+  assert_true(#g.ctx.ents.arrows == 3, "no fourth arrow spawned")
 end
 
 print(("rope tests: %d passed, %d failed"):format(PASS, FAIL))
