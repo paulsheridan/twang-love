@@ -79,6 +79,13 @@ local Config = {
     max_power = 3,
     slow_motion_steps = 12,     -- full physics runs once every N steps while aiming
     downward_sin_threshold = 0.5, -- aim angle p8sin past this counts as "aimed down"
+
+    -- analog force: the stick's tilt (its distance from zero, remapped
+    -- from the deadzone edge to full tilt, 0..1) scales the launch speed
+    -- between min_force_scale and the power level's full speed
+    force_deadzone = 0.3,     -- stick magnitude where force scaling starts
+                              -- (matches input.lua's aim_stick deadzone)
+    min_force_scale = 0.25,   -- launch speed scale at the deadzone edge
   },
 
   arrows = {

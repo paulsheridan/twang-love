@@ -26,6 +26,7 @@ function Player.new(spawn)
     j_frames = 0,
     wall_l = false, wall_r = false,
     aim_angle = 0, aim_power = config.aiming.start_power,
+    aim_force = 1.0,  -- analog launch-force scale (1 = power level's full speed)
     was_aiming = false, aimed_down = false,
     prev_gr = false, land_frames = 0,
     key = nil,  -- carried key object (taken from the world or an arrow)
@@ -58,6 +59,7 @@ function Player.reset(p, spawn_points, cam, world)
   p.wall_r = false
   p.aim_angle = 0
   p.aim_power = config.aiming.start_power
+  p.aim_force = 1.0
   p.was_aiming = false
   p.aimed_down = false
   p.prev_gr = false
@@ -382,6 +384,7 @@ function Player.aim_step(ctx)
         p.aim_angle = p.facing > 0 and 0 or 0.5
       end
       p.aim_power  = cfg.start_power
+      p.aim_force  = 1.0
       p.was_aiming = true
       p.aimed_down = false
     end
@@ -390,6 +393,15 @@ function Player.aim_step(ctx)
     local sx, sy = ctx.input:aim_stick()
     if sx then
       p.aim_angle = Util.turn_from_direction(sx, sy)
+      -- analog force: how far the stick sits from zero (remapped from
+      -- the deadzone edge to full tilt) scales the launch speed, so a
+      -- light tilt lobs gently and full tilt fires at the power level's
+      -- full speed; the last drawn force persists if the stick returns
+      -- to idle, like the angle does
+      local mag = math.sqrt(sx * sx + sy * sy)
+      local t = Util.clamp(
+        (mag - cfg.force_deadzone) / (1 - cfg.force_deadzone), 0, 1)
+      p.aim_force = cfg.min_force_scale + (1 - cfg.min_force_scale) * t
     elseif ctx.input:down("left") then
       p.aim_angle = (p.aim_angle + cfg.turn_rate) % 1
     elseif ctx.input:down("right") then
@@ -408,7 +420,7 @@ function Player.aim_step(ctx)
       if Util.p8sin(p.aim_angle) > cfg.downward_sin_threshold then
         p.aimed_down = true
       end
-      Arrows.fire(ctx, p.aim_angle, p.arrow_kind)
+      Arrows.fire(ctx, p.aim_angle, p.arrow_kind, p.aim_force)
       p.was_aiming = false
     end
     -- jumping while attached releases the rope (handled in rope_step);

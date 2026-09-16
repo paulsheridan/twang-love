@@ -15,6 +15,11 @@
 --   7. Particles.blood adds the given base velocity to every particle
 --   8. a hit enemy arrow rests at the impact point, then vanishes
 --   9. a fast enemy arrow cannot tunnel through the player's box
+-- plus the analog bow force:
+--  10. Arrows.fire scales the launch speed by the given force (full
+--      force keeps the power level's exact max speed)
+--  11. aiming with the stick tracks the tilt as aim_force and fires at
+--      the scaled speed
 --
 -- Usage (from the project root): luajit tests/player_test.lua
 
@@ -296,6 +301,102 @@ do
   run_steps(env, 1)
   assert_true(p.vy == 0, "a slide past the nudge cap bumps instead")
   assert_true(p.y == 160, "the refused nudge snapped below the ledge")
+end
+
+-- ==== 10. Arrows.fire scales the launch speed by the force argument ====
+-- Full force must keep the power level's exact maximum; nil keeps the
+-- old default behaviour (full speed).
+do
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local Arrows = dofile("src/arrows.lua")
+  local p = g.ctx.player
+  place_player(g, 720, 148)
+  local spd = g.ctx.config.arrows.speeds[p.aim_power]
+  Arrows.fire(g.ctx, 0, "normal", 1)
+  local a = g.ctx.ents.arrows[#g.ctx.ents.arrows]
+  assert_true(a.vx == spd and a.vy == 0,
+    "full analog force keeps the max launch speed (vx " .. a.vx .. ")")
+  Arrows.fire(g.ctx, 0, "normal", 0.5)
+  local b = g.ctx.ents.arrows[#g.ctx.ents.arrows]
+  assert_true(b.vx == spd * 0.5 and b.vy == 0,
+    "half force halves the launch speed (vx " .. b.vx .. ")")
+  Arrows.fire(g.ctx, 0, "normal")
+  local c = g.ctx.ents.arrows[#g.ctx.ents.arrows]
+  assert_true(c.vx == spd and c.vy == 0,
+    "no force argument still fires at full speed (vx " .. c.vx .. ")")
+end
+
+-- ==== 11. aiming with the stick tracks the tilt as aim_force ====
+-- Half tilt right (mag 0.65) remaps to force 0.625
+-- ((0.65 - 0.3) / 0.7 = 0.5 between min 0.25 and 1); releasing aim fires
+-- at that scaled speed. Full tilt must land on exactly 1 (max speed).
+do
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local keys = env.TWANG_TEST.keys_down
+  local stick = { leftx = 0, lefty = 0 }
+  env.love.joystick.getJoysticks = function()
+    return { {
+      isGamepad = function() return true end,
+      isGamepadDown = function() return false end,
+      getGamepadAxis = function(_, axis) return stick[axis] or 0 end,
+    } }
+  end
+  local p = g.ctx.player
+  place_player(g, 720, 148)
+  stick.leftx = 0.65
+  keys.z = true
+  run_steps(env, 2)
+  assert_true(p.was_aiming, "the aim key entered aim mode")
+  assert_true(math.abs(p.aim_force - 0.625) < 1e-9,
+    "half tilt maps to 0.625 force (got " .. tostring(p.aim_force) .. ")")
+  keys.z = nil  -- release aim: fires with the tracked force
+  -- zero arrow gravity around the release step: the launch speed is
+  -- exact (gravity would otherwise add one tick of vy before the check)
+  local grav = g.ctx.config.arrows.gravity
+  g.ctx.config.arrows.gravity = 0
+  run_steps(env, 1)
+  g.ctx.config.arrows.gravity = grav
+  local a = g.ctx.ents.arrows[#g.ctx.ents.arrows]
+  assert_true(a, "releasing aim fired an arrow")
+  -- compare speed magnitudes so a bounce off a wall cannot false-fail
+  local expected = g.ctx.config.arrows.speeds[p.aim_power] * 0.625
+  local speed = math.sqrt(a.vx * a.vx + a.vy * a.vy)
+  assert_true(math.abs(speed - expected) < 1e-9,
+    "the half-tilt arrow launched at the scaled speed ("
+    .. speed .. ", expected " .. expected .. ")")
+  -- full tilt: exactly the power level's full speed
+  local env2 = Harness.boot()
+  local g2 = env2.TWANG_TEST.game
+  local keys2 = env2.TWANG_TEST.keys_down
+  local stick2 = { leftx = 1, lefty = 0 }
+  env2.love.joystick.getJoysticks = function()
+    return { {
+      isGamepad = function() return true end,
+      isGamepadDown = function() return false end,
+      getGamepadAxis = function(_, axis) return stick2[axis] or 0 end,
+    } }
+  end
+  local p2 = g2.ctx.player
+  place_player(g2, 720, 148)
+  keys2.z = true
+  run_steps(env2, 2)
+  assert_true(p2.aim_force == 1,
+    "full tilt maps to exactly full force (got "
+    .. tostring(p2.aim_force) .. ")")
+  keys2.z = nil
+  local grav2 = g2.ctx.config.arrows.gravity
+  g2.ctx.config.arrows.gravity = 0
+  run_steps(env2, 1)
+  g2.ctx.config.arrows.gravity = grav2
+  local b = g2.ctx.ents.arrows[#g2.ctx.ents.arrows]
+  assert_true(b, "releasing aim fired an arrow at full tilt")
+  local spd2 = g2.ctx.config.arrows.speeds[p2.aim_power]
+  local speed2 = math.sqrt(b.vx * b.vx + b.vy * b.vy)
+  assert_true(math.abs(speed2 - spd2) < 1e-9,
+    "the full-tilt arrow launched at max speed ("
+    .. speed2 .. ", expected " .. spd2 .. ")")
 end
 
 print(("player tests: %d passed, %d failed"):format(PASS, FAIL))

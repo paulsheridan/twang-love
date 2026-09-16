@@ -63,7 +63,9 @@ return function(ctx)
     local vw, vh = config.view.width, config.view.height
     local cfg = config.arrows
     local cx, cy = math.floor(p.x + p.w/2), math.floor(p.y + p.h/2)
-    local spd = cfg.speeds[p.aim_power]
+    -- the preview launches at the same speed as the real shot: the
+    -- analog stick force scales it just like Arrows.fire does
+    local spd = cfg.speeds[p.aim_power] * (p.aim_force or 1)
     if Util.p8sin(p.aim_angle) <= threshold then
       local ex = cx + math.floor(Util.p8cos(p.aim_angle) * tw)
       local ey = cy + math.floor(Util.p8sin(p.aim_angle) * tw)

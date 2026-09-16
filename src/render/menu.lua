@@ -16,7 +16,7 @@ return function()
 
   love.graphics.setColor(pcol(7))
   love.graphics.print("stick/dpad/arrows: move", 52, 56)
-  love.graphics.print("hold aim + stick: aim the bow", 52, 64)
+  love.graphics.print("hold aim + stick: aim & force the bow", 52, 64)
   love.graphics.print("power: ud / dpad ud", 52, 72)
   love.graphics.print("jump: x / A / B     aim: z / RB / RT", 52, 80)
 

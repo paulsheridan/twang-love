@@ -66,10 +66,12 @@ function Arrows.release(ctx, arrow)
 end
 
 -- Fires an arrow from the player along `angle` (a pico-8 turn, 0..1) at
--- the player's current power level. `kind` selects the arrow type
--- ("normal" or "rope"). Evicts a stuck arrow to make room when the
--- quiver is full (releasing its key first, if any).
-function Arrows.fire(ctx, angle, kind)
+-- the player's current power level, scaled by `force` (analog stick
+-- tilt: 1 = the power level's full launch speed, so full tilt keeps the
+-- maximum). `kind` selects the arrow type ("normal" or "rope"). Evicts
+-- a stuck arrow to make room when the quiver is full (releasing its key
+-- first, if any).
+function Arrows.fire(ctx, angle, kind, force)
   local ents, p = ctx.ents, ctx.player
   local cfg = ctx.config.arrows
   kind = kind or "normal"
@@ -89,7 +91,7 @@ function Arrows.fire(ctx, angle, kind)
   end
   local dx = Util.p8cos(angle)
   local dy = Util.p8sin(angle)
-  local spd = cfg.speeds[p.aim_power]
+  local spd = cfg.speeds[p.aim_power] * (force or 1)
   local arrow = {
     x = p.x + p.w/2, y = p.y + p.h/2,
     vx = dx*spd, vy = dy*spd,

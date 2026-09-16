@@ -181,7 +181,11 @@ function World:in_slope_solid(x, y)
 end
 
 -- Snaps a body onto floor/ceiling slopes it overlaps (both feet corners
--- sampled; the slope wins over tile solidity).
+-- sampled; the slope wins over tile solidity). The floor pass also looks
+-- one tile ABOVE the feet, so a body walking along flat ground steps up
+-- onto a rising slope instead of walking under its wedge. A candidate
+-- snap is rejected when it would leave the body inside a solid tile
+-- (where a wedge meets flat ground); the resolve_y position stands.
 function World:resolve_slopes(obj)
   local by = obj.y + obj.h
   if obj.vy >= -1 then
@@ -190,14 +194,20 @@ function World:resolve_slopes(obj)
     local snapped = false
     for _, fx in ipairs({lx, rx}) do
       if snapped then break end
-      for _, dy in ipairs({0, self.tw}) do
+      -- at the feet, below them (fell one tile past a slope) and above
+      -- them (step up onto the slope from the flat ground beneath)
+      for _, dy in ipairs({0, self.tw, -self.tw}) do
         if snapped then break end
         local tc = math.floor(fx/self.tw)
         local tr = math.floor((by+dy)/self.tw)
         local st = self.slope_type[self:tile(tc, tr)]
         if st and st <= 2 then
           local sy = self:slope_floor_y(st, tr, fx)
-          if by >= sy-4 and by <= sy+self.tw then
+          if by >= sy-4 and by <= sy+self.tw
+          and not self:solid_at(obj.x, sy-1)
+          and not self:solid_at(obj.x+obj.w-1, sy-1)
+          and not self:solid_at(obj.x, sy-obj.h)
+          and not self:solid_at(obj.x+obj.w-1, sy-obj.h) then
             obj.y = sy - obj.h
             if obj.vy > 0 then obj.vy = 0 end
             obj.gr = true

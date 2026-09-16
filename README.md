@@ -20,7 +20,7 @@ love .
 | move   | arrow keys | dpad / left stick |
 | jump   | x | A / B |
 | bow (hold to aim) | z | right bumper / right trigger |
-| aim angle (while aiming) | left/right | left stick (analog) |
+| aim angle & force (while aiming) | left/right | left stick (analog) |
 | power (while aiming) | up/down | physical dpad up/down |
 | cycle arrow type | c | X |
 | toggle enemies | e | Y |
@@ -29,7 +29,12 @@ love .
 | quit | escape | back |
 
 While aiming, the world runs in slow motion and the bow's trajectory is
-previewed. Power levels: `lo` / `md` / `hi`.
+previewed. Power levels: `lo` / `md` / `hi`. With a control stick the
+shot's force is analog too: the stick's tilt — how far it sits from
+zero, from the deadzone edge up to full deflection — scales the launch
+speed between a quarter and the power level's full speed, so a light
+push lobs a slow, heavily arcing arrow while full tilt keeps the
+maximum. The preview arc shows exactly where the shot will land.
 
 The window opens at 3x the native 480x320 view (1440x960) and is
 resizable; fullscreen (F11) keeps your desktop resolution. The game
