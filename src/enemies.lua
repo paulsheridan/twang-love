@@ -308,7 +308,9 @@ function Enemies.update_one(ctx, e)
   if e.x+e.w > world.px_w then e.x = world.px_w-e.w e.facing = -1 end
 
   if e.type == "melee" and Util.aabb(e, p) then
-    ctx.hurt(ctx)  -- one heart, unless shielded by i-frames
+    -- impact direction runs from the enemy toward the player, so the
+    -- blood spray (opposite it) flies away from the attacker
+    ctx.hurt(ctx, p.x - e.x, p.y - e.y)
     return
   end
 
@@ -335,11 +337,11 @@ end
 function Enemies.update(ctx)
   local ents, cam = ctx.ents, ctx.cam
   local vw = config.view.width
-  local m, M = 320, vw + 320
+  local m, M = 640, vw + 640
   for i = #ents.enemies, 1, -1 do
     local e = ents.enemies[i]
     if e.x >= cam.x - m and e.x <= cam.x + M
-    and e.y >= cam.y - 256 and e.y <= cam.y + config.view.height + 256 then
+    and e.y >= cam.y - 512 and e.y <= cam.y + config.view.height + 512 then
       Enemies.update_one(ctx, e)
     end
   end

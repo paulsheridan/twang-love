@@ -10,6 +10,11 @@
 --   4. falling off the world is an instant death and refills health
 --   5. jump corner forgiveness: a one-corner head clip slides around
 --      the ledge instead of killing the jump; overhangs still bump
+-- plus the hit-feedback behaviours:
+--   6. a landed hit sprays blood opposite the impact (arrows and melee)
+--   7. Particles.blood adds the given base velocity to every particle
+--   8. a hit enemy arrow rests at the impact point, then vanishes
+--   9. a fast enemy arrow cannot tunnel through the player's box
 --
 -- Usage (from the project root): luajit tests/player_test.lua
 
@@ -53,8 +58,8 @@ do
   -- contact regardless of the patrol)
   local hp_seen = {}
   for step = 1, 250 do
-    p.x, p.y, p.vx, p.vy = 330, 106, 0, 0
-    melee.x, melee.y, melee.vx, melee.vy = 326, 104, 0, 0
+    p.x, p.y, p.vx, p.vy = 660, 212, 0, 0
+    melee.x, melee.y, melee.vx, melee.vy = 652, 208, 0, 0
     env.love.update(1/30)
     env.love.draw()
     if p.hp ~= hp_seen[#hp_seen] then
@@ -80,15 +85,129 @@ do
   local env = Harness.boot()
   local g = env.TWANG_TEST.game
   local p = g.ctx.player
-  place_player(g, 360, 74)
+  place_player(g, 720, 148)
   -- dart straight at the player (slow enough to land inside the box)
   table.insert(g.ctx.ents.e_arrows, {
-    x = 352, y = 77, vx = 4, vy = 0, active = true,
+    x = 704, y = 154, vx = 8, vy = 0, active = true,
   })
   run_steps(env, 6)
   assert_true(p.hp == max_hp() - 1,
     "an arrow hit costs half a heart (hp now " .. tostring(p.hp) .. ")")
   assert_true(p.invuln > 0, "the hit grants invulnerability frames")
+end
+
+-- ==== 6. a landed hit sprays blood opposite the impact ====
+do
+  -- arrow travelling left: the spray must fly back to the right (+x)
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local p = g.ctx.player
+  place_player(g, 720, 148)
+  table.insert(g.ctx.ents.e_arrows, {
+    x = 736, y = 154, vx = -8, vy = 0, active = true,
+  })
+  local hit_seen = false
+  for _ = 1, 6 do
+    run_steps(env, 1)
+    if p.hp == max_hp() - 1 then hit_seen = true break end
+  end
+  assert_true(hit_seen, "the leftward arrow hit the player")
+  local parts = g.ctx.ents.particles
+  local blood_count = g.ctx.config.particles.blood_count
+  assert_true(#parts >= blood_count,
+    "an arrow hit sprays blood (" .. #parts .. " particles)")
+  local all_rightward = true
+  for _, pt in ipairs(parts) do
+    if pt.vx <= 0 then all_rightward = false end
+  end
+  assert_true(all_rightward,
+    "blood sprays opposite the arrow's travel (back to the right)")
+end
+
+do
+  -- melee contact: the spray must fly away from the attacker (-x here)
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local p = g.ctx.player
+  local melee
+  for _, e in ipairs(g.ctx.ents.enemies) do
+    if e.type == "melee" then melee = e break end
+  end
+  p.x, p.y, p.vx, p.vy = 660, 212, 0, 0
+  melee.x, melee.y, melee.vx, melee.vy = 652, 208, 0, 0
+  run_steps(env, 1)
+  local parts = g.ctx.ents.particles
+  local blood_count = g.ctx.config.particles.blood_count
+  assert_true(p.hp == max_hp() - 1, "the melee touch landed")
+  assert_true(#parts >= blood_count,
+    "a melee hit sprays blood (" .. #parts .. " particles)")
+  local all_leftward = true
+  for _, pt in ipairs(parts) do
+    if pt.vx >= 0 then all_leftward = false end
+  end
+  assert_true(all_leftward,
+    "blood sprays away from the melee attacker (to the left)")
+end
+
+-- ==== 7. Particles.blood adds the base velocity to every particle ====
+do
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local Particles = dofile("src/particles.lua")
+  local cfg = g.ctx.config.particles
+  local before = #g.ctx.ents.particles
+  Particles.blood(g.ctx.ents, 100, 100, 8, 0, 10, -5)
+  local parts = g.ctx.ents.particles
+  assert_true(#parts == before + cfg.blood_count, "blood() adds particles")
+  local ok = true
+  for i = before + 1, #parts do
+    local pt = parts[i]
+    -- pure spray along -x is vx in [-4.1, -0.99]; with +10 base every
+    -- particle must land well above zero
+    if not (pt.vx > 5 and pt.vy < -3.5) then ok = false end
+  end
+  assert_true(ok, "every particle inherited the base velocity")
+end
+
+-- ==== 8. a hit enemy arrow rests at the impact point, then vanishes ====
+do
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local p = g.ctx.player
+  place_player(g, 720, 148)
+  table.insert(g.ctx.ents.e_arrows, {
+    x = 704, y = 154, vx = 8, vy = 0, active = true,
+  })
+  run_steps(env, 2)  -- the arrow reaches the player on the second step
+  assert_true(p.hp == max_hp() - 1, "the arrow hit (hp " .. p.hp .. ")")
+  assert_true(#g.ctx.ents.e_arrows == 1,
+    "the hit arrow is not removed immediately")
+  local a = g.ctx.ents.e_arrows[1]
+  local fx, fy = a.x, a.y
+  run_steps(env, 2)
+  assert_true(#g.ctx.ents.e_arrows == 1 and a.x == fx and a.y == fy,
+    "the arrow stays frozen at the impact point")
+  local stick = g.ctx.config.arrows.player_stick_frames
+  run_steps(env, stick + 1)
+  assert_true(#g.ctx.ents.e_arrows == 0,
+    "the arrow vanishes after the stick window lapses")
+end
+
+-- ==== 9. a fast enemy arrow cannot tunnel through the player's box ====
+-- The dart's per-step move (~16.9px) exceeds the box's width (8px): its
+-- endpoint lands past the player, but the substep samples land inside.
+do
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local p = g.ctx.player
+  place_player(g, 720, 148)
+  table.insert(g.ctx.ents.e_arrows, {
+    x = 712, y = 154, vx = 16.5, vy = 0, active = true,
+  })
+  run_steps(env, 3)
+  assert_true(p.hp == max_hp() - 1,
+    "a fast dart that overflies the box edge still connects (hp "
+    .. tostring(p.hp) .. ")")
 end
 
 -- ==== 3. the last half-heart lost is fatal and refills on respawn ====
@@ -97,10 +216,10 @@ do
   local g = env.TWANG_TEST.game
   local p = g.ctx.player
   p.hp = 1
-  place_player(g, 360, 74)
+  place_player(g, 720, 148)
   local before_x, before_y = p.x, p.y
   table.insert(g.ctx.ents.e_arrows, {
-    x = 352, y = 77, vx = 4, vy = 0, active = true,
+    x = 704, y = 154, vx = 8, vy = 0, active = true,
   })
   run_steps(env, 6)
   assert_true(p.hp == max_hp(), "respawn refills health to full")
@@ -115,15 +234,15 @@ do
   local g = env.TWANG_TEST.game
   local p = g.ctx.player
   p.hp = 2
-  p.y = g.ctx.world.px_h + 40
+  p.y = g.ctx.world.px_h + 80
   run_steps(env, 3)
   assert_true(p.hp == max_hp(),
     "the void kills outright and respawns at full health")
 end
 
 -- ==== 5. jump corner forgiveness ====
--- Rigs a ceiling tile at (6,9): x 48..55, y 72..79. The player (4px
--- wide) placed at x=45 has only its right head corner inside the tile's
+-- Rigs a ceiling tile at (6,9): x 96..111, y 144..159. The player (8px
+-- wide) placed at x=90 has only its right head corner inside the tile's
 -- column, so rising into row 9 clips the ledge's edge corner.
 local function rig_ledge(g)
   local w = g.ctx.world
@@ -139,16 +258,16 @@ do
   local g = env.TWANG_TEST.game
   local p = g.ctx.player
   rig_ledge(g)
-  place_player(g, 45, 80)
+  place_player(g, 90, 160)
   p.gr = false
-  p.vy = -3
+  p.vy = -6
   run_steps(env, 1)
   assert_true(p.vy < 0, "the corner clip did not kill the jump (vy "
     .. p.vy .. ")")
-  assert_true(p.x == 44, "the player slid around the corner (x "
+  assert_true(p.x == 88, "the player slid around the corner (x "
     .. p.x .. ")")
   run_steps(env, 8)
-  assert_true(p.y < 72, "the jump reached its full height above the "
+  assert_true(p.y < 144, "the jump reached its full height above the "
     .. "ledge (y " .. p.y .. ")")
 end
 do
@@ -157,12 +276,12 @@ do
   local g = env.TWANG_TEST.game
   local p = g.ctx.player
   rig_ledge(g)
-  place_player(g, 49, 80)  -- box 49..52: both corners under the ledge
+  place_player(g, 97, 160)  -- box 97..104: both corners under the ledge
   p.gr = false
-  p.vy = -2
+  p.vy = -4
   run_steps(env, 1)
   assert_true(p.vy == 0, "a covered head bump zeroes the velocity")
-  assert_true(p.y == 80, "the bump snaps the player below the ledge")
+  assert_true(p.y == 160, "the bump snaps the player below the ledge")
 end
 do
   -- a slide deeper than the nudge cap refuses and bumps
@@ -170,13 +289,13 @@ do
   local g = env.TWANG_TEST.game
   local p = g.ctx.player
   rig_ledge(g)
-  g.ctx.config.player.corner_nudge_px = 1  -- this clip needs a 2px slide
-  place_player(g, 46, 80)  -- box 46..49: right corner clips 2px deep
+  g.ctx.config.player.corner_nudge_px = 2  -- this clip needs a 4px slide
+  place_player(g, 92, 160)  -- box 92..99: right corner clips 4px deep
   p.gr = false
-  p.vy = -2
+  p.vy = -4
   run_steps(env, 1)
   assert_true(p.vy == 0, "a slide past the nudge cap bumps instead")
-  assert_true(p.y == 80, "the refused nudge snapped below the ledge")
+  assert_true(p.y == 160, "the refused nudge snapped below the ledge")
 end
 
 print(("player tests: %d passed, %d failed"):format(PASS, FAIL))

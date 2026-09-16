@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<tileset version="1.10" tiledversion="1.11.0" name="twang" tilewidth="8" tileheight="8" tilecount="256" columns="16">
- <image source="../spritesheet.png" width="128" height="128"/>
+<tileset version="1.10" tiledversion="1.11.0" name="twang" tilewidth="16" tileheight="16" tilecount="256" columns="16">
+ <image source="../spritesheet.png" width="256" height="256"/>
  <tile id="1">
   <properties>
    <property name="solid" type="bool" value="true"/>

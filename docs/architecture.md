@@ -1,7 +1,8 @@
 # twang architecture
 
-A LÖVE 11 port of the twang pico-8 cart: a 240x160 native render at a
-30hz fixed-timestep simulation with a smooth camera. Levels are Tiled
+A LÖVE 11 port of the twang pico-8 cart: a 480x320 native render (16x16
+tiles and sprites, each an exact 2x2 upscale of the original 8x8 art) at
+a 30hz fixed-timestep simulation with a smooth camera. Levels are Tiled
 JSON maps (format documented in `docs/tiled-format.md`).
 
 ## Layout
@@ -25,7 +26,8 @@ src/
   interactables.lua      key/lock/door/switch/spring puzzle logic
   particles.lua          poofs and blood
   camera.lua             smooth follow, clamped to the world
-  sprites.lua            spritesheet quads + draw helper (flip/rot)
+   sprites.lua            spritesheet quads + draw helper (flip/rot) -- 16x16
+                          tiles, 2x2 upscales of the cart's 8x8 art
   palette.lua            the 16-colour pico-8 palette
   util.lua               small math/geometry helpers
   tiled.lua              Tiled JSON/TSX loader
@@ -75,12 +77,12 @@ Each sim step (`Game:step`, 1/30s) runs:
    spring timers, camera
 
 Rendering is a pure read of the same state: `render/blit.lua` draws the
-world into the 240x160 canvas (world pass, then the player on top, then
+world into the 480x320 canvas (world pass, then the player on top, then
 the controls-panel overlay), blits it to the window preserving aspect,
 and anchors the HUD to the blit rect. The blit scale is always a whole
 number (letterboxing the remainder, fullscreen included), so game
 pixels stay square and sharp at any window size; F11 toggles desktop
-fullscreen. The window opens at `config.window.scale` (6x) and is
+fullscreen. The window opens at `config.window.scale` (3x) and is
 resizable — the blit re-fits every frame.
 
 ## Dependency rules
@@ -97,10 +99,13 @@ resizable — the blit re-fits every frame.
   (`config.sim.max_accumulator`) so tab-through never produces a huge
   catchup.
 - **Everything draws on whole pixels.** Bodies move at fractional
-  speeds; all sprite/line/point draw positions are floored, so nothing
-  rasterizes unevenly on the pixel canvas (no shimmering edges).
+  speeds; all sprite/line/dot draw positions are floored, so nothing
+  rasterizes unevenly on the pixel canvas (no shimmering edges). Vector
+  primitives draw at 2x to match the 2x2-upscaled sheet: dots are 2x2
+  pixel blocks (`dot` helpers in `render/world.lua` / `render/player.lua`)
+  and world-pass lines are 2px thick (set in `render/blit.lua`).
 - **The window fits its monitor.** `Game:fit_window` re-fits the window
-  to an integer multiple of the 240x160 view whenever it lands on a
+  to an integer multiple of the 480x320 view whenever it lands on a
   different display (monitors differ in resolution and DPI scale, which
   otherwise leaves an oversized window for the WM to clamp — blurry,
   letterboxed). The blit always scales by a whole number.
@@ -121,17 +126,22 @@ resizable — the blit re-fits every frame.
   back to the normal head bump. Inert for enemies, which never move
   upward.
 - **Doors and springs own tiles.** A door's state alone decides its
-  tile's solidity; springs are standable pads solid across the bottom
+  tile's solidity; a closed door is also a bouncy surface like a sticky
+  wall (`World.sticky_at` answers for doors), so arrows never embed in
+  one and hang in the doorway after a switch opens it; springs are
+  standable pads solid across the bottom
   `springs.pad_height` px of their tile (matching the inactive sprite's
   pad, so bodies stand on it instead of hovering), with `resolve_y`
   landing bodies on the pad surface; switch tiles are recessed (arrows
   fly in, bodies don't). Switches that drive springs are momentary —
   they pop back to inactive when every spring of their group has reset,
   so they can be shot again; every strike flips a switch on<->off.
-- **Phase tiles flip with switch strikes.** Tiles flagged `phase` on the
-  tileset (one designated tile per level, e.g. the platform ring, tile
-  135) all toggle solid<->non-solid together on any switch strike,
-  regardless of the switch's group; while non-solid they collide with
+- **Phase tiles flip with phase-switch strikes.** Tiles flagged `phase`
+  on the tileset (one designated tile per level, e.g. the platform ring,
+  tile 135) all toggle solid<->non-solid together on a strike of a
+  switch carrying the bool `phase` property (the level's `switch_pform`
+  trio), regardless of that switch's group; spring and door switches
+  never touch the blocks. While non-solid they collide with
   nothing (bodies, arrows) and render translucent (`phase.alpha`).
   `World.phase_solid` is the single state flag, checked in
   `solid_at` and the map draw; spring pop-backs don't flip it — only
@@ -145,8 +155,12 @@ resizable — the blit re-fits every frame.
 - **Hearts and i-frames.** The player's health is `player.hearts` (3)
   whole hearts tracked in half-hearts (`p.hp`, max 6); a melee touch or
   enemy arrow drains `player.half_hearts_per_hit` (half a heart) and
-  grants `player.invuln_steps` (45) of invulnerability (the player
-  blinks, and further hits are ignored while it lasts). The HUD draws
+  grants `player.invuln_steps` (45) of invulnerability (blood sprays
+  opposite the impact, and a translucent red silhouette overlay fades
+  out over the shield's last `shield_tint_fade_steps` — the old blink
+  hid the player during slow motion; further hits are ignored while the
+  shield lasts). An enemy arrow that lands rests at its impact point
+  for `arrows.player_stick_frames` before vanishing. The HUD draws
   the heart slots with the sheet's three frames: full, half-drained and
   fully gray. The last half-heart lost is fatal: the ordinary death
   flow runs (key drops, arrows cleared) and the respawn refills
@@ -177,7 +191,7 @@ volley -> (investigate | patrol)`.
   sampled every `enemies.sight_step` px and terrain (solid tiles and
   slope wedges) blocks vision. No x-ray vision.
 - **Aim**: on spotting, the archer stops moving and solves a ballistic
-  arc to the player (`enemies.aim_steps` preparation, 2/3 of the
+  arc to the player (`enemies.aim_steps` preparation, 1/3 of the
   original 30-step draw): flat arc first, then a loftier arc if terrain
   blocks the flat one, falling back to a straight shot. While aiming it
   re-solves each step and draws its solved trajectory (dots, like the

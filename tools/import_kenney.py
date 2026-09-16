@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-"""Builds love2d/spritesheet.png (128x128, 16x16 grid of 8x8 tiles) from the
+"""Builds love2d/spritesheet.png (256x256; a 16-column grid of 16x16 tiles)
+from the
 Kenney "Pico-8 Platformer" asset pack, which the twang.p8 cart art was
 originally converted from. The tile->Kenney mapping was derived by exact
 pixel matching against the cart's __gfx__ block and is frozen below, so
 re-runs are deterministic.
+
+The game runs at 16x16 tiles (src/config.lua tile_size), so every source
+tile -- 8x8 in the pack and the cart -- is upscaled 2x2 on assembly: each
+pixel becomes a 2x2 block and each tile slot is 16x16. Slot indices (the
+16x16 grid) are unchanged, so tile ids and Tiled GIDs stay put.
 
 Slots 0-127 preserve the cart-era layout: the Tiled map data (GIDs), the
 tileset properties in maps/level1.json and the sprite constants in main.lua
@@ -29,6 +35,8 @@ from PIL import Image
 
 KENNEY_TILES = 150   # tiles in the pack (15x10 grid)
 SHEET_SLOTS  = 256   # 16x16 tiles; the map format stores one tile per byte
+SRC_TILE     = 8     # source tile size (px): pack tiles and the cart
+TILE         = 16    # assembled tile size (px), 2x2 blocks of source pixels
 
 # dedicated switch sprites: the switch kind tile is the OFF state (red
 # lever); the ON state (green lever) lives in the next slot and is
@@ -73,22 +81,27 @@ def p8_sprite_grid(p8path, slot):
     gfx = lines[g0:lines.index('__gff__')]
     r, c = slot // 16, slot % 16
     grid = []
-    for i in range(8):
+    for i in range(SRC_TILE):
         row = []
-        line = gfx[r * 8 + i] if r * 8 + i < len(gfx) else '0' * 128
-        for j in range(8):
-            ch = line[c * 8 + j]
+        line = gfx[r * SRC_TILE + i] if r * SRC_TILE + i < len(gfx) else '0' * 128
+        for j in range(SRC_TILE):
+            ch = line[c * SRC_TILE + j]
             row.append((ch, ch != '0'))
         grid.append(row)
     return grid
 
+def upscale(tile):
+    """Upscale an SRC_TILE-sized tile to the game's TILE size (2x2 blocks)."""
+    assert tile.size == (SRC_TILE, SRC_TILE), tile.size
+    return tile.resize((TILE, TILE), Image.NEAREST)
+
 def art_tile(rows):
-    tile = Image.new('RGBA', (8, 8), (0, 0, 0, 0))
+    tile = Image.new('RGBA', (SRC_TILE, SRC_TILE), (0, 0, 0, 0))
     for y, row in enumerate(rows):
         for x, ch in enumerate(row):
             if ch != '.':
                 tile.putpixel((x, y), PAL[HEXCH.index(ch)] + (255,))
-    return tile
+    return upscale(tile)
 
 def main():
     if len(sys.argv) < 3:
@@ -100,23 +113,24 @@ def main():
         sys.exit('cannot find twang.p8 next to the love2d dir: ' + p8path)
 
     tiles_dir = os.path.join(packdir, 'Transparent', 'Tiles')
-    sheet = Image.new('RGBA', (128, 128), (0, 0, 0, 0))
+    sheet = Image.new('RGBA', (16 * TILE, 16 * TILE), (0, 0, 0, 0))
 
     # slots 0-127: frozen cart-era layout
     for slot in range(128):
-        dst = ((slot % 16) * 8, (slot // 16) * 8)
+        dst = ((slot % 16) * TILE, (slot // 16) * TILE)
         src_idx = MAPPING[slot]
         if src_idx == 'P8':
             grid = p8_sprite_grid(p8path, slot)
-            tile = Image.new('RGBA', (8, 8), (0, 0, 0, 0))
-            for y in range(8):
-                for x in range(8):
+            tile = Image.new('RGBA', (SRC_TILE, SRC_TILE), (0, 0, 0, 0))
+            for y in range(SRC_TILE):
+                for x in range(SRC_TILE):
                     ch, opaque = grid[y][x]
                     if opaque:
                         tile.putpixel((x, y), PAL[HEXCH.index(ch)] + (255,))
+            tile = upscale(tile)
         else:
-            tile = Image.open(
-                os.path.join(tiles_dir, 'tile_%04d.png' % src_idx)).convert('RGBA')
+            tile = upscale(Image.open(
+                os.path.join(tiles_dir, 'tile_%04d.png' % src_idx)).convert('RGBA'))
         sheet.paste(tile, dst)
 
     # slots 128+: every Kenney tile not already on the sheet, ascending
@@ -124,19 +138,19 @@ def main():
     missing = [i for i in range(KENNEY_TILES) if i not in used]
     assert 128 + len(missing) <= SHEET_SLOTS, 'extended tiles exceed 256 slots'
     for n, idx in enumerate(missing):
-        dst = (((128 + n) % 16) * 8, ((128 + n) // 16) * 8)
-        tile = Image.open(
-            os.path.join(tiles_dir, 'tile_%04d.png' % idx)).convert('RGBA')
+        dst = (((128 + n) % 16) * TILE, ((128 + n) // 16) * TILE)
+        tile = upscale(Image.open(
+            os.path.join(tiles_dir, 'tile_%04d.png' % idx)).convert('RGBA'))
         sheet.paste(tile, dst)
     sheet.paste(art_tile(SWITCH_OFF),
-                ((SWITCH_SLOT_OFF % 16) * 8, (SWITCH_SLOT_OFF // 16) * 8))
+                ((SWITCH_SLOT_OFF % 16) * TILE, (SWITCH_SLOT_OFF // 16) * TILE))
     sheet.paste(art_tile(SWITCH_ON),
-                ((SWITCH_SLOT_ON % 16) * 8, (SWITCH_SLOT_ON // 16) * 8))
+                ((SWITCH_SLOT_ON % 16) * TILE, (SWITCH_SLOT_ON // 16) * TILE))
     sheet.save(out)
     kept = sorted(s for s, v in MAPPING.items() if v == 'P8')
-    print('wrote %s (128x128 RGBA): 128 cart-layout slots, %d extended Kenney '
+    print('wrote %s (%dx%d RGBA): 128 cart-layout slots, %d extended Kenney '
           'tiles in slots 128-%d (pack tiles %s), %d cart-kept slots %s'
-          % (out, len(missing), 127 + len(missing),
+          % (out, 16 * TILE, 16 * TILE, len(missing), 127 + len(missing),
              '%d-%d' % (missing[0], missing[-1]) if missing else 'none',
              len(kept), kept))
 

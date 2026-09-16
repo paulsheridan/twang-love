@@ -80,11 +80,17 @@ for r = 0, H - 1 do
     local kind = KINDS[t]
     if kind and kind ~= "spawn" then
       -- entity tiles become objects (bottom-anchored like Tiled tile
-      -- objects); ungrouped until named in Tiled
-      ents[#ents + 1] = {
-        gid = t + 1, name = "", x = c * 8, y = r * 8 + 8,
-        width = 8, height = 8,
+      -- objects); ungrouped until named in Tiled. Cart switches drive
+      -- every system (any strike flipped the cart's phase tiles), so
+      -- they convert with the "phase" flag on
+      local ent = {
+        gid = t + 1, name = "", x = c * 16, y = r * 16 + 16,
+        width = 16, height = 16,
       }
+      if kind == "switch" then
+        ent.properties = { { name = "phase", type = "bool", value = true } }
+      end
+      ents[#ents + 1] = ent
       t = 0
     end
     data[#data + 1] = t + 1
@@ -135,8 +141,8 @@ local map = {
   renderorder = "right-down",
   width = W,
   height = H,
-  tilewidth = 8,
-  tileheight = 8,
+  tilewidth = 16,
+  tileheight = 16,
   infinite = false,
   compressionlevel = -1,
   nextlayerid = 3,
@@ -177,14 +183,14 @@ local map = {
       name = "twang",
       firstgid = 1,
       image = "../spritesheet.png",
-      imagewidth = 128,
-      imageheight = 128,
+      imagewidth = 256,
+      imageheight = 256,
       margin = 0,
       spacing = 0,
       columns = 16,
       tilecount = 256,
-      tilewidth = 8,
-      tileheight = 8,
+      tilewidth = 16,
+      tileheight = 16,
       tiles = tiles,
     },
   },

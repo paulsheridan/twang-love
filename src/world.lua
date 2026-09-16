@@ -35,7 +35,7 @@ function World.new(level, ents, tile_size)
   self.springs   = ents.springs
   self.switches  = ents.switches
   self.phase_tiles = level.phase_tiles or {}
-  self.phase_solid = true  -- phase tiles start solid; switch strikes flip this
+  self.phase_solid = true  -- phase tiles start solid; phase-switch strikes flip this
   return self
 end
 
@@ -123,7 +123,14 @@ function World:solid_for_arrow(x, y)
 end
 
 function World:sticky_at(x, y)
-  local t = self:tile(math.floor(x/self.tw), math.floor(y/self.tw))
+  local c, r = math.floor(x/self.tw), math.floor(y/self.tw)
+  -- a closed door is a bouncy surface, like a sticky wall: doors are
+  -- temporary solids, so an arrow embedded in one would be left hanging
+  -- in the doorway the moment a switch opens it
+  for _, d in ipairs(self.doors) do
+    if d.tc == c and d.tr == r then return not d.open end
+  end
+  local t = self:tile(c, r)
   return t ~= 0 and self:sticky(t)
 end
 
@@ -178,8 +185,8 @@ end
 function World:resolve_slopes(obj)
   local by = obj.y + obj.h
   if obj.vy >= -1 then
-    local lx = obj.x + 1
-    local rx = obj.x + obj.w - 2
+    local lx = obj.x + 2
+    local rx = obj.x + obj.w - 4
     local snapped = false
     for _, fx in ipairs({lx, rx}) do
       if snapped then break end
@@ -190,7 +197,7 @@ function World:resolve_slopes(obj)
         local st = self.slope_type[self:tile(tc, tr)]
         if st and st <= 2 then
           local sy = self:slope_floor_y(st, tr, fx)
-          if by >= sy-2 and by <= sy+self.tw then
+          if by >= sy-4 and by <= sy+self.tw then
             obj.y = sy - obj.h
             if obj.vy > 0 then obj.vy = 0 end
             obj.gr = true
@@ -202,8 +209,8 @@ function World:resolve_slopes(obj)
     end
   end
   if obj.vy < 0 then
-    local lx = obj.x + 1
-    local rx = obj.x + obj.w - 2
+    local lx = obj.x + 2
+    local rx = obj.x + obj.w - 4
     for _, fx in ipairs({lx, rx}) do
       local tc = math.floor(fx/self.tw)
       local tr = math.floor(obj.y/self.tw)

@@ -19,9 +19,9 @@ local Arrows = {}
 -- aim solving (clearance) and its aim-preview rendering.
 --
 -- opts:
---   step_px    px per substep sample (default 3)
+--   step_px    px per substep sample (default 6)
 --   max_frames simulated frames before giving up (default 60)
---   target     {x=, y=}: stop once within ~3px of this point
+--   target     {x=, y=}: stop once within ~6px of this point
 -- Returns { points = {...}, hit = bool, reached = bool }.
 function Arrows.simulate_path(world, x, y, vx, vy, opts)
   opts = opts or {}
@@ -31,7 +31,7 @@ function Arrows.simulate_path(world, x, y, vx, vy, opts)
   if speed <= 0 then
     return { points = points, hit = false, reached = false }
   end
-  local nsub = math.max(1, math.ceil(speed / (opts.step_px or 3)))
+  local nsub = math.max(1, math.ceil(speed / (opts.step_px or 6)))
   local sdt = 1 / nsub
   for _ = 1, (opts.max_frames or 60) do
     for _ = 1, nsub do
@@ -45,7 +45,7 @@ function Arrows.simulate_path(world, x, y, vx, vy, opts)
       local t = opts.target
       if t then
         local dx, dy = t.x - x, t.y - y
-        if dx*dx + dy*dy <= 9 then
+        if dx*dx + dy*dy <= 36 then
           return { points = points, hit = false, reached = true }
         end
       end
@@ -187,7 +187,7 @@ function Arrows.step_one(ctx, a)
           -- out, so the shaft and a carried key stay in the player's reach
           a.face = a.vx > 0 and math.floor(nx / tw) * tw
                            or (math.floor(nx / tw) + 1) * tw
-          a.x = a.face - (a.vx > 0 and 3 or -3)
+          a.x = a.face - (a.vx > 0 and 6 or -6)
         else
           a.x = nx
         end
@@ -249,13 +249,17 @@ function Arrows.step_one(ctx, a)
         if a.last_switch ~= s then
           a.last_switch = s
           -- every strike flips the switch: springs fire when it turns
-          -- on, doors re-evaluate either way, phase tiles flip with it
+          -- on, doors re-evaluate either way; only switches flagged
+          -- "phase" flip the level's phase tiles, so a spring switch
+          -- never dissolves the blocks (and vice versa)
           s.on = not s.on
           Interactables.eval_switch_doors(ents, s.g)
           if s.on then
             Interactables.trigger_springs(ents, ctx.player, s.g)
           end
-          Interactables.toggle_phase_tiles(ctx.world)
+          if s.phase then
+            Interactables.toggle_phase_tiles(ctx.world)
+          end
         end
       end
     end
@@ -316,7 +320,7 @@ function Arrows.step_one(ctx, a)
       end
     end
 
-    if a.y < -10 or a.x < -10 or a.x > world.px_w or a.y > world.px_h then
+    if a.y < -20 or a.x < -20 or a.x > world.px_w or a.y > world.px_h then
       a.active = false
       return
     end
@@ -354,7 +358,7 @@ function Arrows.check_platforms(ctx)
       -- retracted tip no longer sits inside the wall tile)
       local ay = a.y
       local by = p.y + p.h
-      if by >= ay - 1 and by <= ay + 4 then
+      if by >= ay - 2 and by <= ay + 8 then
         local ax1, ax2
         local wx = a.face
         if not wx then
@@ -362,9 +366,9 @@ function Arrows.check_platforms(ctx)
                         or (math.floor(a.x/tw)+1)*tw
         end
         if a.sdx > 0 then
-          ax1, ax2 = wx - 7, wx + 2
+          ax1, ax2 = wx - 14, wx + 4
         else
-          ax1, ax2 = wx - 2, wx + 7
+          ax1, ax2 = wx - 4, wx + 14
         end
         if p.x + p.w > ax1 and p.x < ax2 then
           p.y  = ay - p.h
@@ -379,6 +383,11 @@ end
 
 -- One 30hz step over all enemy arrows (simple ballistic darts). The list
 -- is read fresh each iteration: a mid-loop player death resets it.
+-- Flight is substepped like the player's arrows: a dart moves up to
+-- ~16.5px per step and the player's box is only 8px wide, so a single
+-- endpoint check would let fast arrows tunnel straight through. A hit
+-- arrow rests at the impact point for player_stick_frames before
+-- vanishing (the hit is felt, not just guessed at from blood).
 function Arrows.update_enemy_arrows(ctx)
   local ents, p, world = ctx.ents, ctx.player, ctx.world
   local cfg = ctx.config.arrows
@@ -387,21 +396,32 @@ function Arrows.update_enemy_arrows(ctx)
     if not a then break end
     if not a.active then
       table.remove(ents.e_arrows, i)
+    elseif a.hit_stick then
+      -- frozen at the player-impact point: no motion, no collisions
+      a.hit_stick = a.hit_stick - 1
+      if a.hit_stick <= 0 then table.remove(ents.e_arrows, i) end
     else
       a.vy = a.vy + cfg.gravity
-      local nx = a.x + a.vx
-      local ny = a.y + a.vy
-      if world:solid_for_arrow(nx, ny) or world:in_slope_solid(nx, ny) then
-        a.active = false
-      else
+      local nsub = math.max(1,
+        math.ceil((math.abs(a.vx) + math.abs(a.vy)) / cfg.substep_pixels))
+      local sx, sy = a.vx / nsub, a.vy / nsub
+      for _ = 1, nsub do
+        local nx = a.x + sx
+        local ny = a.y + sy
+        if world:solid_for_arrow(nx, ny) or world:in_slope_solid(nx, ny) then
+          a.active = false
+          break
+        end
         a.x, a.y = nx, ny
         if nx >= p.x and nx < p.x+p.w and ny >= p.y and ny < p.y+p.h then
-          ctx.hurt(ctx)  -- one heart, unless shielded by i-frames
-          a.active = false
+          ctx.hurt(ctx, a.vx, a.vy)  -- one heart, unless shielded by i-frames
+          a.hit_stick = cfg.player_stick_frames
+          break
         end
-        if a.y < -10 or a.x < -10
+        if a.y < -20 or a.x < -20
         or a.x > world.px_w or a.y > world.px_h then
           a.active = false
+          break
         end
       end
     end

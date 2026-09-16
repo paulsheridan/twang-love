@@ -9,12 +9,25 @@ local Player = require("src.player")
 
 local pcol = Palette.rgb
 
+-- Aim/preview dots draw as 2x2 pixel blocks (2x of their size on the old
+-- 240x160 canvas); lines are 2px, set in render/blit.lua for the world pass.
+local function dot(x, y)
+  love.graphics.rectangle("fill", math.floor(x), math.floor(y), 2, 2)
+end
+
 return function(ctx)
   local p = ctx.player
 
-  -- i-frames: blink the player (and its aim preview) while shielded
-  if p.invuln and p.invuln > 0 and (p.invuln % 6) < 3 then
-    return
+  -- i-frames: a red silhouette overlay that fades out as the shield
+  -- lapses (replaces the old blink, which hid the player during slow
+  -- motion). Fully opaque when the hit is fresh, easing to nothing.
+  local tint = nil
+  if p.invuln and p.invuln > 0 then
+    local cfg = config.player
+    local fade = math.min(p.invuln, cfg.shield_tint_fade_steps)
+                   / cfg.shield_tint_fade_steps
+    local r, g, b = pcol(cfg.shield_tint_colour)
+    tint = { r, g, b, cfg.shield_tint_alpha * fade }
   end
 
   local s
@@ -37,10 +50,10 @@ return function(ctx)
     if ax > 0 then draw_facing = 1
     elseif ax < 0 then draw_facing = -1 end
   end
-  Sprites.draw(s, p.x - 2, p.y - 2, draw_facing < 0)
+  Sprites.draw(s, p.x - 4, p.y - 4, draw_facing < 0, nil, tint)
   -- a carried key rides centred on the player
   if p.key then
-    Sprites.draw(ctx.tiles.key, p.x - 2, p.y - 1)
+    Sprites.draw(ctx.tiles.key, p.x - 4, p.y - 2)
   end
 
   -- aim indicator + predicted trajectory (floored: fractional line/point
@@ -80,12 +93,12 @@ return function(ctx)
           if hy then tvy = -tvy end
           if not hx and not hy then tvx, tvy = -tvx, -tvy end
         else
-          love.graphics.points(math.floor(nx), math.floor(ny))  -- sticks here
+          dot(nx, ny)  -- sticks here
           break
         end
       end
       tx, ty = nx, ny
-      love.graphics.points(math.floor(tx), math.floor(ty))
+      dot(tx, ty)
     end
   end
 end

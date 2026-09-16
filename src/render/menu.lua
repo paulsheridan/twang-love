@@ -1,4 +1,4 @@
--- Controls panel overlay, drawn on the 240x160 canvas (pixelated).
+-- Controls panel overlay, drawn on the 480x320 canvas (pixelated).
 
 local Palette = require("src.palette")
 

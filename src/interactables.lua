@@ -7,8 +7,10 @@
 --   * a switch strike opens its group's doors while every switch of the
 --     group is on, and closes them again otherwise
 --   * a switch strike also extends every spring in its group, vaulting
---     whoever is standing on one, and flips the level's phase tiles
---     (switch-flipped platforms) solid<->non-solid
+--     whoever is standing on one
+--   * only switches flagged "phase" (a Tiled bool property) flip the
+--     level's phase tiles (switch-flipped platforms) solid<->non-solid,
+--     so a spring or door switch never dissolves the blocks
 
 local config = require("src.config")
 
@@ -51,7 +53,7 @@ function Interactables.trigger_springs(ents, player, group)
       spring.ext = config.springs.extension_frames
       -- vault the player standing on the pad (feet on its surface)
       local stand = spring.y + tw - pad
-      if player.gr and math.abs((player.y + player.h) - stand) <= 2
+      if player.gr and math.abs((player.y + player.h) - stand) <= 4
       and player.x + player.w > spring.x and player.x < spring.x + tw then
         player.vy = config.springs.launch_velocity
         player.gr = false
@@ -59,7 +61,7 @@ function Interactables.trigger_springs(ents, player, group)
       end
       -- and any enemy standing on it
       for _, e in ipairs(ents.enemies) do
-        if e.gr and math.abs((e.y + e.h) - stand) <= 2
+        if e.gr and math.abs((e.y + e.h) - stand) <= 4
         and e.x + e.w > spring.x and e.x < spring.x + tw then
           e.vy = config.springs.launch_velocity
           e.gr = false
@@ -116,9 +118,9 @@ function Interactables.eval_switch_doors(ents, group)
   end
 end
 
--- Every switch strike flips the level's phase tiles (all instances of
--- the tileset's "phase" tile) solid<->non-solid together, regardless of
--- which switch was struck or its group.
+-- Flips the level's phase tiles (all instances of the tileset's "phase"
+-- tile) solid<->non-solid together. Called only for strikes of switches
+-- flagged "phase" — other switches never touch the blocks.
 function Interactables.toggle_phase_tiles(world)
   world.phase_solid = not world.phase_solid
 end

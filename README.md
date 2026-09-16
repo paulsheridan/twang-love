@@ -1,8 +1,9 @@
 # twang
 
 An archer side-scroller: a LÖVE 11 port of the twang pico-8 cart. Native
-240x160 pixel rendering, a 30hz fixed-timestep simulation and a smooth
-camera. Levels are edited in Tiled (see `docs/tiled-format.md`).
+480x320 pixel rendering (16x16 tiles and sprites), a 30hz fixed-timestep
+simulation and a smooth camera. Levels are edited in Tiled (see
+`docs/tiled-format.md`).
 
 ## Running
 
@@ -30,7 +31,7 @@ love .
 While aiming, the world runs in slow motion and the bow's trajectory is
 previewed. Power levels: `lo` / `md` / `hi`.
 
-The window opens at 6x the native 240x160 view (1440x960) and is
+The window opens at 3x the native 480x320 view (1440x960) and is
 resizable; fullscreen (F11) keeps your desktop resolution. The game
 always blits at a whole-number scale, so pixels stay square and sharp —
 in fullscreen the image is centred and letterboxed rather than
@@ -41,8 +42,9 @@ a monitor with a different resolution, so it stays crisp everywhere.
 
 - Walk, jump (coyote time + jump buffering, and head-corner forgiveness
   that slides you around ledges you jumped beneath), and shoot arrows.
-- Arrows stick into walls, bounce off sticky surfaces, and can be stood
-  on when embedded in vertical walls.
+- Arrows stick into walls, bounce off sticky surfaces and closed doors
+  (nothing is left embedded in a doorway once a switch opens it), and
+  can be stood on when embedded in vertical walls.
 - **Rope arrows** (press `c` to cycle): limited-range arrows that anchor a
   rope between you and wherever they stick. Swing pendulum-style — your
   speed carries into and out of the swing, left/right pumps it, and
@@ -56,10 +58,11 @@ a monitor with a different resolution, so it stays crisp everywhere.
   on.
 - Carry keys to locks (personally, or by shooting them from an arrow)
   to open doors. Every arrow strike toggles a switch: its doors open
-  while every switch of its group is on, and close otherwise; switch
-  strikes also flip the level's phase-platform tiles and trigger spring
-  vaults (spring switches pop back out once the spring resets, ready to
-  be shot again).
+  while every switch of its group is on, and close otherwise; a strike
+  also vaults whoever is standing on that group's springs. Only the
+  level's phase switches (flagged in Tiled) flip the phase-platform
+  tiles — each system reacts to its own switches alone. Spring switches
+  pop back out once the spring resets, ready to be shot again.
 - **Archers hunt**: they spot you only in front of them, with clear line
   of sight and within range. Once spotted they draw briefly (you'll see
   their ballistic arc, like your own) and release a volley of three
@@ -71,7 +74,10 @@ a monitor with a different resolution, so it stays crisp everywhere.
   of pacing.
 - Melee enemies hurt on touch. Arrow tips kill.
 - You have three hearts (drawn top-left): a melee touch or enemy arrow
-  costs half a heart, with a brief invulnerability blink after each hit.
+  costs half a heart, spraying blood opposite the impact and shrouding
+  you in a fading red silhouette while you're invulnerable (further
+  hits are ignored until it lapses). Enemy arrows stop dead at you for
+  a moment when they land.
   Heart slots show full, half-drained and empty sprites. Losing the last
   half-heart respawns you (dropping any unconsumed key). Falling off the
   world kills outright.
@@ -106,7 +112,13 @@ rebase the baseline first (see docs/architecture.md). Requires LuaJIT
 
 - `tools/p8_to_tiled.lua` — migrates the original pico-8 cart to a Tiled
   JSON map: `luajit tools/p8_to_tiled.lua ../twang.p8 maps/level1.json`
-- `tools/import_kenney.py` — spritesheet asset import
+- `tools/import_kenney.py` — spritesheet asset import (builds the
+  256x256 sheet, upscaling each 8x8 source tile 2x2)
+- `tools/upscale_sheet.py` — one-shot 2x2 upscale of an existing 8x8-era
+  spritesheet to the current 16x16 format
+- `tools/migrate_maps_16px.py` — one-shot migration of 8x8-era Tiled
+  maps to the current 16x16 tile size (applied to both maps; kept for
+  reference)
 
 ## Repository
 

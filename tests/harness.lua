@@ -18,8 +18,8 @@ local Harness = {}
 local function dummy_image()
   return {
     setFilter = function() end,
-    getWidth = function() return 128 end,
-    getHeight = function() return 128 end,
+    getWidth = function() return 256 end,
+    getHeight = function() return 256 end,
   }
 end
 

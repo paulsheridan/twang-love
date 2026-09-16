@@ -118,7 +118,11 @@ function Level.build(level, config)
           spr = o.spr or tiles.door, rot = o.rot})
       elseif k == "switch" then
         table.insert(ents.switches, {x = wx, y = wy, g = o.g, on = false,
-          spr = o.spr or tiles.switch, rot = o.rot})
+          spr = o.spr or tiles.switch, rot = o.rot,
+          -- switches flagged "phase" drive the level's phase tiles; other
+          -- switches leave the blocks alone (only their group's doors
+          -- and springs react to them)
+          phase = o.phase and true or nil})
       else
         table.insert(ents.springs, {x = wx, y = wy, g = o.g, ext = nil,
           spr = o.spr or tiles.spring, rot = o.rot})

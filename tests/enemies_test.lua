@@ -68,7 +68,7 @@ do
   local env = fresh_game()
   local g = env.TWANG_TEST.game
   local e = archer(g)
-  place_player(g, 360, 74)  -- clear line of sight
+  place_player(g, 720, 148)  -- clear line of sight
   e.facing = -1
   assert_true(not Enemies.sees(g.ctx, e),
     "archer must not see a player standing behind it")
@@ -84,8 +84,8 @@ do
   local e = archer(g)
   e.shoot_cd = 0
   e.facing = 1
-  -- in front and in range (67px), but the platform floor blocks the ray
-  place_player(g, 390, 114)
+  -- in front and in range (~116px), but the platform floor blocks the ray
+  place_player(g, 780, 228)
   run_steps(env, 60)
   assert_true(e.state ~= "aim", "archer must not aim through terrain")
   assert_true(#g.ctx.ents.e_arrows == 0, "no volley without line of sight")
@@ -98,7 +98,7 @@ do
   local e = archer(g)
   e.shoot_cd = 0
   e.facing = 1
-  place_player(g, 500, 114)  -- ~165px away
+  place_player(g, 1000, 228)  -- ~330px away
   run_steps(env, 60)
   assert_true(e.state ~= "aim", "archer must not aim beyond its sight range")
 end
@@ -110,7 +110,7 @@ do
   local e = archer(g)
   e.shoot_cd = 0
   e.facing = 1
-  place_player(g, 360, 74)
+  place_player(g, 720, 148)
   run_steps(env, 5)
   assert_true(e.state == "aim", "archer must aim once the player is spotted")
   assert_true(e.aim_t ~= nil and e.aim_t > 0, "aim has a preparation timer")
@@ -125,7 +125,7 @@ do
   local e = archer(g)
   e.shoot_cd = 0
   e.facing = 1
-  place_player(g, 360, 74)
+  place_player(g, 720, 148)
   -- watch the volley spawn: sample the arrow list every step and count
   -- each increase as one arrow released (arrows may die before all
   -- three are airborne at once, so absolute counts are unreliable)
@@ -155,6 +155,9 @@ do
       end
     end
     prev = n
+    -- first volley observed: stop sampling (with a fast aim the rapid
+    -- cadence can start a second volley inside a longer window)
+    if spawns >= 3 then break end
   end
   assert_true(spawns == 3, "volley releases exactly three arrows (got " .. spawns .. ")")
   assert_true(max_jump == 1, "volley arrows are staggered one at a time")
@@ -171,11 +174,11 @@ do
   local e = archer(g)
   e.shoot_cd = 0
   e.facing = 1
-  place_player(g, 360, 74)
+  place_player(g, 720, 148)
   run_steps(env, 5)
   assert_true(e.state == "aim", "archer enters aim")
   -- hide the player: below-right, in front but with no line of sight
-  place_player(g, 390, 114)
+  place_player(g, 780, 228)
   local fired = false
   local spawns, prev = 0, 0
   for _ = 1, 40 do
@@ -190,16 +193,16 @@ do
   assert_true(e.state == "investigate", "archer investigates after losing the player")
 
   -- last known spot well beyond its platform's edge (platform floor
-  -- top is y=80, platform spans px 328-368): the search must walk it
+  -- top is y=160, platform spans px 656-736): the search must walk it
   -- off the edge rather than stopping at the ledge
-  e.last_known = { x = e.x + 60, y = e.y }
+  e.last_known = { x = e.x + 120, y = e.y }
   local left_platform = false
   for _ = 1, 300 do
     env.love.update(1/30)
     env.love.draw()
     -- below the platform the body's y grows past 84, past the edge x
     -- grows past 368
-    if e.y > 84 and e.x > 368 then left_platform = true break end
+    if e.y > 168 and e.x > 736 then left_platform = true break end
     if e.state == "patrol" then break end
   end
   assert_true(left_platform,
@@ -213,7 +216,7 @@ do
   local e = archer(g)
   e.state = "investigate"
   e.investigate_t = 30
-  e.last_known = { x = e.x + 2, y = e.y }  -- practically arrived
+  e.last_known = { x = e.x + 4, y = e.y }  -- practically arrived
   run_steps(env, 40)
   assert_true(e.state == "patrol", "investigate ends on reaching the last known spot")
 end
@@ -226,20 +229,21 @@ do
   for _, e in ipairs(g.ctx.ents.enemies) do
     if e.type == "melee" then melee = e break end
   end
-  -- teleport onto the long flat floor (px 536-688, ground top y=120)
-  -- with its spawn as home anchor: the roam limit (10 tiles = 80px)
+  -- teleport onto the long flat floor (px 1072-1376, ground top y=240)
+  -- with its spawn as home anchor: the roam limit (10 tiles = 160px)
   -- must turn it around long before the floor's far edge (688)
-  melee.x, melee.y, melee.vx, melee.vy = 560, 112, 0, 0
-  melee.home_x = 560
+  melee.x, melee.y, melee.vx, melee.vy = 1120, 224, 0, 0
+  melee.home_x = 1120
   melee.facing = 1
-  place_player(g, 450, 114)  -- nearby, so camera culling keeps it simulated
+  place_player(g, 900, 228)  -- nearby, so camera culling keeps it simulated
   local max_x = 0
   for _ = 1, 400 do
     env.love.update(1/30)
     env.love.draw()
     max_x = math.max(max_x, melee.x)
   end
-  assert_true(melee.home_x + 80 + melee.w + 2 > max_x,
+  assert_true(melee.home_x + config.enemies.roam_tiles * config.tile_size
+    + melee.w + 4 > max_x,
     "melee on flat ground turns at its roam limit (max x "
     .. math.floor(max_x) .. ")")
 end
@@ -252,12 +256,12 @@ do
   e.shoot_cd = 400  -- cannot re-spot: no aim interruption
   e.state = "investigate"
   e.investigate_t = 400
-  e.last_known = { x = e.x + 200, y = e.y }
+  e.last_known = { x = e.x + 400, y = e.y }
   local beyond = false
   for _ = 1, 400 do
     env.love.update(1/30)
     env.love.draw()
-    if e.state == "investigate" and e.x > e.home_x + 80 then
+    if e.state == "investigate" and e.x > e.home_x + config.enemies.roam_tiles * config.tile_size then
       beyond = true break
     end
     if e.state == "patrol" then break end
@@ -278,7 +282,7 @@ do
   local e = archer(g)
   e.shoot_cd = 0
   e.facing = 1
-  place_player(g, 360, 74)
+  place_player(g, 720, 148)
   local waits = {}
   local last_state = e.state
   for _ = 1, 300 do
@@ -309,7 +313,7 @@ do
   local e = archer(g)
   e.shoot_cd = 0
   e.facing = 1
-  place_player(g, 360, 74)
+  place_player(g, 720, 148)
   local entered = false
   for _ = 1, 60 do
     env.love.update(1/30)
@@ -318,7 +322,7 @@ do
   end
   assert_true(entered, "archer enters the rapid-fire wait")
   -- the player vanishes (LOS blocked below-right)
-  place_player(g, 390, 114)
+  place_player(g, 780, 228)
   local investigated = false
   for _ = 1, 20 do
     env.love.update(1/30)
@@ -349,13 +353,13 @@ do
   e.shoot_cd = 9999  -- cannot re-spot: no aim interruption
   e.state = "investigate"
   e.investigate_t = 900
-  e.last_known = { x = e.x + 100, y = e.y }  -- past the shelf edge
+  e.last_known = { x = e.x + 200, y = e.y }  -- past the shelf edge
   local gave_up = false
   for _ = 1, 300 do
     env.love.update(1/30)
     env.love.draw()
     if e.state == "patrol" then
-      gave_up = e.x < e.home_x + 20 and e.y <= 44
+      gave_up = e.x < e.home_x + 40 and e.y <= 88
       break
     end
   end

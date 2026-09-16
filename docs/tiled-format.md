@@ -1,8 +1,9 @@
 # Tiled level format for twang
 
 Levels are Tiled (mapeditor.org) JSON maps in `maps/`, loaded by
-`src/tiled.lua`. Open them in Tiled as an **8x8 orthogonal map** with the
-`twang.tsx` tileset (16 columns, firstgid 1). External tilesets are
+`src/tiled.lua`. Open them in Tiled as a **16x16 orthogonal map** with
+the `twang.tsx` tileset (16 columns, firstgid 1; the 256x256 sheet whose
+tiles are 2x2 upscales of the cart's 8x8 art). External tilesets are
 resolved from `.tsx` files next to the map.
 
 The game is driven entirely by per-tile custom properties set on the
@@ -16,18 +17,19 @@ tileset — no flags are hardcoded in level data.
 | `sticky`    | bool   | arrows bounce off these (see `config.arrows.max_bounces`)      |
 | `friction`  | bool   | slippery ground (low friction, like pico-8 flag 2)             |
 | `arrow_pass`| bool   | arrows (player and enemy) fly through, but it still blocks the player and enemies — arrow slits |
-| `phase`     | bool   | switch-flipped platform: every instance of a `phase` tile in the level toggles solid<->non-solid together on any switch strike (see below) |
+| `phase`     | bool   | switch-flipped platform: every instance of a `phase` tile in the level toggles solid<->non-solid together on strikes of `phase`-flagged switches (see below) |
 | `kind`      | string | entity role, one of the kinds below (classifies tile objects placed on Object Layers) |
 | `slope`     | string | slope collision shape: `/floor`, `\floor`, `\ceil` or `/ceil`. Slope tiles must NOT have the `solid` property; slope collision is handled by the game. |
 
 ### Phase tiles
 
 A tile flagged `phase` (plus `solid`) is a platform controlled by
-switches. There is one designated phase tile per level and no wiring:
-**every** switch strike — any switch, any group — flips the global
-phase state, so all placed instances of that tile become non-solid (or
-solid again) together. Non-solid phase tiles block nothing (players,
-enemies, player and enemy arrows) and are drawn translucent
+switches. There is one designated phase tile per level and no wiring on
+the tile itself: only switches carrying the bool `phase` property flip
+the global phase state on each strike, so all placed instances of that
+tile become non-solid (or solid again) together — spring and door
+switches never touch the blocks. Non-solid phase tiles block nothing
+(players, enemies, player and enemy arrows) and are drawn translucent
 (`config.phase.alpha`). Phase tiles start solid on level load; only
 arrow strikes flip them (a spring switch popping back does not).
 
@@ -42,7 +44,11 @@ arrow strikes flip them (a spring switch popping back does not).
 - **`switch`** — struck by arrows (no key needed); each strike toggles it and
   re-evaluates its group: all switches on -> the group's doors open, any
   off -> they close. The off art is the kind tile, the on art the next tile
-  (id + 1)
+  (id + 1). Switches also extend their group's springs when a strike turns
+  them on. Give a switch the bool property `phase` to make it drive the
+  level's phase tiles on every strike — switches without the flag never
+  touch the blocks (spring/door switches and phase switches stay
+  independent)
 - **`spring`** — spring pad: a switch strike in its group extends it for a
   moment and vaults whoever stands on it into the air
 - **`spring_ext`** — the extended spring art (not placed)

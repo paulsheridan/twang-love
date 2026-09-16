@@ -68,7 +68,7 @@ end
 
 -- ==== window fitting ====
 
--- Keeps the window at an integer multiple of the 240x160 view that fits
+-- Keeps the window at an integer multiple of the 480x320 view that fits
 -- the desktop it is currently on. Monitors differ in resolution and DPI
 -- scale: a window sized for one screen gets clamped by the window
 -- manager on the next (fractionally scaling the framebuffer -> blurry

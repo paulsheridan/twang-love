@@ -9,73 +9,73 @@
          "objects":[
                 {
                  "gid":138,
-                 "height":8,
+                 "height":16,
                  "id":10,
                  "template":"archer.tx",
                  "type":"Archer",
-                 "width":8,
-                 "x":335.704383282365,
-                 "y":79.1783893985729
+                 "width":16,
+                 "x":671.40876656473,
+                 "y":158.356778797146
                 }, 
                 {
                  "gid":141,
-                 "height":8,
+                 "height":16,
                  "id":12,
                  "template":"melee.tx",
                  "type":"Melee",
-                 "width":8,
-                 "x":320.159021406728,
-                 "y":111.798165137615
+                 "width":16,
+                 "x":640.318042813456,
+                 "y":223.59633027523
                 }, 
                 {
                  "gid":138,
-                 "height":8,
+                 "height":16,
                  "id":31,
                  "template":"archer.tx",
                  "type":"Archer",
-                 "width":8,
-                 "x":271.754790355653,
-                 "y":47.1442645360485
+                 "width":16,
+                 "x":543.509580711306,
+                 "y":94.288529072097
                 }, 
                 {
                  "gid":138,
-                 "height":8,
+                 "height":16,
                  "id":32,
                  "template":"archer.tx",
                  "type":"Archer",
-                 "width":8,
-                 "x":785.006922612855,
-                 "y":80.3252391679863
+                 "width":16,
+                 "x":1570.01384522571,
+                 "y":160.650478335973
                 }, 
                 {
                  "gid":138,
-                 "height":8,
+                 "height":16,
                  "id":33,
                  "template":"archer.tx",
                  "type":"Archer",
-                 "width":8,
-                 "x":989.605833559106,
-                 "y":72.7303394654665
+                 "width":16,
+                 "x":1979.21166711821,
+                 "y":145.460678930933
                 }, 
                 {
                  "gid":138,
-                 "height":8,
+                 "height":16,
                  "id":34,
                  "template":"archer.tx",
                  "type":"Archer",
-                 "width":8,
-                 "x":977.34182445409,
-                 "y":118.661585868621
+                 "width":16,
+                 "x":1954.68364890818,
+                 "y":237.323171737242
                 }, 
                 {
                  "gid":138,
-                 "height":8,
+                 "height":16,
                  "id":35,
                  "template":"archer.tx",
                  "type":"Archer",
-                 "width":8,
-                 "x":752.0866388555,
-                 "y":39.8379410308987
+                 "width":16,
+                 "x":1504.173277711,
+                 "y":79.6758820617974
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -229,303 +229,321 @@
          "objects":[
                 {
                  "gid":71,
-                 "height":8,
+                 "height":16,
                  "id":2,
                  "name":"key_01",
                  "rotation":0,
                  "type":"Key",
                  "visible":true,
-                 "width":8,
-                 "x":61.2395514780836,
-                 "y":111.288481141692
+                 "width":16,
+                 "x":122.479102956167,
+                 "y":222.576962283384
                 }, 
                 {
                  "gid":72,
-                 "height":8,
+                 "height":16,
                  "id":3,
                  "name":"lock_01",
                  "rotation":0,
                  "type":"Lock",
                  "visible":true,
-                 "width":8,
-                 "x":120.108053007136,
-                 "y":71.2782874617737
+                 "width":16,
+                 "x":240.216106014272,
+                 "y":142.556574923547
                 }, 
                 {
                  "gid":81,
-                 "height":8,
+                 "height":16,
                  "id":4,
                  "name":"door_01",
                  "rotation":0,
                  "type":"Door",
                  "visible":true,
-                 "width":8,
-                 "x":128.772680937819,
-                 "y":111.288481141692
+                 "width":16,
+                 "x":257.545361875638,
+                 "y":222.576962283384
                 }, 
                 {
                  "gid":81,
-                 "height":8,
+                 "height":16,
                  "id":19,
                  "name":"door_01",
                  "rotation":180,
                  "type":"Door",
                  "visible":true,
-                 "width":8,
-                 "x":136.417940876656,
-                 "y":95.9979612640163
+                 "width":16,
+                 "x":272.835881753312,
+                 "y":191.995922528033
                 }, 
                 {
                  "gid":71,
-                 "height":8,
+                 "height":16,
                  "id":6,
                  "name":"key_02",
                  "rotation":0,
                  "type":"Key",
                  "visible":true,
-                 "width":8,
-                 "x":232.108914765597,
-                 "y":64.0597533249268
+                 "width":16,
+                 "x":464.217829531194,
+                 "y":128.119506649854
                 }, 
                 {
                  "gid":72,
-                 "height":8,
+                 "height":16,
                  "id":7,
                  "name":"lock_02",
                  "rotation":0,
                  "type":"Lock",
                  "visible":true,
-                 "width":8,
-                 "x":167.95990306672,
-                 "y":47.4632047942874
+                 "width":16,
+                 "x":335.91980613344,
+                 "y":94.9264095885748
                 }, 
                 {
                  "gid":81,
-                 "height":8,
+                 "height":16,
                  "id":20,
                  "name":"door_02",
                  "rotation":180,
                  "type":"Door",
                  "visible":true,
-                 "width":8,
-                 "x":264.09378185525,
-                 "y":97.2721712538226
+                 "width":16,
+                 "x":528.1875637105,
+                 "y":194.544342507645
                 }, 
                 {
                  "gid":81,
-                 "height":8,
+                 "height":16,
                  "id":8,
                  "name":"door_02",
                  "rotation":0,
                  "type":"Door",
                  "visible":true,
-                 "width":8,
-                 "x":256.576078185525,
-                 "y":111.570599235474
+                 "width":16,
+                 "x":513.15215637105,
+                 "y":223.141198470948
                 }, 
                 {
                  "gid":71,
-                 "height":8,
+                 "height":16,
                  "id":15,
                  "name":"key_03",
                  "rotation":0,
                  "type":"Key",
                  "visible":true,
-                 "width":8,
-                 "x":460.322120285423,
-                 "y":46.5586136595311
+                 "width":16,
+                 "x":920.644240570846,
+                 "y":93.1172273190622
                 }, 
                 {
                  "gid":72,
-                 "height":8,
+                 "height":16,
                  "id":16,
                  "name":"lock_03",
                  "rotation":0,
                  "type":"Lock",
                  "visible":true,
-                 "width":8,
-                 "x":495.745158002039,
-                 "y":39.9327217125382
+                 "width":16,
+                 "x":991.490316004078,
+                 "y":79.8654434250764
                 }, 
                 {
                  "gid":81,
-                 "height":8,
+                 "height":16,
                  "id":21,
                  "name":"door_03",
                  "rotation":180,
                  "type":"Door",
                  "visible":true,
-                 "width":8,
-                 "x":528.239235704253,
-                 "y":32.3048114836594
+                 "width":16,
+                 "x":1056.47847140851,
+                 "y":64.6096229673188
                 }, 
                 {
                  "gid":81,
-                 "height":8,
+                 "height":16,
                  "id":22,
                  "name":"door_03",
                  "rotation":0,
                  "type":"Door",
                  "visible":true,
-                 "width":8,
-                 "x":519.795429721606,
-                 "y":48.5029395524776
+                 "width":16,
+                 "x":1039.59085944321,
+                 "y":97.0058791049552
                 }, 
                 {
                  "gid":94,
-                 "height":8,
+                 "height":16,
                  "id":23,
                  "name":"switch_04",
                  "rotation":0,
                  "type":"Switch",
                  "visible":true,
-                 "width":8,
-                 "x":656.040774719674,
-                 "y":55.9877675840979
+                 "width":16,
+                 "x":1312.08154943935,
+                 "y":111.975535168196
                 }, 
                 {
                  "gid":94,
-                 "height":8,
+                 "height":16,
                  "id":24,
                  "name":"switch_04",
                  "rotation":0,
                  "type":"Switch",
                  "visible":true,
-                 "width":8,
-                 "x":656.040774719674,
-                 "y":80.1977573904179
+                 "width":16,
+                 "x":1312.08154943935,
+                 "y":160.395514780836
                 }, 
                 {
                  "gid":94,
-                 "height":8,
+                 "height":16,
                  "id":28,
                  "name":"switch_04",
                  "rotation":0,
                  "type":"Switch",
                  "visible":true,
-                 "width":8,
-                 "x":656.397369723538,
-                 "y":32.0602418157392
+                 "width":16,
+                 "x":1312.79473944708,
+                 "y":64.1204836314784
                 }, 
                 {
                  "gid":81,
-                 "height":8,
+                 "height":16,
                  "id":25,
                  "name":"door_04",
                  "rotation":180,
                  "type":"Door",
                  "visible":true,
-                 "width":8,
-                 "x":655.403460754332,
-                 "y":104.199801070336
+                 "width":16,
+                 "x":1310.80692150866,
+                 "y":208.399602140672
                 }, 
                 {
                  "gid":81,
-                 "height":8,
+                 "height":16,
                  "id":26,
                  "name":"door_04",
                  "rotation":0,
                  "type":"Door",
                  "visible":true,
-                 "width":8,
-                 "x":648.013460754332,
-                 "y":120.216101070336
+                 "width":16,
+                 "x":1296.02692150866,
+                 "y":240.432202140672
                 }, 
                 {
                  "gid":17,
-                 "height":8,
+                 "height":16,
                  "id":27,
                  "name":"spring_05",
                  "rotation":0,
                  "type":"Spring",
                  "visible":true,
-                 "width":8,
-                 "x":715.589187498259,
-                 "y":121.649814985034
+                 "width":16,
+                 "x":1431.17837499652,
+                 "y":243.299629970068
                 }, 
                 {
                  "gid":94,
-                 "height":8,
+                 "height":16,
                  "id":30,
                  "name":"switch_05",
                  "rotation":0,
                  "type":"Switch",
                  "visible":true,
-                 "width":8,
-                 "x":704.466162931685,
-                 "y":104.012411016229
+                 "width":16,
+                 "x":1408.93232586337,
+                 "y":208.024822032458
                 }, 
                 {
                  "gid":94,
-                 "height":8,
+                 "height":16,
                  "id":36,
                  "name":"switch_06",
                  "rotation":0,
                  "type":"Switch",
                  "visible":true,
-                 "width":8,
-                 "x":687.979542294186,
-                 "y":24.2825426005798
+                 "width":16,
+                 "x":1375.95908458837,
+                 "y":48.5650852011596
                 }, 
                 {
                  "gid":81,
-                 "height":8,
+                 "height":16,
                  "id":37,
                  "name":"door_06",
                  "rotation":0,
                  "type":"Door",
                  "visible":true,
-                 "width":8,
-                 "x":759.864338070659,
-                 "y":119.736123877537
+                 "width":16,
+                 "x":1519.72867614132,
+                 "y":239.472247755074
                 }, 
                 {
                  "gid":81,
-                 "height":8,
+                 "height":16,
                  "id":38,
                  "name":"door_06",
                  "rotation":180,
                  "type":"Door",
                  "visible":true,
-                 "width":8,
-                 "x":767.877725140824,
-                 "y":104.416413302223
+                 "width":16,
+                 "x":1535.75545028165,
+                 "y":208.832826604446
                 }, 
                 {
                  "gid":94,
-                 "height":8,
+                 "height":16,
                  "id":39,
                  "name":"switch_pform",
+                 "properties":[
+                        {
+                         "name":"phase",
+                         "type":"bool",
+                         "value":true
+                        }],
                  "rotation":0,
                  "type":"Switch",
                  "visible":true,
-                 "width":8,
-                 "x":768.241064440386,
-                 "y":151.230889642578
+                 "width":16,
+                 "x":1536.48212888077,
+                 "y":302.461779285156
                 }, 
                 {
                  "gid":94,
-                 "height":8,
+                 "height":16,
                  "id":40,
                  "name":"switch_pform",
+                 "properties":[
+                        {
+                         "name":"phase",
+                         "type":"bool",
+                         "value":true
+                        }],
                  "rotation":0,
                  "type":"Switch",
                  "visible":true,
-                 "width":8,
-                 "x":704.648578137229,
-                 "y":152.209235585703
+                 "width":16,
+                 "x":1409.29715627446,
+                 "y":304.418471171406
                 }, 
                 {
                  "gid":94,
-                 "height":8,
+                 "height":16,
                  "id":41,
                  "name":"switch_pform",
+                 "properties":[
+                        {
+                         "name":"phase",
+                         "type":"bool",
+                         "value":true
+                        }],
                  "rotation":0,
                  "type":"Switch",
                  "visible":true,
-                 "width":8,
-                 "x":832.159666057918,
-                 "y":152.209235585703
+                 "width":16,
+                 "x":1664.31933211584,
+                 "y":304.418471171406
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -538,13 +556,13 @@
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.11.0",
- "tileheight":8,
+ "tileheight":16,
  "tilesets":[
         {
          "firstgid":1,
          "source":"twang.tsx"
         }],
- "tilewidth":8,
+ "tilewidth":16,
  "type":"map",
  "version":"1.10",
  "width":128

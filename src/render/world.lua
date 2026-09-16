@@ -14,6 +14,13 @@ local Render = {}
 
 local pcol = Palette.rgb
 
+-- Vector primitives are drawn at 2x to match the 2x2-upscaled sheet: dots
+-- are 2x2 pixel blocks, lines 2px thick, so they keep the size they had on
+-- the 240x160 canvas.
+local function dot(x, y)
+  love.graphics.rectangle("fill", math.floor(x), math.floor(y), 2, 2)
+end
+
 -- ==== terrain ====
 
 local function draw_map(ctx)
@@ -71,7 +78,7 @@ end
 local function draw_particles(ctx)
   for _, pt in ipairs(ctx.ents.particles) do
     love.graphics.setColor(pcol(pt.col or 8))
-    love.graphics.points(math.floor(pt.x), math.floor(pt.y))
+    dot(pt.x, pt.y)
   end
 end
 
@@ -95,9 +102,9 @@ local function draw_e_arrows(ctx)
       if len > 0 then
         love.graphics.setColor(pcol(8))  -- enemy arrows are red
         love.graphics.line(x, y,
-          x - math.floor((a.vx/len)*3), y - math.floor((a.vy/len)*3))
+          x - math.floor((a.vx/len)*6), y - math.floor((a.vy/len)*6))
         love.graphics.setColor(pcol(7))
-        love.graphics.points(x, y)
+        dot(x, y)
       end
     end
   end
@@ -118,13 +125,13 @@ local function draw_archer_aims(ctx)
       if len > 0 then
         local ux, uy = e.aim_vx/len, e.aim_vy/len
         love.graphics.setColor(pcol(shaft))
-        love.graphics.line(ex, ey, ex + math.floor(ux*8), ey + math.floor(uy*8))
+        love.graphics.line(ex, ey, ex + math.floor(ux*16), ey + math.floor(uy*16))
         local path = Arrows.simulate_path(ctx.world, ex, ey, e.aim_vx, e.aim_vy, {
           target = {x = e.aim_tx, y = e.aim_ty},
           max_frames = 120,
         })
         for _, pt in ipairs(path.points) do
-          love.graphics.points(math.floor(pt.x), math.floor(pt.y))
+          dot(pt.x, pt.y)
         end
       end
     end
@@ -133,35 +140,45 @@ end
 
 -- ==== player arrows ====
 
+-- Player arrows draw a size up from the enemy darts: a 9px shaft with a
+-- 3x3 white tip (bigger than the 2x2 dots elsewhere, so your own shots
+-- read clearly at a glance, without bloating into a bolt).
+local function arrow_tip(x, y)
+  love.graphics.rectangle("fill", math.floor(x) - 1, math.floor(y) - 1, 3, 3)
+end
+
+local ARROW_SHAFT = 9
+
 local function draw_arrows(ctx)
   for _, a in ipairs(ctx.ents.arrows) do
     if a.active then
       local x, y = math.floor(a.x), math.floor(a.y)
       if a.stuck then
         love.graphics.setColor(pcol(7))
-        love.graphics.points(x, y)
+        arrow_tip(x, y)
         love.graphics.setColor(pcol(config.arrows.colour))
         love.graphics.line(x, y,
-          x - math.floor(a.sdx*4), y - math.floor(a.sdy*4))
+          x - math.floor(a.sdx*12), y - math.floor(a.sdy*12))
       elseif a.dying then
         -- spin-out: shaft whirling around its centre, tip leading
-        local ca = math.floor(math.cos(a.spin) * 2)
-        local sa = math.floor(math.sin(a.spin) * 2)
+        local ca = math.floor(math.cos(a.spin) * 5)
+        local sa = math.floor(math.sin(a.spin) * 5)
         love.graphics.setColor(pcol(config.arrows.colour))
         love.graphics.line(x - ca, y - sa, x + ca, y + sa)
         love.graphics.setColor(pcol(7))
-        love.graphics.points(x + ca, y + sa)
+        arrow_tip(x + ca, y + sa)
       else
         local len = math.sqrt(a.vx*a.vx + a.vy*a.vy)
         if len > 0 then
           love.graphics.setColor(pcol(config.arrows.colour))
           love.graphics.line(x, y,
-            x - math.floor((a.vx/len)*3), y - math.floor((a.vy/len)*3))
+            x - math.floor((a.vx/len)*ARROW_SHAFT),
+            y - math.floor((a.vy/len)*ARROW_SHAFT))
           love.graphics.setColor(pcol(7))
-          love.graphics.points(x, y)
+          arrow_tip(x, y)
         end
       end
-      if a.key then Sprites.draw(ctx.tiles.key, x - 4, y - 4) end
+      if a.key then Sprites.draw(ctx.tiles.key, x - 8, y - 8) end
     end
   end
 end

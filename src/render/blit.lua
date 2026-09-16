@@ -1,4 +1,4 @@
--- Canvas blit: renders the world into the 240x160 native canvas, then
+-- Canvas blit: renders the world into the 480x320 native canvas, then
 -- blits it to the window preserving aspect ratio, remembering the blit
 -- rect so HUD text can anchor to it (see src/render/hud.lua).
 
@@ -32,6 +32,9 @@ function Blit.render(ctx, menu_open)
   local vw, vh = config.view.width, config.view.height
   love.graphics.setCanvas(canvas)
   love.graphics.clear(Palette.rgb(1))
+  -- world-pass vector lines (arrow shafts, rope, aim lines) draw 2px thick
+  -- to match the 2x2-upscaled sheet; the controls panel resets its own 1px
+  love.graphics.setLineWidth(2)
   love.graphics.push()
   love.graphics.translate(-math.floor(ctx.cam.x), -math.floor(ctx.cam.y))
   render_world.world(ctx)

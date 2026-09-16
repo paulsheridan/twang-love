@@ -3,7 +3,7 @@
 -- Editing conventions (tile properties, entity objects, puzzle groups,
 -- slope shapes) are documented in docs/tiled-format.md. In brief:
 --
--- * 8x8 orthogonal map, the twang.tsx tileset (16 columns, firstgid 1);
+-- * 16x16 orthogonal map, the twang.tsx tileset (16 columns, firstgid 1);
 --   external tilesets are resolved from .tsx files next to the map
 -- * per-tile custom properties drive the game: solid, sticky, friction,
 --   arrow_pass, kind (entity role) and slope (collision shape)
@@ -115,8 +115,8 @@ function tiled.load(path)
   local m = json.decode(read_file(path))
   assert(m.type == "map", "tiled: not a Tiled map: " .. path)
   assert(not m.infinite, "tiled: infinite (chunked) maps are not supported")
-  assert(m.tilewidth == 8 and m.tileheight == 8,
-    "tiled: twang uses 8x8 tiles (got "
+  assert(m.tilewidth == 16 and m.tileheight == 16,
+    "tiled: twang uses 16x16 tiles (got "
     .. tostring(m.tilewidth) .. "x" .. tostring(m.tileheight) .. ")")
   assert(m.orientation == "orthogonal",
     "tiled: only orthogonal maps are supported")
@@ -131,8 +131,8 @@ function tiled.load(path)
     ts = parse_tsx(read_file(dir .. ref.source))
     ts.firstgid = ref.firstgid
   end
-  assert(ts.columns == 16 and ts.tilewidth == 8 and ts.tileheight == 8,
-    "tiled: tileset must be the 16-column 8x8 spritesheet.png")
+  assert(ts.columns == 16 and ts.tilewidth == 16 and ts.tileheight == 16,
+    "tiled: tileset must be the 16-column 16x16 spritesheet.png")
   local n_tiles = tonumber(ts.tilecount)
     or (ts.columns * math.floor((ts.imageheight or 0) / ts.tileheight))
   assert(n_tiles and n_tiles <= 256,

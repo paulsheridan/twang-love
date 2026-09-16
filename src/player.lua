@@ -19,8 +19,8 @@ local run_frame, run_tick = 0, 0
 function Player.new(spawn)
   local cfg = config.player
   local p = {
-    x = spawn and spawn.x or 4,
-    y = spawn and spawn.y or 82,
+    x = spawn and spawn.x or 8,
+    y = spawn and spawn.y or 164,
     vx = 0, vy = 0, w = cfg.width, h = cfg.height,
     gr = false, facing = 1, coy = 0, jbuf = 0, fr = 1.0,
     j_frames = 0,
@@ -42,8 +42,8 @@ end
 -- table so references stay valid).
 function Player.reset(p, spawn_points, cam, world)
   local sp = spawn_points[math.random(#spawn_points)]
-  p.x = sp and sp.x or 4
-  p.y = sp and sp.y or 82
+  p.x = sp and sp.x or 8
+  p.y = sp and sp.y or 164
   p.vx = 0
   p.vy = 0
   p.w = config.player.width
@@ -90,12 +90,19 @@ function Player.die(ctx)
 end
 
 -- Taking a hit: half a heart lost (unless still invulnerable from the
--- last hit); dying when the last half-heart is gone. Returns true when
--- the hit was fatal.
-function Player.hurt(ctx)
+-- last hit); dying when the last half-heart is gone. `ix`/`iy` is the
+-- impact direction (arrow travel, or from the melee enemy toward the
+-- player): the blood sprays the opposite way, at the player's centre,
+-- with the player's own motion added so it doesn't lag a moving body.
+-- Returns true when the hit was fatal.
+function Player.hurt(ctx, ix, iy)
   local p = ctx.player
   if p.invuln > 0 then return false end  -- shielded by i-frames
   p.hp = p.hp - config.player.half_hearts_per_hit
+  -- blood before the death flow: a fatal hit respawns the player and
+  -- would otherwise move them before the spray can spawn
+  Particles.blood(ctx.ents, p.x + p.w/2, p.y + p.h/2,
+    ix or -p.facing, iy or 0, p.vx, p.vy)
   if p.hp <= 0 then
     Player.die(ctx)
     return true
@@ -134,7 +141,7 @@ function Player.rope_step(ctx)
   -- (this also releases the rope when a door opens under the arrow)
   local embedded = a.on_slope and ctx.world:in_slope_solid(a.x, a.y)
   if not embedded then
-    for d = 2, 6, 2 do
+    for d = 4, 12, 2 do
       if ctx.world:solid_for_arrow(a.x + (a.sdx or 0) * d, a.y + (a.sdy or 0) * d) then
         embedded = true
         break
