@@ -52,11 +52,18 @@ arrow strikes flip them (a spring switch popping back does not).
 - **`spring`** — spring pad: a switch strike in its group extends it for a
   moment and vaults whoever stands on it into the air
 - **`spring_ext`** — the extended spring art (not placed)
+- **`winch`** — motorized rope reel: a rope arrow that strikes it is
+  consumed and the player is reeled straight into the winch's centre at
+  an accelerating speed (unstoppable; jump does nothing mid-reel).
+  Inside `config.winch.pass_radius` of the centre the reel cuts the
+  line and the built-up momentum throws the player through the centre
+  and out the opposite side (at least `config.winch.min_throw_speed`).
+  Firing any arrow cancels a reel. Non-rope arrows fly straight through.
 
 ## Entities on Object Layers
 
-Entities (spawn/key/lock/door/archer/melee/switch/spring) live as tile
-objects on Object Layers in Tiled (e.g. `items` and `entities`).
+Entities (spawn/key/lock/door/archer/melee/switch/spring/winch) live as
+tile objects on Object Layers in Tiled (e.g. `items` and `entities`).
 
 The object's role comes from, in order:
 

@@ -13,6 +13,12 @@
 --      alone (no cross-wiring between the puzzle systems)
 --   5. a closed door bounces arrows like a sticky wall, and an arrow
 --      never embeds in a door that later opens
+-- plus the test menu's puzzle toggle:
+--   6. disabling the puzzle hides every key, lock and door: they stop
+--      being picked up/triggered, doors stop blocking, a carried key
+--      drops off, and a switch strike cannot re-close hidden doors
+--   7. re-enabling restores the pre-toggle state (carried/unconsumed
+--      keys return pickable, triggered doors reopen, consumed stay gone)
 --
 -- Usage (from the project root): luajit tests/interactables_test.lua
 
@@ -196,6 +202,112 @@ do
       and math.floor(ar.x/16) == c and math.floor(ar.y/16) == r),
       "no stuck arrow remains inside the opened door's tile")
   end
+end
+
+-- ==== 6. disabling the puzzle hides keys, locks and doors ====
+do
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local w, ents, p = g.ctx.world, g.ctx.ents, g.ctx.player
+  local Interactables = dofile("src/interactables.lua")
+  local k1, k2 = ents.keys[1], ents.keys[2]
+  local lock1, lock3 = ents.locks[1], ents.locks[3]
+  local door1 = ents.doors[1]  -- group 01, closed on load
+  assert_true(door1.g == "01", "door 1 belongs to the key-1 group")
+  -- someone carries key 1; an arrow carries key 2
+  k1.taken, p.key = true, k1
+  local arrow = { x = k2.x, y = k2.y, key = k2, active = true,
+    stuck = false, lt = 300, vx = 0, vy = 0, sdx = 1, sdy = 0 }
+  table.insert(ents.arrows, arrow)
+  -- door group 03 stands open: its lock was already triggered pre-toggle
+  Interactables.trigger_lock(ents, lock3)
+  -- remember the exact pre-toggle state of every piece
+  local pre_open, pre_triggered = {}, {}
+  for _, d in ipairs(ents.doors) do pre_open[d] = d.open end
+  for _, l in ipairs(ents.locks) do pre_triggered[l] = l.triggered end
+
+  g:toggle_puzzle()
+  assert_true(g.settings.no_puzzle, "the toggle turns the puzzle off")
+  for _, k in ipairs(ents.keys) do
+    assert_true(k.taken, "every key is marked taken while hidden")
+  end
+  for _, l in ipairs(ents.locks) do
+    assert_true(l.triggered, "every lock is marked triggered while hidden")
+  end
+  for _, d in ipairs(ents.doors) do
+    assert_true(d.open, "every door stands open while hidden")
+    assert_true(d.disabled, "every door carries the disabled flag")
+  end
+  local px, py = door1.x + 8, door1.y + 8
+  assert_true(not w:solid_at(px, py),
+    "a hidden door's tile no longer blocks bodies")
+  assert_true(not w:solid_for_arrow(px, py),
+    "arrows fly through a hidden door")
+  assert_true(p.key == nil, "a carried key drops off the player")
+  assert_true(arrow.key == nil, "a carried key drops off its arrow")
+
+  -- the player standing on a hidden key's tile cannot pick it up
+  for _ = 1, 3 do
+    p.x, p.y, p.vx, p.vy = k2.x - 4, k2.y - 4, 0, 0
+    run_steps(env, 1)
+  end
+  assert_true(p.key == nil, "a hidden key is never picked up")
+
+  -- a switch strike cannot re-close hidden doors (group 04 is
+  -- switch-driven; its doors stay open while the puzzle is hidden)
+  local door7
+  for _, d in ipairs(ents.doors) do
+    if d.g == "04" and d.y == 208 then door7 = d end
+  end
+  assert_true(door7 ~= nil, "a group-04 door exists")
+  local sw4 = ents.switches[1]
+  assert_true(sw4.g == "04", "switch 1 drives group 04")
+  table.insert(ents.arrows, {
+    x = sw4.x + 4, y = sw4.y + 8, vx = 1, vy = 0,
+    active = true, stuck = false, bounced = 0,
+    sdx = 2, sdy = 0, spin = 0, lt = 300, kind = "normal",
+  })
+  run_steps(env, 1)
+  ents.arrows = {}
+  assert_true(sw4.on, "the strike toggles the switch on")
+  assert_true(door7.open, "a hidden switch-driven door stays open")
+
+  g:toggle_puzzle()  -- back on
+  assert_true(not g.settings.no_puzzle, "the toggle turns the puzzle on")
+  for _, d in ipairs(ents.doors) do
+    assert_true(d.open == pre_open[d] and d.disabled == nil,
+      "each door restores its pre-toggle state")
+  end
+  for _, l in ipairs(ents.locks) do
+    assert_true(l.triggered == pre_triggered[l],
+      "each lock restores its pre-toggle state")
+  end
+  assert_true(not k1.taken and k1.used == nil,
+    "the formerly carried key returns to the world")
+  assert_true(not k2.taken, "an unconsumed key becomes pickable again")
+  assert_true(w:solid_at(px, py), "the restored door blocks bodies again")
+  -- the re-armed key is picked up again
+  for _ = 1, 3 do
+    p.x, p.y, p.vx, p.vy = k2.x - 4, k2.y - 4, 0, 0
+    run_steps(env, 1)
+  end
+  assert_true(p.key == k2, "the restored key is picked up again")
+end
+
+-- ==== 7. a key consumed before the toggle stays consumed ====
+do
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local Interactables = dofile("src/interactables.lua")
+  local ents = g.ctx.ents
+  local k = ents.keys[3]
+  local lock = ents.locks[3]
+  k.taken, k.used = true, true  -- consumed by its lock earlier
+  Interactables.trigger_lock(ents, lock)
+  g:toggle_puzzle()
+  g:toggle_puzzle()
+  assert_true(k.taken and k.used,
+    "a consumed key does not come back when the puzzle is re-enabled")
 end
 
 print(("interactables tests: %d passed, %d failed"):format(PASS, FAIL))

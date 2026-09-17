@@ -103,8 +103,54 @@ function Interactables.update_springs(ents)
   end
 end
 
+-- Test-menu puzzle disable: hides every key, lock and door. Keys and
+-- locks reuse their existing "gone" flags (taken / triggered), doors are
+-- forced open (they stop drawing and stop blocking) with a `disabled`
+-- flag so switch strikes cannot re-close them while hidden. The prior
+-- state is remembered per piece, so toggling back restores exactly what
+-- was there before (consumed keys stay consumed). Carried keys — in the
+-- player's hand or on an arrow — drop off silently (no poof).
+function Interactables.set_puzzle_disabled(ents, player, disabled)
+  if disabled then
+    for _, k in ipairs(ents.keys) do
+      k.taken = true
+    end
+    for _, l in ipairs(ents.locks) do
+      l.triggered_prev = l.triggered or false
+      l.triggered = true
+    end
+    for _, d in ipairs(ents.doors) do
+      d.open_prev = d.open or false
+      d.open = true
+      d.disabled = true
+    end
+  else
+    for _, k in ipairs(ents.keys) do
+      -- keys only rest at "taken" when consumed (used) or when they
+      -- were carried at disable time — carried ones were detached, so
+      -- every unconsumed key returns to the world
+      k.taken = (k.used and true) or false
+    end
+    for _, l in ipairs(ents.locks) do
+      l.triggered = l.triggered_prev or false
+      l.triggered_prev = nil
+    end
+    for _, d in ipairs(ents.doors) do
+      d.open = d.open_prev or false
+      d.open_prev = nil
+      d.disabled = nil
+    end
+  end
+  -- carried keys vanish along with everything else (a re-enabled key
+  -- reappears in the world, not in hand)
+  if player then player.key = nil end
+  for _, a in ipairs(ents.arrows) do a.key = nil end
+end
+
 -- Switch groups drive their doors dynamically: every switch in the
 -- group on -> the group's doors open; any off -> they close again.
+-- Doors hidden by the test menu are skipped so a strike cannot re-close
+-- them while the puzzle is disabled.
 function Interactables.eval_switch_doors(ents, group)
   local all_on = true
   for _, switch in ipairs(ents.switches) do
@@ -114,7 +160,7 @@ function Interactables.eval_switch_doors(ents, group)
     end
   end
   for _, door in ipairs(ents.doors) do
-    if door.g == group then door.open = all_on end
+    if door.g == group and not door.disabled then door.open = all_on end
   end
 end
 

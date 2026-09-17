@@ -17,6 +17,10 @@
 --  11. losing the player during the rapid-fire wait triggers investigate
 --  12. drops deeper than max_drop_tiles end the investigate search
 --  13. a backed archer on a small platform holds the edge, no pacing
+-- plus the test menu's enemies toggle:
+--  14. toggling off disarms the enemy systems (no updates, arrows
+--      cleared, archers reset) but the enemies list itself is kept --
+--      they are simply invisible until toggled back on
 --
 -- Usage (from the project root): luajit tests/enemies_test.lua
 
@@ -397,6 +401,57 @@ do
   assert_true(max_x - min_x < 0.5,
     "backed archer holds the edge instead of pacing (range "
     .. string.format("%.2f", max_x - min_x) .. ")")
+end
+
+-- ==== 14. the test menu's enemies toggle ====
+do
+  local env = fresh_game()
+  local g = env.TWANG_TEST.game
+  local e = archer(g)
+  place_player(g, 720, 148)  -- clear line of sight
+  e.shoot_cd = 0
+  e.facing = 1
+  for _ = 1, 60 do
+    env.love.update(1/30)
+    env.love.draw()
+    if e.state == "wait" then break end  -- the aim fired its volley
+  end
+  assert_true(e.state == "wait" and e.shoot_cd > 0,
+    "the archer aimed and fired before the toggle")
+  -- plus a synthetic dart in flight
+  table.insert(g.ctx.ents.e_arrows, { x = 704, y = 154, vx = 8, vy = 0,
+    active = true })
+
+  g:toggle_enemies()
+  assert_true(not g.ctx.config.enemies.enabled,
+    "the toggle turns the enemies off")
+  assert_true(#g.ctx.ents.enemies > 0,
+    "the enemies list is kept (they are invisible, not removed)")
+  assert_true(#g.ctx.ents.e_arrows == 0,
+    "enemy arrows vanish when the enemies are toggled off")
+  assert_true(e.state == "patrol" and e.aim_vx == nil and e.volley == nil,
+    "a mid-shot archer drops back to patrol")
+  -- nothing resumes while off: the frozen enemies never move or shoot
+  local frozen_x = e.x
+  for _ = 1, 30 do
+    env.love.update(1/30)
+    env.love.draw()
+  end
+  assert_true(e.x == frozen_x and #g.ctx.ents.e_arrows == 0,
+    "disabled enemies stay frozen and fire nothing")
+
+  g:toggle_enemies()
+  assert_true(g.ctx.config.enemies.enabled,
+    "the toggle turns the enemies back on")
+  -- a visible player is spotted again after re-enabling
+  place_player(g, 720, 148)
+  e.shoot_cd = 0
+  for _ = 1, 60 do
+    env.love.update(1/30)
+    env.love.draw()
+    if e.state == "aim" then break end
+  end
+  assert_true(e.state == "aim", "archers resume hunting after re-enabling")
 end
 
 print(("enemy tests: %d passed, %d failed"):format(PASS, FAIL))

@@ -11,6 +11,7 @@ local config = require("src.config")
 local Util   = require("src.util")
 local Particles    = require("src.particles")
 local Interactables = require("src.interactables")
+local WinchLog = require("src.winchlog")
 
 local Arrows = {}
 
@@ -75,6 +76,14 @@ function Arrows.fire(ctx, angle, kind, force)
   local ents, p = ctx.ents, ctx.player
   local cfg = ctx.config.arrows
   kind = kind or "normal"
+  -- firing any arrow cancels a winch reel in progress (the player's
+  -- escape hatch from the unstoppable pull); the leftover reel momentum
+  -- gets the grace window too, so it plays out untouched
+  if p.winch then
+    p.winch = nil
+    p.winch_grace = config.winch.stick_grace
+    p.rope_cd = config.winch.stick_grace
+  end
   -- firing a new rope arrow detaches any rope already attached, so the
   -- fresh anchor becomes the active one
   if kind == "rope" and p.rope then p.rope = nil end
@@ -238,6 +247,47 @@ function Arrows.step_one(ctx, a)
         and ny >= k.y-pad and ny < k.y+tw+pad then
           a.key, k.taken = k, true
           break
+        end
+      end
+    end
+
+    -- rope arrow strikes a winch: the "arrow" is gone but the winch has
+    -- it - the player is pulled in immediately, reeled through the
+    -- centre and thrown out the far side (see Player.physics)
+    if a.kind == "rope" and not ctx.player.winch then
+      local pad = config.winch.hit_pad
+      for _, w in ipairs(ents.winches) do
+        if nx >= w.x-pad and nx < w.x+tw+pad
+        and ny >= w.y-pad and ny < w.y+tw+pad then
+          local p = ctx.player
+          p.rope = nil      -- a winch replaces any rope, and the rope_cd
+          p.rope_cd = 0     -- grace: the pull is immediate
+          -- the throw direction is carried from the entry side: the
+          -- unit vector toward the winch now, refreshed by the reel
+          -- while the player is still outside the pass radius, so an
+          -- overshoot past the centre can never invert the throw
+          local wcx, wcy = w.x + tw/2, w.y + tw/2
+          local edx, edy = wcx - p.x - p.w/2, wcy - p.y - p.h/2
+          local d = math.sqrt(edx*edx + edy*edy)
+          if d > 0 then
+            edx, edy = edx / d, edy / d
+          else
+            edx, edy = a.sdx or 0, a.sdy or 0  -- degenerate: arrow travel
+          end
+          p.winch = { ent = w, dir_x = edx, dir_y = edy }
+          if WinchLog.on() then
+            WinchLog.log("capture", {
+              step = ctx.menu and ctx.menu.step_count or 0,
+              tip_x = nx, tip_y = ny,
+              winch_x = w.x, winch_y = w.y,
+              player_x = p.x, player_y = p.y,
+              vx = p.vx, vy = p.vy,
+              dist = d, entry_dx = edx, entry_dy = edy,
+            })
+          end
+          Particles.poof(ents, nx, ny)
+          a.active = false
+          return
         end
       end
     end

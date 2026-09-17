@@ -71,6 +71,9 @@ local function draw_interactables(ctx)
     Sprites.draw(s.ext and tiles.spring_ext or (s.spr or tiles.spring),
       s.x, s.y, false, s.rot)
   end
+  for _, w in ipairs(ents.winches) do
+    Sprites.draw(w.spr or tiles.winch, w.x, w.y, false, w.rot)
+  end
 end
 
 -- ==== particles ====
@@ -85,6 +88,7 @@ end
 -- ==== enemies ====
 
 local function draw_enemies(ctx)
+  if not config.enemies.enabled then return end  -- toggled off: invisible
   local ents, tiles = ctx.ents, ctx.tiles
   for _, e in ipairs(ents.enemies) do
     Sprites.draw(e.spr or ((e.type == "melee") and tiles.melee or tiles.archer),
@@ -116,6 +120,7 @@ end
 -- preview: a short direction line from the eye, then dots along the
 -- solved trajectory (stopping where terrain would block the arrow).
 local function draw_archer_aims(ctx)
+  if not config.enemies.enabled then return end  -- toggled off: invisible
   local cfg = config.enemies
   local shaft = config.arrows.colour
   for _, e in ipairs(ctx.ents.enemies) do
@@ -188,7 +193,17 @@ end
 -- The attached rope: a line from the anchored arrow's tip to the player
 -- centre, drawn under the player sprite.
 local function draw_ropes(ctx)
-  local rope = ctx.player.rope
+  local p = ctx.player
+  -- the winch's line: from the winch centre to the player while the
+  -- motor reels them in (the arrow itself was consumed on capture)
+  if p.winch and p.winch.ent then
+    local w = p.winch.ent
+    love.graphics.setColor(pcol(config.rope.colour))
+    love.graphics.line(w.x + config.tile_size/2, w.y + config.tile_size/2,
+      math.floor(p.x + p.w/2), math.floor(p.y + p.h/2))
+    return
+  end
+  local rope = p.rope
   if not rope or not rope.arrow or not rope.arrow.active then return end
   local a = rope.arrow
   love.graphics.setColor(pcol(config.rope.colour))

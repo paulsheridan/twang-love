@@ -8,6 +8,7 @@ local Camera       = require("src.camera")
 local Particles    = require("src.particles")
 local Interactables = require("src.interactables")
 local Arrows       = require("src.arrows")
+local WinchLog     = require("src.winchlog")
 
 local Player = {}
 
@@ -35,6 +36,8 @@ function Player.new(spawn)
     arrow_kind = "normal",  -- currently selected arrow type ("normal"/"rope"/"propel")
     rope = nil,  -- attached rope: { arrow = <anchored rope arrow>, length = px }
     rope_cd = 0, -- steps before another rope can attach (post-detach grace)
+    winch = nil, -- winch reel in progress: { ent = <winch entity> }
+    winch_grace = nil, -- steps after a winch release with movement input ignored
   }
   return p
 end
@@ -70,6 +73,8 @@ function Player.reset(p, spawn_points, cam, world)
   p.arrow_kind = "normal"
   p.rope = nil
   p.rope_cd = 0
+  p.winch = nil
+  p.winch_grace = nil
   -- snap camera to the spawn point (pico-8 snapped per screen; no slow pan)
   if cam then
     Camera.snap(cam, p, world)
@@ -82,6 +87,8 @@ end
 function Player.die(ctx)
   local p = ctx.player
   p.rope = nil
+  p.winch = nil
+  p.winch_grace = nil
   if p.key and not p.key.used then
     Particles.poof(ctx.ents, p.x, p.y)
     p.key.taken = false
@@ -92,12 +99,15 @@ function Player.die(ctx)
 end
 
 -- Taking a hit: half a heart lost (unless still invulnerable from the
--- last hit); dying when the last half-heart is gone. `ix`/`iy` is the
--- impact direction (arrow travel, or from the melee enemy toward the
--- player): the blood sprays the opposite way, at the player's centre,
--- with the player's own motion added so it doesn't lag a moving body.
+-- last hit); dying when the last half-heart is gone. The test menu's
+-- invincibility toggle blocks all damage (void falls still kill: death
+-- is a respawn mechanism, not damage). `ix`/`iy` is the impact
+-- direction (arrow travel, or from the melee enemy toward the player):
+-- the blood sprays the opposite way, at the player's centre, with the
+-- player's own motion added so it doesn't lag a moving body.
 -- Returns true when the hit was fatal.
 function Player.hurt(ctx, ix, iy)
+  if ctx.settings.invincible then return false end
   local p = ctx.player
   if p.invuln > 0 then return false end  -- shielded by i-frames
   p.hp = p.hp - config.player.half_hearts_per_hit
@@ -120,6 +130,10 @@ function Player.rope_step(ctx)
   local p = ctx.player
   local rcfg = ctx.config.rope
   if p.rope_cd > 0 then p.rope_cd = p.rope_cd - 1 end
+
+  -- a winch reel owns the player until it releases (see Player.physics):
+  -- no rope attach, no jump detach, no manual winching
+  if p.winch then return end
 
   if not p.rope then
     -- attach to the first anchored rope arrow not yet claimed
@@ -185,7 +199,24 @@ function Player.physics(ctx)
 
   Player.rope_step(ctx)
 
-  if not ctx.input:down("aim") then
+  -- winch ownership: during a reel and for `config.winch.stick_grace`
+  -- steps after release, movement input is ignored entirely (no
+  -- acceleration, no damping, no walk cap) so the pull/throw physics
+  -- can play out untouched. The aim button still works (deliberate).
+  if p.winch_grace and p.winch_grace > 0 then
+    p.winch_grace = p.winch_grace - 1
+    if WinchLog.on() then
+      WinchLog.log("grace", {
+        step = ctx.menu and ctx.menu.step_count or 0,
+        remaining = p.winch_grace,
+        vx = p.vx, vy = p.vy, gr = p.gr,
+      })
+    end
+  end
+  local motor = p.winch or (p.winch_grace ~= nil and p.winch_grace > 0)
+  if motor then
+    -- (velocity comes from the reel below, or from the throw itself)
+  elseif not ctx.input:down("aim") then
     local ax = 0
     if ctx.input:down("left") then ax = -1 end
     if ctx.input:down("right") then ax =  1 end
@@ -251,6 +282,37 @@ function Player.physics(ctx)
     end
   end
 
+  -- winch reel: override the velocity with a pull straight toward the
+  -- winch centre (after gravity and the walk logic, so nothing fights
+  -- the motor; the pull accelerates like a spooling-up high-torque
+  -- motor). The rope pendulum above is inert - p.rope is nil here.
+  -- The throw direction carried from the entry side is refreshed each
+  -- step the pull is active (still outside the pass radius), so the
+  -- release can never invert it if the last step overshoots the centre.
+  if p.winch then
+    local w = p.winch.ent
+    local wcx, wcy = w.x + tw/2, w.y + tw/2
+    local px, py = p.x + p.w/2, p.y + p.h/2
+    local rx, ry = wcx - px, wcy - py
+    local dist = math.sqrt(rx*rx + ry*ry)
+    p.winch.speed = math.min(config.winch.max_reel_speed,
+      (p.winch.speed or 0) + config.winch.reel_accel)
+    if dist > config.winch.pass_radius and dist > 0 then
+      local nx, ny = rx / dist, ry / dist
+      p.vx = nx * p.winch.speed
+      p.vy = ny * p.winch.speed
+      p.winch.dir_x, p.winch.dir_y = nx, ny
+    end
+    if WinchLog.on() then
+      WinchLog.log("reel", {
+        step = ctx.menu and ctx.menu.step_count or 0,
+        dist = dist, speed = p.winch.speed,
+        dir_x = p.winch.dir_x or 0, dir_y = p.winch.dir_y or 0,
+        vx = p.vx, vy = p.vy,
+      })
+    end
+  end
+
   p.x = p.x + p.vx
   world:resolve_x(p)
   world:check_walls(p)
@@ -286,6 +348,50 @@ function Player.physics(ctx)
     end
   end
 
+  -- winch release: once the player's centre is inside the pass radius
+  -- the motor cuts the line; the built-up reel momentum (topped up to a
+  -- guaranteed minimum) throws them through the centre and out the
+  -- opposite side from the one they hit it from. The direction is the
+  -- one carried from the entry side (refreshed every reel step while
+  -- outside the pass radius), never recomputed from the current radial -
+  -- overshooting the centre must not invert the throw.
+  if p.winch then
+    local w = p.winch.ent
+    local wcx, wcy = w.x + tw/2, w.y + tw/2
+    local px, py = p.x + p.w/2, p.y + p.h/2
+    local rx, ry = wcx - px, wcy - py
+    local dist = math.sqrt(rx*rx + ry*ry)
+    if dist <= config.winch.pass_radius then
+      local spd = math.max(p.winch.speed or 0, config.winch.min_throw_speed)
+      local dx, dy = p.winch.dir_x or 0, p.winch.dir_y or 0
+      if dx == 0 and dy == 0 and dist > 0 then
+        -- no stored direction (should not happen): radial as fallback
+        dx, dy = rx / dist, ry / dist
+      end
+      p.vx = dx * spd
+      p.vy = dy * spd
+      p.winch = nil
+      p.gr = false
+      -- the throw plays out untouched for stick_grace steps; the same
+      -- window also keeps a leftover stuck rope arrow from snapping the
+      -- pendulum back on and eating the momentum
+      p.winch_grace = config.winch.stick_grace
+      p.rope_cd = config.winch.stick_grace
+      if WinchLog.on() then
+        WinchLog.log("release", {
+          step = ctx.menu and ctx.menu.step_count or 0,
+          dist = dist, spd = spd,
+          throw_dx = dx, throw_dy = dy,
+          vx = p.vx, vy = p.vy,
+          -- dot of the throw against the player->winch vector: negative
+          -- would mean the throw points back the way they came
+          dot = dx * rx + dy * ry,
+        })
+      end
+      Particles.poof(ctx.ents, wcx, wcy)
+    end
+  end
+
   if p.gr then
     p.coy = cfg.coyote_frames
     p.j_frames = 0
@@ -297,6 +403,11 @@ function Player.physics(ctx)
     p.land_frames = 0
   end
   p.prev_gr = p.gr
+
+  -- the stick grace ends as soon as the throw has landed: the arc's
+  -- physics have played out, so control returns the same step (no
+  -- frictionless coasting with the stick ignored)
+  if p.winch_grace and p.gr then p.winch_grace = nil end
 
   -- key interactions: pick a key up from the world, or grab it off any
   -- key-carrying arrow the player touches (flying or stuck); then carry
@@ -424,8 +535,9 @@ function Player.aim_step(ctx)
       p.was_aiming = false
     end
     -- jumping while attached releases the rope (handled in rope_step);
-    -- only buffer a normal jump when free
-    if ctx.input:pressed("jump") and not p.rope then
+    -- only buffer a normal jump when free. A winch reel is unstoppable,
+    -- so no jump buffer there either.
+    if ctx.input:pressed("jump") and not p.rope and not p.winch then
       p.jbuf = config.player.jump_buffer_frames
     end
   end

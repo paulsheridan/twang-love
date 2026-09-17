@@ -61,7 +61,8 @@ ctx = { config, input, world, ents, tiles, cam, player, die }
 - `world` — the tile grid + flags + slope shapes (from `src/world.lua`),
   created from the loaded Tiled map and the interactable entity lists
 - `ents` — live entity lists from `src/level.lua`: spawn_points, arrows,
-  e_arrows, enemies, particles, keys, locks, doors, switches, springs
+  e_arrows, enemies, particles, keys, locks, doors, switches, springs,
+  winches
 - `player` — the player body
 - `die` — routes player deaths to `Player.die`; `hurt` routes damage to
   `Player.hurt` (systems never require `src/player.lua` for those;
@@ -179,6 +180,35 @@ resizable — the blit re-fits every frame.
   feeding the tangential swing), and the position is pulled back onto
   the rope circle after collision resolution. Detaching preserves
   velocity.
+- **The winch** (motorized rope reel). A rope arrow whose tip enters a
+  winch's box is consumed on impact and the player is attached to the
+  winch instead (`p.winch`): `Player.physics` overrides the velocity
+  with a pull straight toward the winch centre that accelerates by
+  `config.winch.reel_accel` per step up to `max_reel_speed` (after
+  gravity/walk logic, so nothing fights the motor; the rope pendulum is
+  inert — `p.rope` is nil — and a rope line is still drawn from the
+  winch to the player). The reel is unstoppable: jump presses do
+  nothing (no jump buffer either). Once the player's centre is within
+  `config.winch.pass_radius` of the winch centre the reel cuts the line
+  and throws them on through the centre, out the opposite side from
+  the one they hit it from, at `max(reel speed, min_throw_speed)`. The
+  throw direction is **carried from the entry side**: the winch stores
+  the unit vector toward itself at capture and refreshes it every reel
+  step while the player is still outside the pass radius, so a final
+  reel step that overshoots the centre cannot invert the throw
+  (recomputing the radial at release threw ~11% of long approaches
+  back the way they came — the player "stopped dead" or was flung
+  backwards). The escape hatch is firing: `Arrows.fire` cancels a
+  winch reel. Death clears it; non-rope arrows ignore the winch (the
+  entity is solid to nobody). Movement input is ignored through the
+  reel and for `config.winch.stick_grace` steps after the release (no
+  acceleration, no damping, no walk cap — the throw's physics play out
+  untouched; the grace ends early once the player lands), and
+  `p.rope_cd` covers the same window so a leftover stuck rope arrow
+  cannot re-grab the player and eat the momentum mid-arc.
+  `config.winch.debug` enables `src/winchlog.lua` to append a per-event
+  trace (capture/reel/release/grace, including the entry-vs-throw dot)
+  to `winch_debug.txt` in the LÖVE save directory.
 
 ## The archer brain
 

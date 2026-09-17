@@ -20,6 +20,9 @@
 --      force keeps the power level's exact max speed)
 --  11. aiming with the stick tracks the tilt as aim_force and fires at
 --      the scaled speed
+-- plus the test menu's invincibility toggle:
+--  12. invincibility blocks arrow and melee damage (no hearts, no
+--      blood, no i-frames), while a void fall still kills
 --
 -- Usage (from the project root): luajit tests/player_test.lua
 
@@ -397,6 +400,45 @@ do
   assert_true(math.abs(speed2 - spd2) < 1e-9,
     "the full-tilt arrow launched at max speed ("
     .. speed2 .. ", expected " .. spd2 .. ")")
+end
+
+-- ==== 12. invincibility blocks damage; void still kills ====
+do
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local p = g.ctx.player
+  g.settings.invincible = true
+  -- an enemy arrow straight into the player: no hearts lost, no blood
+  place_player(g, 720, 148)
+  table.insert(g.ctx.ents.e_arrows, {
+    x = 704, y = 154, vx = 8, vy = 0, active = true,
+  })
+  run_steps(env, 6)
+  assert_true(p.hp == max_hp(),
+    "an arrow hit while invincible costs nothing (hp " .. p.hp .. ")")
+  assert_true(p.invuln == 0, "no i-frames are granted while invincible")
+  assert_true(#g.ctx.ents.particles == 0,
+    "an invincible hit sprays no blood")
+  -- a melee touch costs nothing either
+  local melee
+  for _, e in ipairs(g.ctx.ents.enemies) do
+    if e.type == "melee" then melee = e break end
+  end
+  local before = #g.ctx.ents.particles
+  for _ = 1, 3 do
+    p.x, p.y, p.vx, p.vy = 660, 212, 0, 0
+    melee.x, melee.y, melee.vx, melee.vy = 652, 208, 0, 0
+    run_steps(env, 1)
+  end
+  assert_true(p.hp == max_hp(), "a melee touch while invincible is free")
+  assert_true(#g.ctx.ents.particles == before,
+    "an invincible melee touch sprays no blood")
+  -- the void is not damage: falling off the world still kills
+  p.hp = 2
+  p.y = g.ctx.world.px_h + 80
+  run_steps(env, 3)
+  assert_true(p.hp == max_hp(),
+    "the void still kills while invincible (respawn refills)")
 end
 
 print(("player tests: %d passed, %d failed"):format(PASS, FAIL))

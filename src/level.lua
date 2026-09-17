@@ -39,6 +39,7 @@ function Level.build(level, config)
     switch     = level.special.switch     or config.tiles.switch,
     spring     = level.special.spring     or config.tiles.spring,
     spring_ext = level.special.spring_ext or config.tiles.spring_ext,
+    winch      = level.special.winch      or config.tiles.winch,
     archer     = level.special.archer     or config.tiles.archer,
     melee      = level.special.melee      or config.tiles.melee,
   }
@@ -54,6 +55,7 @@ function Level.build(level, config)
     doors        = {},
     switches     = {},
     springs      = {},
+    winches      = {},
   }
 
   -- ==== spawn points ====
@@ -127,6 +129,10 @@ function Level.build(level, config)
         table.insert(ents.springs, {x = wx, y = wy, g = o.g, ext = nil,
           spr = o.spr or tiles.spring, rot = o.rot})
       end
+    elseif k == "winch" then
+      local wx, wy = snap_tile(o.x, tw), snap_tile(o.y, tw)
+      table.insert(ents.winches, {x = wx, y = wy, g = o.g,
+        spr = o.spr or tiles.winch, rot = o.rot})
     end
   end
 

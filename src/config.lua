@@ -121,6 +121,18 @@ local Config = {
     colour = 6,                -- PICO-8 palette index of the rope line
   },
 
+  winch = {
+    hit_pad = 2,               -- px grown around a winch's tile for the arrow tip capture
+    reel_accel = 1.2,          -- px/step added to the reel speed each step (the "motor torque")
+    max_reel_speed = 13,       -- pull-in speed cap (px per step)
+    min_throw_speed = 10,      -- guaranteed release speed even after a soft entry (px per step)
+    pass_radius = 10,          -- px from the winch centre at which the player releases
+    stick_grace = 12,          -- steps after release that movement input stays ignored
+                               -- (the throw's physics must play out untouched);
+                               -- ends early once the player lands
+    debug = false,             -- write winch_debug.txt trace lines (src/winchlog.lua)
+  },
+
   enemies = {
     enabled = true,           -- global on/off toggle (controller Y / key e)
     width = 12,
@@ -182,6 +194,7 @@ local Config = {
     spring_ext = 33,
     archer = 90,
     melee = 105,
+    winch = 133,  -- small blue star
   },
 }
 

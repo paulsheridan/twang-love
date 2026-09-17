@@ -26,7 +26,9 @@ Game.__index = Game
 function Game.new()
   local self = setmetatable({}, Game)
   self.input      = Input.new()
-  self.menu_open  = false  -- controls panel; kept for future settings
+  self.menu_open  = false  -- test menu panel (m / tab / start)
+  self.menu_sel   = 1      -- highlighted menu row (1..3)
+  self.settings   = { no_puzzle = false, invincible = false }
   self.step_count = 0
   self.acc        = 0
   self.step_dt    = 1 / config.sim.rate
@@ -59,6 +61,8 @@ function Game:load()
     tiles  = tiles,
     cam    = self.cam,
     player = self.player,
+    settings = self.settings,  -- test-menu toggles (see menu_step)
+    menu   = self,             -- menu panel reads menu_sel/settings
     die    = Player.die,
     hurt   = Player.hurt,
   }
@@ -118,10 +122,10 @@ function Game:step()
   end
 end
 
--- Toggles all enemies on/off (controller Y / key e). Turning them off
--- also disarms anything in flight or mid-shot: enemy arrows vanish and
+-- Toggles all enemies on/off (test-menu row 3). Turning them off also
+-- disarms anything in flight or mid-shot: enemy arrows vanish and
 -- archers drop back to patrol, so nothing resumes mid-shot when the
--- toggle comes back on.
+-- toggle comes back on. Disabled enemies are also not drawn.
 function Game:toggle_enemies()
   config.enemies.enabled = not config.enemies.enabled
   if not config.enemies.enabled then
@@ -136,15 +140,41 @@ function Game:toggle_enemies()
   end
 end
 
--- One 30hz tick of the controls panel (game world is paused). Kept for
--- future settings; right now it only closes.
+-- One 30hz tick of the test menu (game world is paused). Up/down move
+-- the selection, c/X toggles the highlighted row, aim/jump closes.
 function Game:menu_step()
   local ctx = self.ctx
   ctx.input:step()
-  -- future settings (control tweaks, toggles) go here
+  local rows = 3
+  if ctx.input:pressed("up") then
+    self.menu_sel = ((self.menu_sel - 2) % rows) + 1
+  end
+  if ctx.input:pressed("down") then
+    self.menu_sel = (self.menu_sel % rows) + 1
+  end
+  if ctx.input:pressed("swap") then
+    if self.menu_sel == 1 then self:toggle_puzzle()
+    elseif self.menu_sel == 2 then self:toggle_invincibility()
+    else self:toggle_enemies() end
+  end
   if ctx.input:pressed("aim") or ctx.input:pressed("jump") then
     self.menu_open = false
   end
+end
+
+-- Test-menu toggles.
+
+-- Hides every key, lock and door (they stop rendering, stop blocking,
+-- stop being picked up or triggered). Toggling back restores each piece
+-- to its pre-toggle state (consumed keys stay consumed).
+function Game:toggle_puzzle()
+  self.settings.no_puzzle = not self.settings.no_puzzle
+  Interactables.set_puzzle_disabled(
+    self.ents, self.player, self.settings.no_puzzle)
+end
+
+function Game:toggle_invincibility()
+  self.settings.invincible = not self.settings.invincible
 end
 
 function Game:update(dt)
@@ -176,23 +206,18 @@ function Game:keypressed(key, isrepeat)
   -- latch presses immediately so sub-frame taps are never lost; OS key
   -- repeats are ignored (the 30hz input:step provides pico-8-style repeat)
   self.input:latch_key(key, isrepeat)
-  -- m / tab toggle the control-style menu (start does it on gamepads)
+  -- m / tab toggle the test menu (start does it on gamepads)
   if not isrepeat and (key == "m" or key == "tab") then
     self.menu_open = not self.menu_open
-  end
-  -- e toggles all enemies (same as the controller's Y button)
-  if not isrepeat and key == "e" then
-    self:toggle_enemies()
   end
 end
 
 function Game:gamepadpressed(button)
-  if button == "start" then  -- start toggles the control-style menu
+  if button == "start" then  -- start toggles the test menu
     self.menu_open = not self.menu_open
     return
   end
   if button == "back" then love.event.quit() return end
-  if button == "y" then self:toggle_enemies() return end
   self.input:latch_gamepad(button)
 end
 

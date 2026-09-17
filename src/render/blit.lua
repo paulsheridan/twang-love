@@ -43,7 +43,7 @@ function Blit.render(ctx, menu_open)
   -- HUD on the canvas: hearts live in screen space (outside the camera
   -- translate), so they stay pinned to the top-left corner
   render_hearts(ctx)
-  if menu_open then render_menu() end
+  if menu_open then render_menu(ctx) end
   love.graphics.setCanvas()
 
   -- blit the native canvas to the window at an INTEGER scale: fractional

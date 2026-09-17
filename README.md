@@ -23,10 +23,30 @@ love .
 | aim angle & force (while aiming) | left/right | left stick (analog) |
 | power (while aiming) | up/down | physical dpad up/down |
 | cycle arrow type | c | X |
-| toggle enemies | e | Y |
+| test menu panel | m / tab | start |
+| menu: select item | up/down | dpad up/down |
+| menu: toggle item | c | X |
+| menu: close | z / x | right bumper / A / B |
 | fullscreen | f11 | — |
-| controls panel | m / tab | start |
 | quit | escape | back |
+
+## Test menu
+
+The panel (`m` / `tab` / `start`) doubles as a test menu with three
+toggles. The game world pauses while it's open.
+
+- **doors/keys/locks hidden** — every key, lock and door vanishes: they
+  stop rendering, doors stop blocking (and stop bouncing arrows), keys
+  can't be picked up and locks can't be triggered, and a carried key
+  drops off. Toggling back restores every piece to its pre-toggle state
+  (keys consumed before the toggle stay consumed).
+- **invincibility** — arrows and melee touches can't hurt you (no
+  hearts lost, no i-frames). Falling off the world still kills, so a
+  test session can't get stuck.
+- **enemies enabled** — off makes every enemy invisible and inert: they
+  stop updating, their arrows vanish and archers drop back to patrol
+  (they were previously toggled with the keyboard `e` key / pad `Y`,
+  both now unmapped). Toggling back on re-enables them.
 
 While aiming, the world runs in slow motion and the bow's trajectory is
 previewed. Power levels: `lo` / `md` / `hi`. With a control stick the
