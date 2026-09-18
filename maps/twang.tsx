@@ -389,6 +389,11 @@
    <property name="kind" value="archer"/>
   </properties>
  </tile>
+ <tile id="138">
+  <properties>
+   <property name="kind" value="laser"/>
+  </properties>
+ </tile>
  <tile id="140">
   <properties>
    <property name="kind" value="melee"/>

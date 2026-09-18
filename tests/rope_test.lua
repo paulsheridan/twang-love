@@ -324,9 +324,11 @@ do
   local g = env.TWANG_TEST.game
   local p = g.ctx.player
   local w = g.ctx.world
-  place_player(g, 100, 180)  -- mid-air over the spawn-area floor
+  place_player(g, 100, 175)  -- mid-air above the sticky tile, with room for
+                             -- the arrow's tip to clear the player's box
+                             -- before the bounce-back (substep-sample margin)
   p.gr = false
-  w:set_tile(6, 13, 10)    -- sticky tile right below the player
+  w:set_tile(6, 13, 10)    -- sticky tile below the player
   select_propel(env)
   assert_true(p.arrow_kind == "propel", "propel arrows equipped")
   fire_at(env, g, 0.25)

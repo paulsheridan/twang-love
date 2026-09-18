@@ -23,14 +23,17 @@ function Camera.snap(cam, player, world)
   cam.y = math.max(0, math.min(world.px_h - vh, player.y + player.h/2 - vh/2))
 end
 
--- Smooth follow: eases toward the player each step, clamped to the world.
-function Camera.update(cam, player, world)
+-- Smooth follow: eases toward the player each step, clamped to the
+-- world. The follow fraction is applied over `dt` steps of world time
+-- (exponent-scaled, so slow motion slows the pan with the world).
+function Camera.update(cam, player, world, dt)
   local vw, vh = config.view.width, config.view.height
   local tx = player.x + player.w/2 - vw/2
   local ty = player.y + player.h/2 - vh/2
   tx, ty = Camera.clamp(tx, ty, world)
-  cam.x = cam.x + (tx - cam.x) * config.camera.follow
-  cam.y = cam.y + (ty - cam.y) * config.camera.follow
+  local f = 1 - (1 - config.camera.follow) ^ dt
+  cam.x = cam.x + (tx - cam.x) * f
+  cam.y = cam.y + (ty - cam.y) * f
 end
 
 return Camera

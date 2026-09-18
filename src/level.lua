@@ -42,6 +42,7 @@ function Level.build(level, config)
     winch      = level.special.winch      or config.tiles.winch,
     archer     = level.special.archer     or config.tiles.archer,
     melee      = level.special.melee      or config.tiles.melee,
+    laser      = level.special.laser      or config.tiles.laser,
   }
 
   local ents = {
@@ -80,7 +81,7 @@ function Level.build(level, config)
 
   -- ==== enemies ====
   for _, o in ipairs(level.objects) do
-    if o.kind == "archer" or o.kind == "melee" then
+    if o.kind == "archer" or o.kind == "melee" or o.kind == "laser" then
       local ex, ey = snap_tile(o.x, tw), snap_tile(o.y, tw)
       local e = {
         x = ex, y = ey,
@@ -88,14 +89,16 @@ function Level.build(level, config)
         vx = 0, vy = 0, w = cfg.width, h = cfg.height,
         gr = false, facing = 1, type = o.kind,
         shoot_cd = cfg.shoot_cooldown,
-        spr = o.spr or ((o.kind == "melee") and tiles.melee or tiles.archer),
+        spr = o.spr or ((o.kind == "melee") and tiles.melee
+          or (o.kind == "laser") and tiles.laser or tiles.archer),
         rot = o.rot,
       }
-      if o.kind == "archer" then
-        -- sense -> aim -> volley -> investigate brain state
-        e.state = "patrol"
+      -- every brain starts on patrol with nothing tracked yet; the
+      -- ranged brains also carry an aim telegraph timer
+      e.state = "patrol"
+      e.last_known = nil
+      if o.kind == "archer" or o.kind == "laser" then
         e.aim_t = 0
-        e.last_known = nil
       end
       apply_object_props(e, o)
       table.insert(ents.enemies, e)

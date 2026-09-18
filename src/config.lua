@@ -77,7 +77,9 @@ local Config = {
     start_power = 2,
     min_power = 1,
     max_power = 3,
-    slow_motion_steps = 12,     -- full physics runs once every N steps while aiming
+    slow_motion_steps = 12,     -- aiming divides world time by this: physics
+                                -- runs every step with dt = 1/N (true slow
+                                -- motion at a steady framerate)
     downward_sin_threshold = 0.5, -- aim angle p8sin past this counts as "aimed down"
 
     -- analog force: the stick's tilt (its distance from zero, remapped
@@ -138,6 +140,7 @@ local Config = {
     width = 12,
     height = 16,
     melee_speed = 1.2,
+    melee_chase_speed = 2.5,  -- sprint while a seen player is being chased
     archer_speed = 0.8,
     air_drag = 0.85,          -- horizontal damping while airborne
     detect_distance = 160,    -- archer sight range (px)
@@ -156,6 +159,21 @@ local Config = {
     max_drop_tiles = 4,       -- investigating archer won't step off deeper drops
     investigate_timeout = 240, -- max steps spent walking to the last known spot
     investigate_reach = 16,   -- px from the last known spot before giving up
+
+    -- laser rifleman (archer-like brain: see -> blink-aim -> beam ->
+    -- wait/investigate); senses and patrol knobs above are shared
+    laser_speed = 0.8,        -- patrol speed (px per step)
+    laser_sight_steps = 45,   -- blinking-sight aim duration before firing (1.5s)
+    laser_sight_blink = 5,    -- sight blink cadence (steps per on/off toggle)
+    laser_beam_steps = 18,    -- steps the fired beam stays live (0.6s)
+    laser_beam_width = 6,     -- beam thickness (px)
+    laser_half_hearts = 2,    -- damage per beam hit (a full heart)
+    laser_ray_step = 4,       -- px between samples along the beam's ray
+    laser_rapid_min = 45,     -- minimum wait between follow-up shots (steps)
+    laser_rapid_extra = 45,   -- extra randomized wait on top of laser_rapid_min
+    suppress_steps = 90,      -- cover-fire window after losing sight (3s):
+                              -- ranged enemies keep firing blind at the last
+                              -- known position, then investigate
   },
 
   springs = {
@@ -194,6 +212,7 @@ local Config = {
     spring_ext = 33,
     archer = 90,
     melee = 105,
+    laser = 138,  -- aiming rifleman (kind also defined in maps/twang.tsx)
     winch = 133,  -- small blue star
   },
 }

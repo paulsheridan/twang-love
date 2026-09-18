@@ -39,14 +39,16 @@ function Particles.blood(ents, x, y, avx, avy, bvx, bvy)
   end
 end
 
-function Particles.update(ents)
+-- Advances the particles by `dt` steps of world time (1 normally;
+-- reduced while aiming, so the spray slows with everything else).
+function Particles.update(ents, dt)
   local list = ents.particles
   for i = #list, 1, -1 do
     local pt = list[i]
-    pt.x   = pt.x + pt.vx
-    pt.y   = pt.y + pt.vy
-    pt.vy  = pt.vy + config.particles.gravity
-    pt.life = pt.life - 1
+    pt.x   = pt.x + pt.vx * dt
+    pt.y   = pt.y + pt.vy * dt
+    pt.vy  = pt.vy + config.particles.gravity * dt
+    pt.life = pt.life - dt
     if pt.life <= 0 then table.remove(list, i) end
   end
 end

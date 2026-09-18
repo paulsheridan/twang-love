@@ -125,23 +125,27 @@ function Arrows.fire(ctx, angle, kind, force)
   if kind == "propel" and p.rope then p.rope = nil end
 end
 
--- One 30hz step of a player arrow's flight. Stuck arrows only age.
+-- One sim step of a player arrow's flight (world time = ctx.dt steps).
+-- Stuck arrows only age.
 function Arrows.step_one(ctx, a)
   local ents, world = ctx.ents, ctx.world
   local cfg = ctx.config.arrows
   local tw = ctx.config.tile_size
+  local dt = ctx.dt
   local p0x, p0y  -- previous substep position (rope range tracking)
 
-  if a.grab_cd and a.grab_cd > 0 then a.grab_cd = a.grab_cd - 1 end
-  a.lt = a.lt - 1
+  if a.grab_cd and a.grab_cd > 0 then
+    a.grab_cd = math.max(0, a.grab_cd - dt)
+  end
+  a.lt = a.lt - dt
   if a.lt <= 0 then a.active = false return end
   if a.stuck then return end
 
   -- out of bounces: keep flying and spinning briefly, then poof
   if a.dying then
-    a.dying = a.dying - 1
-    a.spin  = a.spin + cfg.spin_out_speed
-    local nx, ny = a.x + a.vx, a.y + a.vy
+    a.dying = a.dying - dt
+    a.spin  = a.spin + cfg.spin_out_speed * dt
+    local nx, ny = a.x + a.vx * dt, a.y + a.vy * dt
     if a.dying <= 0 or world:solid_at(nx, ny) or world:in_slope_solid(nx, ny) then
       Particles.poof(ents, a.x, a.y)
       a.active = false
@@ -151,11 +155,12 @@ function Arrows.step_one(ctx, a)
     return
   end
 
-  a.vy = a.vy + cfg.gravity
+  a.vy = a.vy + cfg.gravity * dt
   -- substep the flight so fast arrows never skip a tile: collision and
-  -- tip interactions are sampled every few pixels along the frame's path
-  local nsub = math.max(1, math.ceil((math.abs(a.vx) + math.abs(a.vy)) / cfg.substep_pixels))
-  local sx, sy = a.vx / nsub, a.vy / nsub
+  -- tip interactions are sampled every few pixels along the step's path
+  local nsub = math.max(1,
+    math.ceil((math.abs(a.vx) + math.abs(a.vy)) * dt / cfg.substep_pixels))
+  local sx, sy = a.vx * dt / nsub, a.vy * dt / nsub
   for _ = 1, nsub do
     local nx = a.x + sx
     local ny = a.y + sy
@@ -379,8 +384,9 @@ function Arrows.step_one(ctx, a)
   end
 end
 
--- One 30hz step over all player arrows. The list is read fresh each
--- iteration: a mid-loop player death resets it (the loop then ends early).
+-- One sim step over all player arrows (world time = ctx.dt steps). The
+-- list is read fresh each iteration: a mid-loop player death resets it
+-- (the loop then ends early).
 function Arrows.update(ctx)
   local ents, p = ctx.ents, ctx.player
   for i = #ents.arrows, 1, -1 do
@@ -433,8 +439,9 @@ function Arrows.check_platforms(ctx)
   end
 end
 
--- One 30hz step over all enemy arrows (simple ballistic darts). The list
--- is read fresh each iteration: a mid-loop player death resets it.
+-- One sim step over all enemy arrows (simple ballistic darts; world
+-- time = ctx.dt steps). The list is read fresh each iteration: a
+-- mid-loop player death resets it.
 -- Flight is substepped like the player's arrows: a dart moves up to
 -- ~16.5px per step and the player's box is only 8px wide, so a single
 -- endpoint check would let fast arrows tunnel straight through. A hit
@@ -443,6 +450,7 @@ end
 function Arrows.update_enemy_arrows(ctx)
   local ents, p, world = ctx.ents, ctx.player, ctx.world
   local cfg = ctx.config.arrows
+  local dt = ctx.dt
   for i = #ents.e_arrows, 1, -1 do
     local a = ents.e_arrows[i]
     if not a then break end
@@ -450,13 +458,13 @@ function Arrows.update_enemy_arrows(ctx)
       table.remove(ents.e_arrows, i)
     elseif a.hit_stick then
       -- frozen at the player-impact point: no motion, no collisions
-      a.hit_stick = a.hit_stick - 1
+      a.hit_stick = a.hit_stick - dt
       if a.hit_stick <= 0 then table.remove(ents.e_arrows, i) end
     else
-      a.vy = a.vy + cfg.gravity
+      a.vy = a.vy + cfg.gravity * dt
       local nsub = math.max(1,
-        math.ceil((math.abs(a.vx) + math.abs(a.vy)) / cfg.substep_pixels))
-      local sx, sy = a.vx / nsub, a.vy / nsub
+        math.ceil((math.abs(a.vx) + math.abs(a.vy)) * dt / cfg.substep_pixels))
+      local sx, sy = a.vx * dt / nsub, a.vy * dt / nsub
       for _ = 1, nsub do
         local nx = a.x + sx
         local ny = a.y + sy

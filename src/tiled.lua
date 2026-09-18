@@ -19,7 +19,7 @@ local json = require("lib.json")
 -- tileset does not define the matching property
 local DEFAULT_KINDS = {
   spawn = 63, key = 70, lock = 71, door = 72, archer = 112, melee = 116,
-  switch = 171, spring = 16, spring_ext = 33, winch = 133,
+  laser = 138, switch = 171, spring = 16, spring_ext = 33, winch = 133,
 }
 local DEFAULT_SLOPES = {
   [6] = "/floor",  [13] = "/floor", -- / floor

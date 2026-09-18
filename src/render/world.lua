@@ -143,6 +143,43 @@ local function draw_archer_aims(ctx)
   end
 end
 
+-- ==== laser riflemen ====
+
+-- An aiming laser telegraphs a blinking red sight line at the player's
+-- centre; a firing laser shows its live beam: a thick red ribbon (two
+-- outer lines) around a hot white core, from the muzzle out to the wall
+-- it stops at. Vector primitives draw 2px thick, so the offsets fake the
+-- extra width without transforming the pixel canvas.
+local function draw_lasers(ctx)
+  if not config.enemies.enabled then return end  -- toggled off: invisible
+  local cfg = config.enemies
+  for _, e in ipairs(ctx.ents.enemies) do
+    if e.type == "laser" then
+      local ex, ey = math.floor(e.x + e.w/2), math.floor(e.y + e.h/2)
+      if e.beam then
+        local b = e.beam
+        local tx = ex + math.floor(b.dx * b.len)
+        local ty = ey + math.floor(b.dy * b.len)
+        local ox, oy = math.floor(-b.dy * 2), math.floor(b.dx * 2)
+        love.graphics.setColor(pcol(8))
+        love.graphics.line(ex + ox, ey + oy, tx + ox, ty + oy)
+        love.graphics.line(ex - ox, ey - oy, tx - ox, ty - oy)
+        love.graphics.setColor(pcol(7))
+        love.graphics.line(ex, ey, tx, ty)
+      elseif e.state == "aim" and e.aim_dx and e.last_known then
+        -- the sight blinks on and off while the shot charges
+        local phase = math.floor((cfg.laser_sight_steps - e.aim_t)
+          / cfg.laser_sight_blink) % 2
+        if phase == 0 then
+          love.graphics.setColor(pcol(8))
+          love.graphics.line(ex, ey,
+            math.floor(e.last_known.x), math.floor(e.last_known.y))
+        end
+      end
+    end
+  end
+end
+
 -- ==== player arrows ====
 
 -- Player arrows draw a size up from the enemy darts: a 9px shaft with a
@@ -219,6 +256,7 @@ function Render.world(ctx)
   draw_particles(ctx)
   draw_enemies(ctx)
   draw_archer_aims(ctx)
+  draw_lasers(ctx)
   draw_e_arrows(ctx)
   draw_arrows(ctx)
   draw_ropes(ctx)

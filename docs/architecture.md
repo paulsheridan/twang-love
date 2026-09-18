@@ -72,10 +72,15 @@ Each sim step (`Game:step`, 1/30s) runs:
 
 1. `input:step()` — press edges for this step
 2. `Player.aim_step` — bow aiming, power levels, firing on release
-3. full physics while **not** aiming (aim mode runs full physics only
-   every `config.aiming.slow_motion_steps` steps — the bow slow-motion):
-   player physics, player arrows, enemies, enemy arrows, particles,
-   spring timers, camera
+3. a full physics pass **every** step: player physics, player arrows,
+   enemies, enemy arrows, particles, spring timers, camera. Each pass
+   advances world time by `ctx.dt` steps — 1 normally, or
+   1/`config.aiming.slow_motion_steps` while aiming, which is the bow's
+   slow motion: the world moves at 1/N speed but is simulated (and
+   rendered) at the steady full framerate, so aiming never freezes the
+   world into a slideshow. Everything world-time based (integrators,
+   timers) scales with `ctx.dt`; real-time things (input cadence, bow
+   turning) do not.
 
 Rendering is a pure read of the same state: `render/blit.lua` draws the
 world into the 480x320 canvas (world pass, then the player on top, then
@@ -213,7 +218,11 @@ resizable — the blit re-fits every frame.
 ## The archer brain
 
 Archers (`src/enemies.lua`) run a state machine: `patrol -> aim ->
-volley -> (investigate | patrol)`.
+volley -> (cover fire | investigate) -> patrol`. All three enemy types
+share the tracking model: **the player's position is refreshed into
+`last_known` every step it is visible**, in every state (patrol, aim,
+the rapid-fire wait, cover fire and searches included), so a shot fired
+after sight breaks aims at the freshest known spot.
 
 - **Senses** (`Enemies.sees`): the player must be within
   `enemies.detect_distance`, in front of the archer (a back-turned
@@ -234,19 +243,70 @@ volley -> (investigate | patrol)`.
 - **Rapid fire**: while the player stays visible the archer keeps
   shooting — after each volley it waits `rapid_min`..`rapid_min +
   rapid_extra` steps (semi randomized), then draws and fires again.
-  The moment it loses the player — during a draw or between volleys —
-  the cycle ends in an investigation.
-- **Lost sight mid-aim**: the volley still fires at the last solved
-  angle, then the archer investigates the last known position — walking
-  toward it without stopping at ledges, for up to
+- **Cover fire**: the moment line of sight breaks — mid-draw or between
+  volleys — the archer keeps firing at the last known position on the
+  same cadence for `enemies.suppress_steps` (3s), holding its ground.
+  A shot already mid-telegraph still fires at its last solved angle.
+  After the window lapses it investigates the last known position —
+  walking toward it without stopping at ledges, for up to
   `enemies.investigate_timeout`, ending early within
-  `enemies.investigate_reach` of the spot, or immediately when it
-  re-spots the player (once its cooldown lapses). A drop deeper than
+  `enemies.investigate_reach` of the spot. A drop deeper than
   `enemies.max_drop_tiles` (4 tiles) is refused: the archer decides to
   stay on its platform and the search ends there.
+- **Re-engage**: seeing the player again — during cover fire or a
+  search — returns to combat at once (the shoot cooldown only gates a
+  patroller's first spot).
 - **Backed perch**: an archer with a wall within two tiles behind it
   and a ledge within two tiles ahead holds the edge (stands still,
   facing out) instead of pacing back and forth in the box.
+
+The laser rifleman shares this brain verbatim (`ranged_brain` with a
+per-type spec: aim solve, telegraph length, cadence, shot release), so
+future ranged enemies inherit the whole loop.
+
+## The laser rifleman brain
+
+Laser riflemen (`src/enemies.lua`) run the shared `ranged_brain` — the
+archer's skeleton (same senses, same cover-fire/investigate loop) with
+a beam weapon instead of a ballistic volley.
+
+- **Aim**: on spotting, the rifleman stops, locks a unit fire direction
+  at the player and re-tracks it every step the player stays visible.
+  The shot is telegraphed with a **blinking laser sight**: a thin red
+  line from the muzzle to the player's centre, blinking on/off every
+  `enemies.laser_sight_blink` steps for `enemies.laser_sight_steps`
+  before firing.
+- **Beam**: when the telegraph lapses the beam fires along the last
+  solved direction, marched out (`enemies.laser_ray_step` sampling) to
+  the first wall — anything arrows cannot fly through (doors included,
+  arrow slits excluded) or a slope wedge — or to the world's edge. The
+  beam stays live for `enemies.laser_beam_steps`, drawn as a thick red
+  ribbon around a hot white core, and burns whatever crosses it:
+  a ray/box (slab) test against the player each live step costs
+  `enemies.laser_half_hearts` (2 — a full heart) with the usual i-frame
+  shield, so a lingering beam lands at most one hit per shot.
+- **Rapid fire / cover fire**: the archer's cadence with slower
+  recharge numbers (`laser_rapid_min`..`+laser_rapid_extra` — a
+  full-heart beam buys a longer recharge than the archer's volley
+  window). Sight breaks open the same cover-fire window (blind shots at
+  the last tracked spot, full telegraph included), then the search.
+- **The enemies toggle** (test menu) disarms a firing laser along with
+  the archers: live beams go out and the brain drops back to patrol.
+
+## The melee brain
+
+Melee enemies (`src/enemies.lua`) gain a small brain: `patrol -> chase
+-> investigate`.
+
+- **Chase**: a visible player is sprinted after at
+  `enemies.melee_chase_speed` (2.5 px/step — pressure, but outrunnable),
+  target refreshed from `last_known` every visible step.
+- **Search**: on sight break the chase becomes a patrol-pace walk to
+  the last known spot (`investigate_timeout`/`investigate_reach`); a
+  drop deeper than `max_drop_tiles` is refused and ends the walk.
+- **Re-engage**: seeing the player again returns to the chase at once;
+  the search timing out or arriving settles back to patrol. Contact
+  kill is unchanged (it happens before the brain, as before).
 
 ## Testing
 
@@ -266,9 +326,18 @@ luajit tests/trace_diff.lua tests/trace_baseline.txt /tmp/trace.txt
 
 2. **Behaviour suites** — `tests/enemies_test.lua` covers the archer
    senses (back-turned, wall-blocked, out-of-range), the aim state, the
-   staggered three-arrow volley, the rapid-fire cadence, the
-   investigate walk (roam exemption, deep-drop refusal, leaving the
-   platform) and the backed-perch hold; `tests/player_test.lua` covers
+   staggered three-arrow volley, the rapid-fire cadence, the cover-fire
+   window (blind volleys at the last known spot, holding ground,
+   re-engaging on sight, handing over to the search), continuous
+   last-known tracking, the cooldown-free re-engage, the investigate
+   walk (roam exemption, deep-drop refusal, leaving the platform), the
+   backed-perch hold and the melee brain (chase speed, search, re-chase,
+   deep-drop refusal); `tests/laser_test.lua` covers
+   the laser rifleman (spot -> blink-aim fields, telegraph expiry
+   firing, the wall-stopping beam march, the full-heart hit and its
+   i-frame single-hit rule, the last-known-spot shot that misses a
+   fleeing player, wall-blocked sight, the slower cadence and the
+   toggle disarm); `tests/player_test.lua` covers
    the hearts system (i-frame-gated melee drain, arrow hits, fatal
    refill, void death); `tests/rope_test.lua` covers the rope arrow
    (attach + hang, pendulum swing bounds, detach-preserving-velocity,
@@ -276,6 +345,7 @@ luajit tests/trace_diff.lua tests/trace_baseline.txt /tmp/trace.txt
 
 ```sh
 luajit tests/enemies_test.lua
+luajit tests/laser_test.lua
 luajit tests/player_test.lua
 luajit tests/rope_test.lua
 ```

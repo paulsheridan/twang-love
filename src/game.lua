@@ -2,8 +2,9 @@
 -- camera, input), runs the fixed-timestep 30hz simulation, the controls
 -- panel mode, and renders via src/render/blit.lua.
 --
--- Simulation is a fixed 1/30s timestep with an accumulator, mirroring the
--- pico-8 cart's 30hz update. Held input is polled once per rendered frame
+-- Simulation is a fixed 1/30s timestep with an accumulator. Each step
+-- advances world time by ctx.dt steps (1 normally; reduced while aiming
+-- for smooth slow motion). Held input is polled once per rendered frame
 -- (src/input.lua); press edges are evaluated once per sim step.
 
 local config   = require("src.config")
@@ -65,6 +66,7 @@ function Game:load()
     menu   = self,             -- menu panel reads menu_sel/settings
     die    = Player.die,
     hurt   = Player.hurt,
+    dt     = 1,  -- world-time scale of the current step (Game:step sets it)
   }
 
   Player.reset(self.player, ents.spawn_points, self.cam, self.world)
@@ -96,9 +98,12 @@ end
 
 -- ==== simulation ====
 
--- One 30hz tick (mirrors _update in twang.p8): aiming/firing first, then
--- full physics while not aiming (aim mode runs full physics only every
--- slow_motion_steps, so the bow gets its slow-motion effect).
+-- One 30hz tick: aiming/firing first, then a full physics pass every
+-- step. The step advances world time by dt steps (1 normally; 1 /
+-- aiming.slow_motion_steps while aiming, so slow motion runs every
+-- physics pass at a steady cadence instead of skipping passes).
+-- Everything world-time based (integrators, timers) scales with ctx.dt;
+-- real-time things (input cadence, bow turning) do not.
 function Game:step()
   local ctx = self.ctx
   self.step_count = self.step_count + 1
@@ -107,25 +112,26 @@ function Game:step()
   Player.arrow_step(ctx)
   Player.aim_step(ctx)
 
-  local do_phys = not ctx.input:down("aim")
-               or (self.step_count % config.aiming.slow_motion_steps == 0)
-  if do_phys then
-    Player.physics(ctx)
-    Arrows.update(ctx)
-    if config.enemies.enabled then
-      Enemies.update(ctx)
-      Arrows.update_enemy_arrows(ctx)
-    end
-    Particles.update(ctx.ents)
-    Interactables.update_springs(ctx.ents)
-    Camera.update(ctx.cam, ctx.player, ctx.world)
+  local dt = not ctx.input:down("aim")
+           and 1
+           or (1 / config.aiming.slow_motion_steps)
+  ctx.dt = dt
+  Player.physics(ctx)
+  Arrows.update(ctx)
+  if config.enemies.enabled then
+    Enemies.update(ctx)
+    Arrows.update_enemy_arrows(ctx)
   end
+  Particles.update(ctx.ents, dt)
+  Interactables.update_springs(ctx.ents, dt)
+  Camera.update(ctx.cam, ctx.player, ctx.world, dt)
 end
 
 -- Toggles all enemies on/off (test-menu row 3). Turning them off also
--- disarms anything in flight or mid-shot: enemy arrows vanish and
--- archers drop back to patrol, so nothing resumes mid-shot when the
--- toggle comes back on. Disabled enemies are also not drawn.
+-- disarms anything in flight or mid-shot: enemy arrows vanish, archers
+-- drop back to patrol, live beams go out and chasing/searching melee
+-- calm down, so nothing resumes mid-shot when the toggle comes back
+-- on. Disabled enemies are also not drawn.
 function Game:toggle_enemies()
   config.enemies.enabled = not config.enemies.enabled
   if not config.enemies.enabled then
@@ -135,6 +141,14 @@ function Game:toggle_enemies()
         e.state = "patrol"
         e.volley = nil
         e.aim_vx, e.aim_vy = nil, nil
+        e.suppress_t = nil
+      elseif e.type == "laser" then
+        e.state = "patrol"
+        e.beam = nil
+        e.aim_dx, e.aim_dy = nil, nil
+        e.suppress_t = nil
+      else
+        e.state = "patrol"
       end
     end
   end

@@ -1,7 +1,11 @@
--- Enemies: patrolling melee contact-killers and archers with a
--- sense -> aim -> volley -> investigate brain. Patrols are bounded: an
--- enemy turns back at walls, ledges, or enemies.roam_tiles from its
--- spawn point.
+-- Enemies: patrolling melee contact-killers, archers and laser riflemen
+-- with a sense -> combat -> cover fire -> investigate brain. Every enemy
+-- tracks the player's position every step it is visible; when sight
+-- breaks the ranged enemies keep firing at the last known position for
+-- enemies.suppress_steps (cover fire), then investigate; the melee
+-- sprints after the player while it is seen. Seeing the player again
+-- always returns them to combat. Patrols are bounded: an enemy turns
+-- back at walls, ledges, or enemies.roam_tiles from its spawn point.
 --
 -- Archer senses:
 --   * the player must be inside `detect_distance`, in front of the archer
@@ -111,17 +115,6 @@ local function solve_aim(ctx, e, tx, ty)
   e.aim_blocked = true
 end
 
--- ==== archer brain ====
-
-local function enter_aim(ctx, e)
-  local cfg = config.enemies
-  local p = ctx.player
-  e.state = "aim"
-  e.aim_t = cfg.aim_steps
-  e.last_known = {x = p.x + p.w/2, y = p.y + p.h/2}
-  solve_aim(ctx, e, e.last_known.x, e.last_known.y)
-end
-
 -- Spawns one enemy arrow flying at `angle` (radians) from (x, y).
 function Enemies.spawn_e_arrow(ctx, x, y, angle)
   local speed = config.arrows.enemy_speed
@@ -158,60 +151,265 @@ function Enemies.fire_volley(ctx, e)
   e.shoot_cd = config.enemies.shoot_cooldown
 end
 
--- One 30hz tick of the archer brain: spotting, aiming, volleying,
--- rapid-fire cadence while the player stays visible, and investigating
--- the last known player position.
-local function archer_brain(ctx, e)
+-- ==== laser rifleman ====
+
+-- Points the laser at (tx, ty): stores the unit aim direction on the
+-- enemy (the beam fires along the last solved direction).
+local function solve_beam_aim(ctx, e, tx, ty)
+  local ex, ey = e.x + e.w/2, e.y + e.h/2
+  local dx, dy = tx - ex, ty - ey
+  local len = math.sqrt(dx*dx + dy*dy)
+  if len > 0 then
+    e.aim_dx, e.aim_dy = dx/len, dy/len
+  else
+    e.aim_dx, e.aim_dy = e.facing, 0
+  end
+end
+
+-- Px distance along a unit vector from (x, y) to the world's bounds.
+local function range_to_bounds(x, y, ux, uy, w, h)
+  local t = math.huge
+  if ux > 0 then t = math.min(t, (w - x) / ux) end
+  if ux < 0 then t = math.min(t, -x / ux) end
+  if uy > 0 then t = math.min(t, (h - y) / uy) end
+  if uy < 0 then t = math.min(t, -y / uy) end
+  if t == math.huge or t < 0 then t = 0 end
+  return t
+end
+
+-- Marches a ray from (x, y) along the unit vector (ux, uy) until it hits
+-- terrain (anything arrows cannot fly through, plus slopes) or leaves the
+-- world, and returns the px distance travelled. Exposed for tests.
+function Enemies.beam_range(world, x, y, ux, uy)
   local cfg = config.enemies
+  local step = cfg.laser_ray_step
+  local bound = range_to_bounds(x, y, ux, uy, world.px_w, world.px_h)
+  local d = 0
+  while d < bound do
+    local nd = math.min(d + step, bound)
+    if world:solid_for_arrow(x + ux*nd, y + uy*nd)
+    or world:in_slope_solid(x + ux*nd, y + uy*nd) then
+      return nd
+    end
+    d = nd
+  end
+  return bound
+end
+
+-- True when the beam segment from (ex, ey) along the unit vector (ux, uy)
+-- for `len` px crosses the player's box, grown by `pad` px on every side
+-- (the slab test: the segment must enter both the box's x and y slabs).
+local function beam_hits_player(ex, ey, ux, uy, len, p, pad)
+  local tmin, tmax = 0, len
+  if ux == 0 then
+    if ex < p.x - pad or ex > p.x + p.w + pad then return false end
+  else
+    local t1 = (p.x - pad - ex) / ux
+    local t2 = (p.x + p.w + pad - ex) / ux
+    if t1 > t2 then t1, t2 = t2, t1 end
+    tmin = math.max(tmin, t1)
+    tmax = math.min(tmax, t2)
+  end
+  if uy == 0 then
+    if ey < p.y - pad or ey > p.y + p.h + pad then return false end
+  else
+    local t1 = (p.y - pad - ey) / uy
+    local t2 = (p.y + p.h + pad - ey) / uy
+    if t1 > t2 then t1, t2 = t2, t1 end
+    tmin = math.max(tmin, t1)
+    tmax = math.min(tmax, t2)
+  end
+  return tmax >= tmin
+end
+
+-- Fires the laser: locks the beam along the last aimed direction, marched
+-- out to the first wall (or the world's edge), and starts the cooldown.
+function Enemies.fire_beam(ctx, e)
+  local cfg = config.enemies
+  local ex, ey = e.x + e.w/2, e.y + e.h/2
+  local dx, dy = e.aim_dx or e.facing, e.aim_dy or 0
+  local len = math.sqrt(dx*dx + dy*dy)
+  if len > 0 then dx, dy = dx/len, dy/len else dx, dy = e.facing, 0 end
+  e.beam = {
+    dx = dx, dy = dy,
+    len = Enemies.beam_range(ctx.world, ex, ey, dx, dy),
+    t = cfg.laser_beam_steps,
+  }
+  e.shoot_cd = cfg.shoot_cooldown
+end
+
+-- ==== brains: ranged (archer + laser) and melee ====
+
+-- Per-type knobs for the shared ranged brain. `solve` aims a shot at
+-- (tx, ty), `fire` releases it, `clear_aim` wipes the solved fields
+-- afterwards, the field names pick the telegraph length and the
+-- follow-up cadence out of config.enemies, and `holds_blocked` pauses
+-- the telegraph while the player is visible behind terrain (the
+-- archer's ballistic solve only).
+local RANGED_SPECS = {
+  archer = {
+    aim_steps_field    = "aim_steps",
+    rapid_min_field    = "rapid_min",
+    rapid_extra_field  = "rapid_extra",
+    solve              = solve_aim,
+    fire               = Enemies.fire_volley,
+    clear_aim          = function(e) e.aim_vx, e.aim_vy = nil, nil end,
+    holds_blocked      = true,
+  },
+  laser = {
+    aim_steps_field    = "laser_sight_steps",
+    rapid_min_field    = "laser_rapid_min",
+    rapid_extra_field  = "laser_rapid_extra",
+    solve              = solve_beam_aim,
+    fire               = Enemies.fire_beam,
+    clear_aim          = function(e) e.aim_dx, e.aim_dy = nil, nil end,
+    holds_blocked      = false,
+  },
+}
+
+-- Enters the aim state aimed at (tx, ty): combat aims at the tracked
+-- spot (the tracking block below keeps it fresh while the player is
+-- visible); a cover aim solves at the last known position and never
+-- re-tracks (the shooter is firing blind).
+local function enter_aim(ctx, e, spec, tx, ty)
+  e.state = "aim"
+  e.aim_t = config.enemies[spec.aim_steps_field]
+  spec.solve(ctx, e, tx, ty)
+end
+
+-- One sim tick of a ranged enemy's brain (world time = ctx.dt steps),
+-- shared by archers and laser riflemen via RANGED_SPECS:
+--
+--   * the player's position is tracked every step it stays visible, in
+--     every state (combat aims at the live spot; cover fire and searches
+--     aim at the freshest known spot)
+--   * combat: aim (telegraphed) -> fire -> a quick, semi randomized
+--     follow-up cadence while the player stays visible
+--   * sight broken: a cover-fire window opens -- the shooter stands
+--     still and keeps firing at the last known position (blind shots on
+--     the same cadence) for enemies.suppress_steps, then investigates
+--   * a shot already mid-telegraph when sight breaks still fires at the
+--     last solved direction, then the window keeps covering
+--   * seeing the player again -- during cover fire or a search --
+--     returns to combat at once; enemies.shoot_cooldown only gates a
+--     patroller's first spot
+local function ranged_brain(ctx, e, spec)
+  local cfg = config.enemies
+  local dt = ctx.dt
   local seen = Enemies.sees(ctx, e)
+  if seen then
+    local p = ctx.player
+    e.last_known = {x = p.x + p.w/2, y = p.y + p.h/2}
+  end
 
   if e.state == "aim" then
     if seen then
-      local p = ctx.player
-      e.last_known = {x = p.x + p.w/2, y = p.y + p.h/2}
-      solve_aim(ctx, e, e.last_known.x, e.last_known.y)
-      e.facing = e.aim_vx > 0 and 1 or -1  -- face the aim
-      if not e.aim_blocked then
-        e.aim_t = e.aim_t - 1  -- blocked arcs hold the shot in place
+      e.suppress_t = nil  -- combat again: any cover-fire window is over
+      spec.solve(ctx, e, e.last_known.x, e.last_known.y)
+      e.facing = (e.last_known.x >= e.x + e.w/2) and 1 or -1  -- face the aim
+      if not (spec.holds_blocked and e.aim_blocked) then
+        e.aim_t = e.aim_t - dt
       end
     else
-      e.aim_t = e.aim_t - 1
+      e.aim_t = e.aim_t - dt
+      if e.suppress_t then e.suppress_t = e.suppress_t - dt end
     end
     if e.aim_t <= 0 then
-      Enemies.fire_volley(ctx, e)
-      e.aim_vx, e.aim_vy = nil, nil
+      spec.fire(ctx, e)
+      spec.clear_aim(e)
       if seen then
         -- still has the player: quick, slightly randomized follow-ups
         e.state = "wait"
-        e.wait_t = cfg.rapid_min + math.random(0, cfg.rapid_extra)
+        e.wait_t = cfg[spec.rapid_min_field]
+          + math.random(0, cfg[spec.rapid_extra_field])
       else
-        -- the player slipped away mid-aim: fire anyway, then search
-        e.state = "investigate"
-        e.investigate_t = cfg.investigate_timeout
+        -- the player slipped away mid-shot: cover the last known spot
+        e.state = "suppress"
+        e.suppress_t = e.suppress_t or cfg.suppress_steps
+        e.wait_t = cfg[spec.rapid_min_field]
+          + math.random(0, cfg[spec.rapid_extra_field])
       end
     end
   elseif e.state == "wait" then
     if seen then
       local p = ctx.player
       e.facing = (p.x + p.w/2 >= e.x + e.w/2) and 1 or -1
-      e.wait_t = e.wait_t - 1
-      if e.wait_t <= 0 then enter_aim(ctx, e) end
+      e.wait_t = e.wait_t - dt
+      if e.wait_t <= 0 then
+        enter_aim(ctx, e, spec, e.last_known.x, e.last_known.y)
+      end
     else
-      -- lost the player between volleys: go look for it
-      e.state = "investigate"
-      e.investigate_t = cfg.investigate_timeout
+      -- sight broke mid-cadence: open the cover-fire window
+      e.state = "suppress"
+      e.suppress_t = cfg.suppress_steps
+      e.wait_t = cfg[spec.rapid_min_field]
+        + math.random(0, cfg[spec.rapid_extra_field])
+    end
+  elseif e.state == "suppress" then
+    e.suppress_t = e.suppress_t - dt
+    if seen then
+      -- reacquired mid-cover: back to combat at once
+      e.suppress_t = nil
+      enter_aim(ctx, e, spec, e.last_known.x, e.last_known.y)
+    else
+      e.wait_t = e.wait_t - dt
+      if e.wait_t <= 0 then
+        enter_aim(ctx, e, spec, e.last_known.x, e.last_known.y)
+      end
+      if e.state == "suppress" and e.suppress_t <= 0 then
+        -- covered long enough: go and look for the player
+        e.state = "investigate"
+        e.investigate_t = cfg.investigate_timeout
+      end
     end
   elseif e.state == "investigate" then
-    e.investigate_t = e.investigate_t - 1
-    if seen and e.shoot_cd == 0 then
-      enter_aim(ctx, e)
+    e.investigate_t = e.investigate_t - dt
+    if seen then
+      -- reacquired: back to combat at once (the cooldown gate only
+      -- holds for a patroller's first spot)
+      e.suppress_t = nil
+      enter_aim(ctx, e, spec, e.last_known.x, e.last_known.y)
     elseif e.investigate_t <= 0
     or math.abs(e.x + e.w/2 - e.last_known.x) <= cfg.investigate_reach then
       e.state = "patrol"
     end
   else
     if seen and e.shoot_cd == 0 then
-      enter_aim(ctx, e)
+      enter_aim(ctx, e, spec, e.last_known.x, e.last_known.y)
+    end
+  end
+end
+
+-- One sim tick of the melee brain (world time = ctx.dt steps): sprint
+-- after the player while it is visible, investigate the last known
+-- position when sight breaks, patrol otherwise. Seeing the player again
+-- always returns it to the chase.
+local function melee_brain(ctx, e)
+  local cfg = config.enemies
+  local dt = ctx.dt
+  local seen = Enemies.sees(ctx, e)
+  if seen then
+    local p = ctx.player
+    e.last_known = {x = p.x + p.w/2, y = p.y + p.h/2}
+  end
+
+  if e.state == "chase" then
+    if not seen then
+      -- lost sight: go look where the player was
+      e.state = "investigate"
+      e.investigate_t = cfg.investigate_timeout
+    end
+  elseif e.state == "investigate" then
+    e.investigate_t = e.investigate_t - dt
+    if seen then
+      e.state = "chase"
+    elseif e.investigate_t <= 0
+    or math.abs(e.x + e.w/2 - e.last_known.x) <= cfg.investigate_reach then
+      e.state = "patrol"
+    end
+  else
+    if seen then
+      e.state = "chase"
     end
   end
 end
@@ -233,6 +431,26 @@ local function patrol(e, spd, world)
   e.vx = spd * e.facing
 end
 
+-- Walk toward (tx): used by investigating and chasing enemies. Ledges
+-- don't stop the walk (walls still block via resolve_x below) but a
+-- drop deeper than enemies.max_drop_tiles does: the walker decides to
+-- stay on its platform and gives the walk up. Returns false then, so
+-- the caller can end it.
+local function walk_toward(e, tx, spd, world)
+  local dir = (tx >= e.x + e.w/2) and 1 or -1
+  local px = dir > 0 and (e.x + e.w) or (e.x - 1)
+  local ledge_ahead = not world:solid_at(px, e.y + e.h)
+  local max_drop = config.enemies.max_drop_tiles * config.tile_size
+  if ledge_ahead
+  and world:drop_depth(px, e.y + e.h, max_drop) > max_drop then
+    e.vx = 0  -- toes at the edge: the walk refuses to step off
+    return false
+  end
+  e.facing = dir
+  e.vx = spd * dir
+  return true
+end
+
 -- A small backed perch: a wall within two tiles behind the archer and
 -- open ground (a ledge) within two tiles ahead. Such archers hold the
 -- edge instead of pacing back and forth in a box.
@@ -251,37 +469,47 @@ local function perch(e, world)
   return false
 end
 
--- One 30hz tick of a single enemy.
+-- One sim tick of a single enemy (world time = ctx.dt steps).
 function Enemies.update_one(ctx, e)
   local p = ctx.player
   local world = ctx.world
   local cfg = config.enemies
+  local dt = ctx.dt
 
-  e.vy = math.min(e.vy + config.physics.gravity, config.physics.max_fall_speed)
+  e.vy = math.min(e.vy + config.physics.gravity * dt, config.physics.max_fall_speed)
   e.gr = false
-  e.y  = e.y + e.vy
+  e.y  = e.y + e.vy * dt
   world:resolve_y(e)
   world:resolve_slopes(e)
 
   if e.gr then
-    if e.type == "archer" then
-      if e.state == "aim" or e.state == "wait" then
-        e.vx = 0  -- stands still while preparing or between volleys
-      elseif e.state == "investigate" then
-        -- walk toward the last known player position; ledges don't
-        -- stop the search (walls still block via resolve_x below) --
-        -- but a drop deeper than max_drop_tiles does: it decides to
-        -- stay on its platform and gives the search up
-        local dir = (e.last_known.x >= e.x + e.w/2) and 1 or -1
-        local px = dir > 0 and (e.x + e.w) or (e.x - 1)
-        local ledge_ahead = not world:solid_at(px, e.y + e.h)
-        local max_drop = cfg.max_drop_tiles * config.tile_size
-        if ledge_ahead
-        and world:drop_depth(px, e.y + e.h, max_drop) > max_drop then
+    if e.type == "melee" then
+      -- sprint after the player while it is visible (the chase target
+      -- is the tracked spot, refreshed every visible step); when sight
+      -- breaks the search walks at patrol pace; either walk gives up at
+      -- a drop deeper than max_drop_tiles
+      if e.state == "chase" then
+        local tx = e.last_known and e.last_known.x or e.x
+        if not walk_toward(e, tx, cfg.melee_chase_speed, world) then
           e.state = "patrol"
-        else
-          e.facing = dir
-          e.vx = cfg.archer_speed * dir
+        end
+      elseif e.state == "investigate" then
+        local tx = e.last_known and e.last_known.x or e.x
+        if not walk_toward(e, tx, cfg.melee_speed, world) then
+          e.state = "patrol"
+        end
+      else
+        patrol(e, cfg.melee_speed, world)
+      end
+    else
+      -- archers and laser riflemen share the patrol/investigate instincts
+      local speed = (e.type == "laser") and cfg.laser_speed or cfg.archer_speed
+      if e.state == "aim" or e.state == "wait" or e.state == "suppress" then
+        e.vx = 0  -- stands still while aiming, recharging or covering
+      elseif e.state == "investigate" then
+        local tx = e.last_known and e.last_known.x or e.x
+        if not walk_toward(e, tx, speed, world) then
+          e.state = "patrol"
         end
       elseif perch(e, world) then
         -- backed against a wall on a small platform: hold the edge
@@ -289,19 +517,18 @@ function Enemies.update_one(ctx, e)
         if not world:solid_at(px, e.y + e.h) then
           e.vx = 0  -- toes at the edge, holding position
         else
-          e.vx = cfg.archer_speed * e.facing  -- walk out to the edge
+          e.vx = speed * e.facing  -- walk out to the edge
         end
       else
-        patrol(e, cfg.archer_speed, world)
+        patrol(e, speed, world)
       end
-    else
-      patrol(e, cfg.melee_speed, world)
     end
   else
-    e.vx = e.vx * cfg.air_drag
+    -- per-step multiplicative damping, exponent-scaled to world time
+    e.vx = e.vx * cfg.air_drag ^ dt
   end
 
-  e.x = e.x + e.vx
+  e.x = e.x + e.vx * dt
   world:resolve_x(e)
 
   if e.x < 0 then e.x = 0 e.facing = 1 end
@@ -315,12 +542,12 @@ function Enemies.update_one(ctx, e)
   end
 
   if e.type == "archer" then
-    if e.shoot_cd > 0 then e.shoot_cd = e.shoot_cd - 1 end
+    if e.shoot_cd > 0 then e.shoot_cd = math.max(0, e.shoot_cd - dt) end
     -- release a staggered volley's remaining arrows as timers lapse
     if e.volley then
       for i = #e.volley, 1, -1 do
         local shot = e.volley[i]
-        shot.t = shot.t - 1
+        shot.t = shot.t - dt
         if shot.t <= 0 then
           Enemies.spawn_e_arrow(ctx, e.x + e.w/2, e.y + e.h/2, shot.angle)
           table.remove(e.volley, i)
@@ -328,12 +555,34 @@ function Enemies.update_one(ctx, e)
       end
       if #e.volley == 0 then e.volley = nil end
     end
-    archer_brain(ctx, e)
+    ranged_brain(ctx, e, RANGED_SPECS.archer)
+  elseif e.type == "laser" then
+    if e.shoot_cd > 0 then e.shoot_cd = math.max(0, e.shoot_cd - dt) end
+    -- the live beam ages and burns whatever crosses it (i-frames keep a
+    -- lingering beam from landing more than one hit per shot)
+    if e.beam then
+      e.beam.t = e.beam.t - dt
+      if e.beam.t <= 0 then
+        e.beam = nil
+      else
+        local b = e.beam
+        local ex, ey = e.x + e.w/2, e.y + e.h/2
+        if beam_hits_player(ex, ey, b.dx, b.dy, b.len, p,
+          (cfg.laser_beam_width - 2) / 2) then
+          -- impact direction runs along the beam toward the player, so
+          -- the blood spray (opposite it) flies away from the shooter
+          ctx.hurt(ctx, b.dx, b.dy, cfg.laser_half_hearts)
+        end
+      end
+    end
+    ranged_brain(ctx, e, RANGED_SPECS.laser)
+  elseif e.type == "melee" then
+    melee_brain(ctx, e)
   end
 end
 
--- One 30hz step over all enemies; only enemies near the camera are
--- simulated.
+-- One sim step over all enemies (world time = ctx.dt steps); only
+-- enemies near the camera are simulated.
 function Enemies.update(ctx)
   local ents, cam = ctx.ents, ctx.cam
   local vw = config.view.width

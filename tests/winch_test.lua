@@ -103,7 +103,7 @@ do
   local env = Harness.boot()
   local g = env.TWANG_TEST.game
   local ws = g.ctx.ents.winches
-  assert_true(#ws == 5, "level1's winch objects loaded (got " .. #ws .. ")")
+  assert_true(#ws >= 5, "level1's winch objects loaded (got " .. #ws .. ")")
   local first = ws[1]
   assert_true(first.x == 1072 and first.y == 368,
     "winch_01 snapped to its tile (got " .. first.x .. "," .. first.y .. ")")

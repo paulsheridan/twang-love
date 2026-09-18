@@ -71,14 +71,15 @@ function Interactables.trigger_springs(ents, player, group)
   end
 end
 
--- Steps spring extension art timers. Switches that drive springs are
--- momentary: once every spring of the group has reset, the struck switch
--- pops back out so it can be shot again (door-driving switches stay
--- latched; they belong to groups without springs).
-function Interactables.update_springs(ents)
+-- Steps spring extension art timers by `dt` steps of world time.
+-- Switches that drive springs are momentary: once every spring of the
+-- group has reset, the struck switch pops back out so it can be shot
+-- again (door-driving switches stay latched; they belong to groups
+-- without springs).
+function Interactables.update_springs(ents, dt)
   for _, spring in ipairs(ents.springs) do
     if spring.ext then
-      spring.ext = spring.ext - 1
+      spring.ext = spring.ext - dt
       if spring.ext <= 0 then
         spring.ext = nil
         local still_ext = false

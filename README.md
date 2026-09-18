@@ -49,7 +49,10 @@ toggles. The game world pauses while it's open.
   both now unmapped). Toggling back on re-enables them.
 
 While aiming, the world runs in slow motion and the bow's trajectory is
-previewed. Power levels: `lo` / `md` / `hi`. With a control stick the
+previewed. The world keeps simulating (and rendering) at the steady
+full framerate while aiming — it just moves at 1/N speed — so aiming
+never freezes it into a slideshow. Power levels: `lo` / `md` / `hi`.
+With a control stick the
 shot's force is analog too: the stick's tilt — how far it sits from
 zero, from the deadzone edge up to full deflection — scales the launch
 speed between a quarter and the power level's full speed, so a light
@@ -89,18 +92,31 @@ a monitor with a different resolution, so it stays crisp everywhere.
   tiles — each system reacts to its own switches alone. Spring switches
   pop back out once the spring resets, ready to be shot again.
 - **Archers hunt**: they spot you only in front of them, with clear line
-  of sight and within range. Once spotted they draw briefly (you'll see
+  of sight and within range, and keep tracking your position the whole
+  time you're visible. Once spotted they draw briefly (you'll see
   their ballistic arc, like your own) and release a volley of three
   arrows one after another. While you stay visible they keep firing on
-  a quick, randomized cadence; the moment they lose you they fire
-  anyway (if mid-draw) and come looking for where you were — even off
-  their platform, though they refuse drops deeper than four tiles.
-  Archers wedged against a wall on a small perch hold the edge instead
-  of pacing.
-- Melee enemies hurt on touch. Arrow tips kill.
+  a quick, randomized cadence. Break their line of sight and they open
+  cover fire — holding their ground and shooting blind at your last
+  known spot for about three seconds — then come looking for where you
+  were, even off their platform (though they refuse drops deeper than
+  four tiles). Spot them spotting you and they're back in the fight
+  instantly.
+- **Laser riflemen hunt** the same way — spotted only in front, in
+  range, with clear line of sight — but charge a shot you can read:
+  a blinking red sight locks onto you, then a thick laser beam fires
+  along it and runs until it hits a wall. Getting caught in the beam
+  costs a full heart. Lose their line of sight and they cover your last
+  known position with blind shots on a slower randomized cadence before
+  coming to look for you.
+- **Melee enemies charge**: touch one and it hurts, but now they also
+  hunt — a spotted player is sprinted after, and when you break their
+  line of sight they head for where you were last seen before giving
+  up and resuming their patrol. Arrow tips kill them on contact.
 - You have three hearts (drawn top-left): a melee touch or enemy arrow
-  costs half a heart, spraying blood opposite the impact and shrouding
-  you in a fading red silhouette while you're invulnerable (further
+  costs half a heart, a laser beam costs a full heart; hits spray blood
+  opposite the impact and shroud you in a fading red silhouette while
+  you're invulnerable (further
   hits are ignored until it lapses). Enemy arrows stop dead at you for
   a moment when they land.
   Heart slots show full, half-drained and empty sprites. Losing the last
@@ -124,9 +140,11 @@ covers the enemy AI:
 luajit tests/run.lua main.lua /tmp/trace.txt
 luajit tests/trace_diff.lua tests/trace_baseline.txt /tmp/trace.txt
 luajit tests/enemies_test.lua
+luajit tests/laser_test.lua
 luajit tests/player_test.lua
 luajit tests/rope_test.lua
 luajit tests/interactables_test.lua
+luajit tests/slowmo_test.lua
 ```
 
 The trace diff must be empty. After an *intentional* gameplay change,

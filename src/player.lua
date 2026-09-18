@@ -1,5 +1,6 @@
--- The player: state, respawn, 30hz physics (with coyote time and jump
--- buffering), bow aiming/firing, and key carrying.
+-- The player: state, respawn, fixed-timestep physics (with coyote time
+-- and jump buffering; world time scales with ctx.dt), bow aiming/firing,
+-- and key carrying.
 
 local config = require("src.config")
 local Util   = require("src.util")
@@ -98,19 +99,21 @@ function Player.die(ctx)
   ctx.ents.e_arrows = {}
 end
 
--- Taking a hit: half a heart lost (unless still invulnerable from the
--- last hit); dying when the last half-heart is gone. The test menu's
--- invincibility toggle blocks all damage (void falls still kill: death
--- is a respawn mechanism, not damage). `ix`/`iy` is the impact
--- direction (arrow travel, or from the melee enemy toward the player):
--- the blood sprays the opposite way, at the player's centre, with the
--- player's own motion added so it doesn't lag a moving body.
+-- Taking a hit: half a heart lost by default (unless still invulnerable
+-- from the last hit); dying when the last half-heart is gone. `amount`
+-- overrides the default damage in half-hearts (the laser rifleman's beam
+-- costs a full heart). The test menu's invincibility toggle blocks all
+-- damage (void falls still kill: death is a respawn mechanism, not
+-- damage). `ix`/`iy` is the impact direction (arrow travel, the laser
+-- beam, or from the melee enemy toward the player): the blood sprays the
+-- opposite way, at the player's centre, with the player's own motion
+-- added so it doesn't lag a moving body.
 -- Returns true when the hit was fatal.
-function Player.hurt(ctx, ix, iy)
+function Player.hurt(ctx, ix, iy, amount)
   if ctx.settings.invincible then return false end
   local p = ctx.player
   if p.invuln > 0 then return false end  -- shielded by i-frames
-  p.hp = p.hp - config.player.half_hearts_per_hit
+  p.hp = p.hp - (amount or config.player.half_hearts_per_hit)
   -- blood before the death flow: a fatal hit respawns the player and
   -- would otherwise move them before the spray can spawn
   Particles.blood(ctx.ents, p.x + p.w/2, p.y + p.h/2,
@@ -123,13 +126,15 @@ function Player.hurt(ctx, ix, iy)
   return false
 end
 
--- One 30hz tick of the rope: attach to a newly anchored rope arrow,
+-- One sim tick of the rope: attach to a newly anchored rope arrow,
 -- detach on jump / lost anchor / removal, and winch the rope in or out.
--- Runs at the top of Player.physics, before movement.
+-- Runs at the top of Player.physics, before movement; the reel speed
+-- scales with ctx.dt (winching slows down in slow motion).
 function Player.rope_step(ctx)
   local p = ctx.player
   local rcfg = ctx.config.rope
-  if p.rope_cd > 0 then p.rope_cd = p.rope_cd - 1 end
+  local dt = ctx.dt
+  if p.rope_cd > 0 then p.rope_cd = math.max(0, p.rope_cd - dt) end
 
   -- a winch reel owns the player until it releases (see Player.physics):
   -- no rope attach, no jump detach, no manual winching
@@ -180,22 +185,28 @@ function Player.rope_step(ctx)
   end
 
   -- winch: up shortens, down lengthens, within the length clamps
-  if ctx.input:down("up") then
-    p.rope.length = math.max(rcfg.min_length, p.rope.length - rcfg.winch_speed)
-  elseif ctx.input:down("down") then
-    p.rope.length = math.min(rcfg.max_length, p.rope.length + rcfg.winch_speed)
+  local winch_dir = 0
+  if ctx.input:down("up") then winch_dir = -1
+  elseif ctx.input:down("down") then winch_dir = 1 end
+  if winch_dir ~= 0 then
+    p.rope.length = math.max(rcfg.min_length, math.min(rcfg.max_length,
+      p.rope.length + winch_dir * rcfg.winch_speed * ctx.dt))
   end
 end
 
--- One 30hz tick of player physics (movement, jump, terrain collision,
+-- One sim tick of player physics (movement, jump, terrain collision,
 -- arrow platforms, key pickup/lock delivery, run cycle, void fall).
+-- Advances world time by ctx.dt steps: positions, velocities and the
+-- step-counted timers all scale with it (dt is 1 normally, 1 /
+-- aiming.slow_motion_steps while aiming).
 function Player.physics(ctx)
   local p = ctx.player
   local world = ctx.world
   local cfg = config.player
   local tw = config.tile_size
+  local dt = ctx.dt
 
-  if p.invuln > 0 then p.invuln = p.invuln - 1 end
+  if p.invuln > 0 then p.invuln = math.max(0, p.invuln - dt) end
 
   Player.rope_step(ctx)
 
@@ -204,7 +215,7 @@ function Player.physics(ctx)
   -- acceleration, no damping, no walk cap) so the pull/throw physics
   -- can play out untouched. The aim button still works (deliberate).
   if p.winch_grace and p.winch_grace > 0 then
-    p.winch_grace = p.winch_grace - 1
+    p.winch_grace = math.max(0, p.winch_grace - dt)
     if WinchLog.on() then
       WinchLog.log("grace", {
         step = ctx.menu and ctx.menu.step_count or 0,
@@ -223,12 +234,12 @@ function Player.physics(ctx)
     if ax ~= 0 then
       p.facing = ax
       local a = p.gr and cfg.acceleration or (cfg.acceleration * cfg.air_acceleration_scale)
-      p.vx = p.vx + ax * a
+      p.vx = p.vx + ax * a * dt
     else
       local d = p.gr and (cfg.deceleration * p.fr)
                      or (cfg.deceleration * cfg.air_deceleration_scale)
-      if p.vx > 0 then p.vx = math.max(0, p.vx - d)
-      elseif p.vx < 0 then p.vx = math.min(0, p.vx + d) end
+      if p.vx > 0 then p.vx = math.max(0, p.vx - d * dt)
+      elseif p.vx < 0 then p.vx = math.min(0, p.vx + d * dt) end
     end
     -- while swinging, the pendulum constraint governs speed instead of
     -- the walk cap (the swing's tangential momentum must survive)
@@ -238,19 +249,19 @@ function Player.physics(ctx)
   else
     local d = p.gr and (cfg.deceleration * p.fr)
                    or (cfg.deceleration * cfg.air_deceleration_scale)
-    if p.vx > 0 then p.vx = math.max(0, p.vx - d)
-    elseif p.vx < 0 then p.vx = math.min(0, p.vx + d) end
+    if p.vx > 0 then p.vx = math.max(0, p.vx - d * dt)
+    elseif p.vx < 0 then p.vx = math.min(0, p.vx + d * dt) end
   end
   if p.jbuf > 0 and p.coy > 0 then
-    p.vy = Util.move_toward(p.vy, cfg.jump_velocity, cfg.jump_accel_initial)
+    p.vy = Util.move_toward(p.vy, cfg.jump_velocity, cfg.jump_accel_initial * dt)
     p.coy, p.jbuf = 0, 0
     p.j_frames = cfg.jump_hold_frames
   end
 
   if p.j_frames > 0 then
     if ctx.input:down("jump") and p.vy < 0 then
-      p.vy = Util.move_toward(p.vy, cfg.jump_velocity, cfg.jump_accel)
-      p.j_frames = p.j_frames - 1
+      p.vy = Util.move_toward(p.vy, cfg.jump_velocity, cfg.jump_accel * dt)
+      p.j_frames = math.max(0, p.j_frames - dt)
     else
       if p.vy < 0 then p.vy = p.vy / 2 end
       p.j_frames = 0
@@ -261,7 +272,7 @@ function Player.physics(ctx)
   -- drops fast, which reads as a snappier arc
   local g = config.physics.gravity
   if p.vy > 0 then g = g * config.physics.fall_gravity_scale end
-  p.vy = p.vy + g
+  p.vy = p.vy + g * dt
   p.vy = math.min(p.vy, config.physics.max_fall_speed)
 
   -- rope pendulum: when the rope is taut, remove the outward radial
@@ -296,7 +307,7 @@ function Player.physics(ctx)
     local rx, ry = wcx - px, wcy - py
     local dist = math.sqrt(rx*rx + ry*ry)
     p.winch.speed = math.min(config.winch.max_reel_speed,
-      (p.winch.speed or 0) + config.winch.reel_accel)
+      (p.winch.speed or 0) + config.winch.reel_accel * dt)
     if dist > config.winch.pass_radius and dist > 0 then
       local nx, ny = rx / dist, ry / dist
       p.vx = nx * p.winch.speed
@@ -313,13 +324,13 @@ function Player.physics(ctx)
     end
   end
 
-  p.x = p.x + p.vx
+  p.x = p.x + p.vx * dt
   world:resolve_x(p)
   world:check_walls(p)
 
   p.gr = false
   p.fr = 1.0
-  p.y = p.y + p.vy
+  p.y = p.y + p.vy * dt
   world:resolve_y(p)
   world:resolve_slopes(p)
   Arrows.check_platforms(ctx)
@@ -397,9 +408,9 @@ function Player.physics(ctx)
     p.j_frames = 0
     p.aimed_down = false
     if not p.prev_gr then p.land_frames = cfg.landing_frames end
-    if p.land_frames > 0 then p.land_frames = p.land_frames - 1 end
+    if p.land_frames > 0 then p.land_frames = math.max(0, p.land_frames - dt) end
   else
-    p.coy = math.max(0, p.coy - 1)
+    p.coy = math.max(0, p.coy - dt)
     p.land_frames = 0
   end
   p.prev_gr = p.gr
@@ -451,12 +462,13 @@ function Player.physics(ctx)
     end
   end
 
-  -- run cycle: advance at the 30hz sim rate (twang.p8 advanced it in _draw
-  -- at 30fps); the port previously ticked it from love.draw at 60fps
+  -- run cycle: advances in world time (scales with the step's dt, so
+  -- slow motion slows the animation with the body)
   if p.gr and p.vx ~= 0 and not ctx.input:down("aim") then
-    run_tick = run_tick + 1
+    run_tick = run_tick + dt
     if run_tick >= cfg.run_cycle_steps then
-      run_tick, run_frame = 0, (run_frame + 1) % cfg.run_cycle_frames
+      run_tick = run_tick - cfg.run_cycle_steps
+      run_frame = (run_frame + 1) % cfg.run_cycle_frames
     end
   else
     run_frame, run_tick = 0, 0
@@ -478,9 +490,10 @@ function Player.arrow_step(ctx)
   end
 end
 
--- One 30hz tick of bow aiming: entering aim mode, turning (analog stick
+-- One sim tick of bow aiming: entering aim mode, turning (analog stick
 -- owns the angle; arrows nudge when idle), power levels, and firing on
--- release. Run before physics each step.
+-- release. Run before physics each step. Aiming itself runs in real
+-- time (the bow stays fully responsive while the world is slowed).
 function Player.aim_step(ctx)
   local p = ctx.player
   local cfg = config.aiming
@@ -541,7 +554,7 @@ function Player.aim_step(ctx)
       p.jbuf = config.player.jump_buffer_frames
     end
   end
-  if p.jbuf > 0 then p.jbuf = p.jbuf - 1 end
+  if p.jbuf > 0 then p.jbuf = math.max(0, p.jbuf - (ctx.dt or 1)) end
 end
 
 -- Exposes the run cycle state for rendering and tests.

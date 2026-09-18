@@ -41,6 +41,9 @@ arrow strikes flip them (a spring switch popping back does not).
 - **`door`** — door (solid until its group's locks fire)
 - **`archer`** — archer enemy
 - **`melee`** — melee enemy
+- **`laser`** — laser rifleman enemy: hunts like an archer but fires a
+  wall-to-wall laser beam (a full heart of damage) after a blinking
+  sight telegraph; tuning lives in `config.enemies.laser_*`
 - **`switch`** — struck by arrows (no key needed); each strike toggles it and
   re-evaluates its group: all switches on -> the group's doors open, any
   off -> they close. The off art is the kind tile, the on art the next tile
@@ -62,8 +65,9 @@ arrow strikes flip them (a spring switch popping back does not).
 
 ## Entities on Object Layers
 
-Entities (spawn/key/lock/door/archer/melee/switch/spring/winch) live as
-tile objects on Object Layers in Tiled (e.g. `items` and `entities`).
+Entities (spawn/key/lock/door/archer/melee/laser/switch/spring/winch)
+live as tile objects on Object Layers in Tiled (e.g. `items` and
+`entities`).
 
 The object's role comes from, in order:
 
