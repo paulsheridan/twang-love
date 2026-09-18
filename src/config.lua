@@ -163,13 +163,18 @@ local Config = {
     -- laser rifleman (archer-like brain: see -> blink-aim -> beam ->
     -- wait/investigate); senses and patrol knobs above are shared
     laser_speed = 0.8,        -- patrol speed (px per step)
-    laser_sight_steps = 45,   -- blinking-sight aim duration before firing (1.5s)
-    laser_sight_blink = 5,    -- sight blink cadence (steps per on/off toggle)
-    laser_beam_steps = 18,    -- steps the fired beam stays live (0.6s)
+    laser_sight_steps = 18,   -- blinking-sight aim duration before firing
+                              -- (0.6s: a quicker draw than the archer's)
+    laser_sight_blink = 6,    -- sight blink cadence (steps per on/off toggle)
+    laser_burst_count = 3,    -- shots per charge before the full recharge
+    laser_burst_min = 12,     -- minimum wait between a burst's shots (steps)
+    laser_burst_extra = 12,   -- extra randomized wait on top of laser_burst_min
+    laser_beam_steps = 5,     -- steps the fired beam stays live: a brief
+                              -- flash, over in a few frames
     laser_beam_width = 6,     -- beam thickness (px)
     laser_half_hearts = 2,    -- damage per beam hit (a full heart)
     laser_ray_step = 4,       -- px between samples along the beam's ray
-    laser_rapid_min = 45,     -- minimum wait between follow-up shots (steps)
+    laser_rapid_min = 45,     -- minimum recharge wait after a burst (steps)
     laser_rapid_extra = 45,   -- extra randomized wait on top of laser_rapid_min
     suppress_steps = 90,      -- cover-fire window after losing sight (3s):
                               -- ranged enemies keep firing blind at the last
@@ -196,6 +201,9 @@ local Config = {
     blood_count = 10,        -- same as enemies.blood_particles
     blood_colour = 8,
     blood_life = { 10, 19 },
+    spark_count = 6,         -- laser-beam impact flecks on a player hit
+    spark_colour = 10,
+    spark_life = { 5, 10 },
   },
 
   -- PICO-8 cart fallbacks for special tiles; a Tiled tileset that defines

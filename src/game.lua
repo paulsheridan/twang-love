@@ -147,6 +147,7 @@ function Game:toggle_enemies()
         e.beam = nil
         e.aim_dx, e.aim_dy = nil, nil
         e.suppress_t = nil
+        e.burst = nil
       else
         e.state = "patrol"
       end

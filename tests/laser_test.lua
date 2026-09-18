@@ -10,14 +10,16 @@
 -- brain, swapping the ballistic volley for a wall-to-wall beam:
 --   1. spotting the player enters the aim state (aim fields set)
 --   2. the blink-aim telegraph fires a beam after laser_sight_steps
---   3. the beam marches until it hits a wall (not the world's edge)
+--   3. the beam stops dead at the player it hits, throwing sparks (and
+--      spraying blood) at the impact point
 --   4. a beam hit costs a full heart, once per shot (i-frames hold the
 --      lingering beam off)
 --   5. the beam fires at the last known spot and misses a player who
---      fled mid-aim (then covers, then investigates)
+--      fled mid-aim -- marching on to the wall, sparkless (then covers)
 --   6. terrain between the laser and the player blocks the sight
---   7. the rapid cadence re-aims and fires again while the player stays
---      visible, on the laser's slower randomized window
+--   7. shots come in bursts: laser_burst_count per charge on the short
+--      burst cadence (tracking the visible player), then the long
+--      recharge before the next charge
 --   8. the test menu's enemies toggle disarms a firing laser
 --
 -- Usage (from the project root): luajit tests/laser_test.lua
@@ -159,7 +161,7 @@ do
   assert_true(e.shoot_cd > 0, "firing starts the shoot cooldown")
 end
 
--- ==== 3. the beam marches until it hits a wall ====
+-- ==== 3. the beam stops dead at the player it hits ====
 do
   local env = fresh_game()
   local g = env.TWANG_TEST.game
@@ -167,21 +169,29 @@ do
   e.facing = 1
   place_player(g, SPOT_X, SPOT_Y)
   settle(env, g, e, FLOOR_X, FLOOR_Y)
+  local before = #g.ctx.ents.particles
   assert_true(fire_first_beam(env, g, e, FLOOR_X, FLOOR_Y), "the laser fired")
   local b = e.beam
   local ex, ey = e.x + e.w/2, e.y + e.h/2
   local hx, hy = ex + b.dx*b.len, ey + b.dy*b.len
-  -- the beam runs along the corridor until terrain catches it (the aim
-  -- dips slightly, so the floor takes it a few hundred px out); the
-  -- march only caps at the world bounds when there is no wall at all
+  local p = g.ctx.player
+  local pad = (config.enemies.laser_beam_width - 2) / 2
+  -- the beam must end at the player's grown box, not run through to
+  -- the wall it would otherwise reach (hundreds of px further out)
   local bound = (g.ctx.world.px_w - ex) / b.dx
-  assert_true(b.len > 250 and b.len < bound,
-    "the beam reaches the far wall (len " .. string.format("%.1f", b.len)
+  assert_true(b.len < bound - 250,
+    "the beam stops short of the far wall (len " .. string.format("%.1f", b.len)
     .. ", bound " .. string.format("%.1f", bound) .. ")")
-  local world = g.ctx.world
-  local solid_past = world:solid_for_arrow(hx + b.dx*3, hy + b.dy*3)
-    or world:in_slope_solid(hx + b.dx*3, hy + b.dy*3)
-  assert_true(solid_past, "the beam stops at a wall (solid just past its tip)")
+  assert_true(math.abs(hx - (p.x - pad)) < 6
+    and hy >= p.y - pad and hy <= p.y + p.h + pad,
+    "the beam's tip lands on the player (tip "
+    .. string.format("%.1f, %.1f", hx, hy) .. ")")
+  -- the impact throws sparks: the fire step sprayed blood (the hit's
+  -- standard spray) plus the beam's spark flecks
+  assert_true(#g.ctx.ents.particles >= before
+    + config.particles.blood_count + config.particles.spark_count,
+    "the impact sprays blood and sparks ("
+    .. #g.ctx.ents.particles .. " particles)")
 end
 
 -- ==== 4. a beam hit costs a full heart, once per shot ====
@@ -244,10 +254,25 @@ do
   local p = g.ctx.player
   assert_true(p.hp == config.player.hearts * 2,
     "the beam misses the player who fled (hp " .. p.hp .. ")")
-  -- the beam must fire along the last known spot (not chase the player
-  -- to the spawn): the segment must pass through it
+  -- with nobody in the path the beam marches on to the wall it was
+  -- aimed at (the corridor floor takes it a few hundred px out)
   local b = e.beam
   local ex, ey = e.x + e.w/2, e.y + e.h/2
+  local hx, hy = ex + b.dx*b.len, ey + b.dy*b.len
+  local bound = (g.ctx.world.px_w - ex) / b.dx
+  assert_true(b.len > 250 and b.len < bound,
+    "the beam reaches the far wall (len " .. string.format("%.1f", b.len)
+    .. ", bound " .. string.format("%.1f", bound) .. ")")
+  local world = g.ctx.world
+  local solid_past = world:solid_for_arrow(hx + b.dx*3, hy + b.dy*3)
+    or world:in_slope_solid(hx + b.dx*3, hy + b.dy*3)
+  assert_true(solid_past, "the beam stops at a wall (solid just past its tip)")
+  -- no impact: no sparks, no blood spray
+  assert_true(#g.ctx.ents.particles == 0,
+    "a missed beam throws no sparks ("
+    .. #g.ctx.ents.particles .. " particles)")
+  -- and it must fire along the last known spot (not chase the player
+  -- to the spawn): the segment must pass through it
   local known = e.last_known
   local kdx, kdy = known.x - ex, known.y - ey
   local t = kdx * b.dx + kdy * b.dy  -- distance along the beam
@@ -271,7 +296,7 @@ do
   assert_true(e.beam == nil, "no beam without line of sight")
 end
 
--- ==== 7. the rapid cadence repeats while the player stays visible ====
+-- ==== 7. shots come in bursts of burst_count per charge ====
 do
   local env = fresh_game()
   local g = env.TWANG_TEST.game
@@ -280,9 +305,10 @@ do
   e.facing = 1
   place_player(g, SPOT_X, SPOT_Y)
   settle(env, g, e, FLOOR_X, FLOOR_Y)
-  local shots, waits = 0, {}
+  local shots, charges = 0, 0
+  local waits = {}
   local had_beam, last_state = false, e.state
-  for _ = 1, 400 do
+  for _ = 1, 700 do
     env.love.update(1/30)
     env.love.draw()
     hold_laser(g, e, FLOOR_X, FLOOR_Y)
@@ -291,17 +317,34 @@ do
     had_beam = e.beam ~= nil
     if e.state == "wait" and last_state ~= "wait" then
       waits[#waits + 1] = e.wait_t
+      if e.wait_t >= config.enemies.laser_rapid_min then
+        -- the long recharge closes a charge: it must have held exactly
+        -- the burst budget's worth of shots
+        charges = charges + 1
+        assert_true(shots == config.enemies.laser_burst_count,
+          "each charge fires " .. config.enemies.laser_burst_count
+          .. " shots (charge " .. charges .. " held " .. shots .. ")")
+        shots = 0
+      end
     end
     last_state = e.state
   end
-  assert_true(shots >= 2,
-    "the laser keeps firing on its cadence (" .. shots .. " shots)")
-  assert_true(#waits >= 1, "each shot is followed by a recharge wait")
+  assert_true(charges >= 2,
+    "the laser recharges into further bursts (" .. charges .. " charges)")
   for _, wt in ipairs(waits) do
-    assert_true(wt >= config.enemies.laser_rapid_min
-      and wt <= config.enemies.laser_rapid_min + config.enemies.laser_rapid_extra,
-      "each wait is within the laser's randomized window (" .. wt .. ")")
+    local burst = wt >= config.enemies.laser_burst_min
+      and wt <= config.enemies.laser_burst_min + config.enemies.laser_burst_extra
+    local long = wt >= config.enemies.laser_rapid_min
+      and wt <= config.enemies.laser_rapid_min + config.enemies.laser_rapid_extra
+    assert_true(burst or long,
+      "each follow-up wait is either a burst gap or the full recharge ("
+      .. wt .. ")")
   end
+  -- burst shots must also track: the tracked spot matches the pinned
+  -- player at every telegraph
+  assert_true(e.last_known ~= nil
+    and math.abs(e.last_known.x - (SPOT_X + 4)) < 2,
+    "the burst shots keep tracking the player's live position")
 end
 
 -- ==== 8. the enemies toggle disarms a firing laser ====

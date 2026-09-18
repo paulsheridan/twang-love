@@ -1,4 +1,5 @@
--- Particles: poofs (key releases, deaths, arrow expiry) and blood.
+-- Particles: poofs (key releases, deaths, arrow expiry), blood and
+-- laser-impact sparks.
 --
 -- Particles are simple world-space dots with velocity and a step lifetime.
 
@@ -36,6 +37,22 @@ function Particles.blood(ents, x, y, avx, avy, bvx, bvy)
     add(ents.particles, x, y, math.cos(a)*spd + (bvx or 0),
       math.sin(a)*spd + (bvy or 0),
       cfg.blood_colour, math.random(cfg.blood_life[1], cfg.blood_life[2]))
+  end
+end
+
+-- Sparks thrown off a laser beam's impact with the player: hot flecks
+-- bouncing back along the beam (away from the shooter, i.e. opposite
+-- its travel) with a wide scatter. Alternates yellow/white for a
+-- crackling read.
+function Particles.sparks(ents, x, y, bdx, bdy)
+  local cfg = config.particles
+  local base = math.atan2(-bdy, -bdx)
+  for i = 1, cfg.spark_count do
+    local a   = base + math.random()*0.9 - 0.45
+    local spd = math.random() * 4 + 1.5
+    add(ents.particles, x, y, math.cos(a)*spd, math.sin(a)*spd,
+      (i % 2 == 0) and cfg.spark_colour or 7,
+      math.random(cfg.spark_life[1], cfg.spark_life[2]))
   end
 end
 

@@ -33,6 +33,7 @@
 local config = require("src.config")
 local Util = require("src.util")
 local Arrows = require("src.arrows")
+local Particles = require("src.particles")
 
 local Enemies = {}
 
@@ -196,13 +197,14 @@ function Enemies.beam_range(world, x, y, ux, uy)
   return bound
 end
 
--- True when the beam segment from (ex, ey) along the unit vector (ux, uy)
--- for `len` px crosses the player's box, grown by `pad` px on every side
--- (the slab test: the segment must enter both the box's x and y slabs).
-local function beam_hits_player(ex, ey, ux, uy, len, p, pad)
+-- Distance along the beam segment from (ex, ey) along the unit vector
+-- (ux, uy) for `len` px to where it first enters the player's box,
+-- grown by `pad` px on every side, or nil when it misses (the slab
+-- test: the segment must enter both the box's x and y slabs).
+local function beam_hit_t(ex, ey, ux, uy, len, p, pad)
   local tmin, tmax = 0, len
   if ux == 0 then
-    if ex < p.x - pad or ex > p.x + p.w + pad then return false end
+    if ex < p.x - pad or ex > p.x + p.w + pad then return nil end
   else
     local t1 = (p.x - pad - ex) / ux
     local t2 = (p.x + p.w + pad - ex) / ux
@@ -211,7 +213,7 @@ local function beam_hits_player(ex, ey, ux, uy, len, p, pad)
     tmax = math.min(tmax, t2)
   end
   if uy == 0 then
-    if ey < p.y - pad or ey > p.y + p.h + pad then return false end
+    if ey < p.y - pad or ey > p.y + p.h + pad then return nil end
   else
     local t1 = (p.y - pad - ey) / uy
     local t2 = (p.y + p.h + pad - ey) / uy
@@ -219,23 +221,38 @@ local function beam_hits_player(ex, ey, ux, uy, len, p, pad)
     tmin = math.max(tmin, t1)
     tmax = math.min(tmax, t2)
   end
-  return tmax >= tmin
+  if tmax >= tmin then return tmin end
+  return nil
 end
 
--- Fires the laser: locks the beam along the last aimed direction, marched
--- out to the first wall (or the world's edge), and starts the cooldown.
+-- Fires the laser: locks the beam along the last aimed direction,
+-- marched out to the first wall (or the world's edge) -- but a beam
+-- that would reach the player stops dead at them instead: the impact
+-- throws sparks off the contact point and the hit lands right away
+-- (a full heart, unless i-frames shield it). The beam is a brief flash.
 function Enemies.fire_beam(ctx, e)
   local cfg = config.enemies
   local ex, ey = e.x + e.w/2, e.y + e.h/2
   local dx, dy = e.aim_dx or e.facing, e.aim_dy or 0
   local len = math.sqrt(dx*dx + dy*dy)
   if len > 0 then dx, dy = dx/len, dy/len else dx, dy = e.facing, 0 end
+  len = Enemies.beam_range(ctx.world, ex, ey, dx, dy)
+  local hit = beam_hit_t(ex, ey, dx, dy, len, ctx.player,
+    (cfg.laser_beam_width - 2) / 2)
+  if hit then
+    len = hit  -- the beam stops at the player, not through them
+  end
   e.beam = {
     dx = dx, dy = dy,
-    len = Enemies.beam_range(ctx.world, ex, ey, dx, dy),
+    len = len,
     t = cfg.laser_beam_steps,
+    hit = hit and true or nil,
   }
   e.shoot_cd = cfg.shoot_cooldown
+  if hit then
+    Particles.sparks(ctx.ents, ex + dx*hit, ey + dy*hit, dx, dy)
+    ctx.hurt(ctx, dx, dy, cfg.laser_half_hearts)
+  end
 end
 
 -- ==== brains: ranged (archer + laser) and melee ====
@@ -245,7 +262,10 @@ end
 -- afterwards, the field names pick the telegraph length and the
 -- follow-up cadence out of config.enemies, and `holds_blocked` pauses
 -- the telegraph while the player is visible behind terrain (the
--- archer's ballistic solve only).
+-- archer's ballistic solve only). A spec with `burst_count_field` set
+-- fires that many shots per charge -- between them on the short burst
+-- cadence, tracking the player -- before the full recharge applies
+-- (the archer leaves it unset: every shot pays the full cadence).
 local RANGED_SPECS = {
   archer = {
     aim_steps_field    = "aim_steps",
@@ -260,6 +280,9 @@ local RANGED_SPECS = {
     aim_steps_field    = "laser_sight_steps",
     rapid_min_field    = "laser_rapid_min",
     rapid_extra_field  = "laser_rapid_extra",
+    burst_count_field  = "laser_burst_count",
+    burst_min_field    = "laser_burst_min",
+    burst_extra_field  = "laser_burst_extra",
     solve              = solve_beam_aim,
     fire               = Enemies.fire_beam,
     clear_aim          = function(e) e.aim_dx, e.aim_dy = nil, nil end,
@@ -270,10 +293,14 @@ local RANGED_SPECS = {
 -- Enters the aim state aimed at (tx, ty): combat aims at the tracked
 -- spot (the tracking block below keeps it fresh while the player is
 -- visible); a cover aim solves at the last known position and never
--- re-tracks (the shooter is firing blind).
-local function enter_aim(ctx, e, spec, tx, ty)
+-- re-tracks (the shooter is firing blind). `fresh_charge` opens a new
+-- shot budget for burst-firing specs (mid-burst telegraphs keep theirs).
+local function enter_aim(ctx, e, spec, tx, ty, fresh_charge)
   e.state = "aim"
   e.aim_t = config.enemies[spec.aim_steps_field]
+  if spec.burst_count_field and fresh_charge then
+    e.burst = config.enemies[spec.burst_count_field]
+  end
   spec.solve(ctx, e, tx, ty)
 end
 
@@ -284,7 +311,10 @@ end
 --     every state (combat aims at the live spot; cover fire and searches
 --     aim at the freshest known spot)
 --   * combat: aim (telegraphed) -> fire -> a quick, semi randomized
---     follow-up cadence while the player stays visible
+--     follow-up cadence while the player stays visible; burst-firing
+--     specs (the laser) instead spend a shot budget per charge -- shots
+--     follow one another on the short burst cadence, tracking the
+--     player, and the full recharge only comes once it is spent
 --   * sight broken: a cover-fire window opens -- the shooter stands
 --     still and keeps firing at the last known position (blind shots on
 --     the same cadence) for enemies.suppress_steps, then investigates
@@ -318,10 +348,18 @@ local function ranged_brain(ctx, e, spec)
       spec.fire(ctx, e)
       spec.clear_aim(e)
       if seen then
-        -- still has the player: quick, slightly randomized follow-ups
         e.state = "wait"
-        e.wait_t = cfg[spec.rapid_min_field]
-          + math.random(0, cfg[spec.rapid_extra_field])
+        if spec.burst_count_field and e.burst and e.burst > 1 then
+          -- mid-burst: the next shot follows on the short cadence
+          e.burst = e.burst - 1
+          e.wait_t = cfg[spec.burst_min_field]
+            + math.random(0, cfg[spec.burst_extra_field])
+        else
+          -- the charge is spent: quick, slightly randomized recharge
+          if spec.burst_count_field then e.burst = 0 end
+          e.wait_t = cfg[spec.rapid_min_field]
+            + math.random(0, cfg[spec.rapid_extra_field])
+        end
       else
         -- the player slipped away mid-shot: cover the last known spot
         e.state = "suppress"
@@ -336,7 +374,10 @@ local function ranged_brain(ctx, e, spec)
       e.facing = (p.x + p.w/2 >= e.x + e.w/2) and 1 or -1
       e.wait_t = e.wait_t - dt
       if e.wait_t <= 0 then
-        enter_aim(ctx, e, spec, e.last_known.x, e.last_known.y)
+        -- mid-burst telegraphs keep the remaining shot budget; once it
+        -- is spent (or never opened) this telegraph starts a fresh one
+        local mid_burst = e.burst ~= nil and e.burst > 0
+        enter_aim(ctx, e, spec, e.last_known.x, e.last_known.y, not mid_burst)
       end
     else
       -- sight broke mid-cadence: open the cover-fire window
@@ -350,11 +391,11 @@ local function ranged_brain(ctx, e, spec)
     if seen then
       -- reacquired mid-cover: back to combat at once
       e.suppress_t = nil
-      enter_aim(ctx, e, spec, e.last_known.x, e.last_known.y)
+      enter_aim(ctx, e, spec, e.last_known.x, e.last_known.y, true)
     else
       e.wait_t = e.wait_t - dt
       if e.wait_t <= 0 then
-        enter_aim(ctx, e, spec, e.last_known.x, e.last_known.y)
+        enter_aim(ctx, e, spec, e.last_known.x, e.last_known.y, false)
       end
       if e.state == "suppress" and e.suppress_t <= 0 then
         -- covered long enough: go and look for the player
@@ -368,14 +409,14 @@ local function ranged_brain(ctx, e, spec)
       -- reacquired: back to combat at once (the cooldown gate only
       -- holds for a patroller's first spot)
       e.suppress_t = nil
-      enter_aim(ctx, e, spec, e.last_known.x, e.last_known.y)
+      enter_aim(ctx, e, spec, e.last_known.x, e.last_known.y, true)
     elseif e.investigate_t <= 0
     or math.abs(e.x + e.w/2 - e.last_known.x) <= cfg.investigate_reach then
       e.state = "patrol"
     end
   else
     if seen and e.shoot_cd == 0 then
-      enter_aim(ctx, e, spec, e.last_known.x, e.last_known.y)
+      enter_aim(ctx, e, spec, e.last_known.x, e.last_known.y, true)
     end
   end
 end
@@ -558,19 +599,22 @@ function Enemies.update_one(ctx, e)
     ranged_brain(ctx, e, RANGED_SPECS.archer)
   elseif e.type == "laser" then
     if e.shoot_cd > 0 then e.shoot_cd = math.max(0, e.shoot_cd - dt) end
-    -- the live beam ages and burns whatever crosses it (i-frames keep a
-    -- lingering beam from landing more than one hit per shot)
+    -- the live beam ages out after its brief flash; a player who walks
+    -- into it stops the beam dead at them too (the impact lands then,
+    -- with its sparks -- i-frames keep repeats off)
     if e.beam then
       e.beam.t = e.beam.t - dt
       if e.beam.t <= 0 then
         e.beam = nil
-      else
+      elseif not e.beam.hit then
         local b = e.beam
         local ex, ey = e.x + e.w/2, e.y + e.h/2
-        if beam_hits_player(ex, ey, b.dx, b.dy, b.len, p,
-          (cfg.laser_beam_width - 2) / 2) then
-          -- impact direction runs along the beam toward the player, so
-          -- the blood spray (opposite it) flies away from the shooter
+        local t = beam_hit_t(ex, ey, b.dx, b.dy, b.len, p,
+          (cfg.laser_beam_width - 2) / 2)
+        if t then
+          b.len = t
+          b.hit = true
+          Particles.sparks(ctx.ents, ex + b.dx*t, ey + b.dy*t, b.dx, b.dy)
           ctx.hurt(ctx, b.dx, b.dy, cfg.laser_half_hearts)
         end
       end

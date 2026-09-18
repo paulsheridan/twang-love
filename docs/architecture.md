@@ -275,21 +275,34 @@ a beam weapon instead of a ballistic volley.
   The shot is telegraphed with a **blinking laser sight**: a thin red
   line from the muzzle to the player's centre, blinking on/off every
   `enemies.laser_sight_blink` steps for `enemies.laser_sight_steps`
-  before firing.
+  (a quicker draw than the archer's, 0.6s) before firing.
 - **Beam**: when the telegraph lapses the beam fires along the last
   solved direction, marched out (`enemies.laser_ray_step` sampling) to
   the first wall — anything arrows cannot fly through (doors included,
-  arrow slits excluded) or a slope wedge — or to the world's edge. The
-  beam stays live for `enemies.laser_beam_steps`, drawn as a thick red
-  ribbon around a hot white core, and burns whatever crosses it:
-  a ray/box (slab) test against the player each live step costs
+  arrow slits excluded) or a slope wedge — or to the world's edge. **A
+  beam that would reach the player stops dead at them instead**: the
+  slab test's entry distance caps the beam's length, so it never draws
+  through them. The whole flash lives for `enemies.laser_beam_steps`
+  (5 frames — over in a blink), drawn as a thick red ribbon around a
+  hot white core. On impact the contact point throws
+  `particles.spark_count` spark flecks (alternating yellow/white,
+  bouncing back along the beam, away from the shooter) on top of the
+  usual blood spray, and the hit lands right away:
   `enemies.laser_half_hearts` (2 — a full heart) with the usual i-frame
-  shield, so a lingering beam lands at most one hit per shot.
-- **Rapid fire / cover fire**: the archer's cadence with slower
-  recharge numbers (`laser_rapid_min`..`+laser_rapid_extra` — a
-  full-heart beam buys a longer recharge than the archer's volley
-  window). Sight breaks open the same cover-fire window (blind shots at
-  the last tracked spot, full telegraph included), then the search.
+  shield. A player who walks into a live flash stops it the same way;
+  the beam's own `hit` flag keeps the sparks to one burst per shot.
+- **Bursts**: each charge holds `laser_burst_count` (3) shots. Once the
+  first beam lands the next shots follow on the short burst cadence
+  (`laser_burst_min`..`+laser_burst_extra`, each with its own quick
+  telegraph, re-tracking the visible player) — no full recharge in
+  between. Only once the budget is spent does the
+  `laser_rapid_min`..`+laser_rapid_extra` recharge apply before the
+  next charge. Sight breaks mid-burst spend the budget (the cover-fire
+  window is blind anyway); re-spotting opens a fresh one.
+- **Rapid fire / cover fire**: the archer's loop with the slower
+  recharge numbers between charges. Sight breaks open the same
+  cover-fire window (blind shots at the last tracked spot, full
+  telegraph included), then the search.
 - **The enemies toggle** (test menu) disarms a firing laser along with
   the archers: live beams go out and the brain drops back to patrol.
 

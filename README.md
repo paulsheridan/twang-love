@@ -104,11 +104,14 @@ a monitor with a different resolution, so it stays crisp everywhere.
   instantly.
 - **Laser riflemen hunt** the same way — spotted only in front, in
   range, with clear line of sight — but charge a shot you can read:
-  a blinking red sight locks onto you, then a thick laser beam fires
-  along it and runs until it hits a wall. Getting caught in the beam
-  costs a full heart. Lose their line of sight and they cover your last
-  known position with blind shots on a slower randomized cadence before
-  coming to look for you.
+  a quick blinking red sight locks onto you, then a thick laser beam
+  flashes out and stops dead at whatever it reaches — you included.
+  Getting caught costs a full heart, with sparks spraying off the
+  impact point. The whole flash is over in a few frames. Each charge
+  holds three shots: the follow-ups come fast, re-tracking you between
+  shots, and only a spent burst buys the full recharge. Lose their
+  line of sight and they cover your last known position with blind
+  shots before coming to look for you.
 - **Melee enemies charge**: touch one and it hurts, but now they also
   hunt — a spotted player is sprinted after, and when you break their
   line of sight they head for where you were last seen before giving
