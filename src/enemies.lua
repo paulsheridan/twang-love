@@ -156,9 +156,13 @@ end
 
 -- ==== laser rifleman ====
 
--- Points the laser at (tx, ty): stores the unit aim direction on the
--- enemy (the beam fires along the last solved direction).
+-- Points the laser at (tx, ty): stores the unit aim direction and the
+-- px distance to the target on the enemy (the beam fires along the
+-- direction solved when the sight line first appears -- the aim stays
+-- locked through the telegraph, so the flash and the shot share one
+-- vector).
 local function solve_beam_aim(ctx, e, tx, ty)
+  if e.aim_dx then return end  -- the telegraph keeps its locked direction
   local ex, ey = e.x + e.w/2, e.y + e.h/2
   local dx, dy = tx - ex, ty - ey
   local len = math.sqrt(dx*dx + dy*dy)
@@ -167,6 +171,7 @@ local function solve_beam_aim(ctx, e, tx, ty)
   else
     e.aim_dx, e.aim_dy = e.facing, 0
   end
+  e.aim_len = Enemies.beam_range(ctx.world, ex, ey, e.aim_dx, e.aim_dy)
 end
 
 -- Px distance along a unit vector from (x, y) to the world's bounds.
@@ -227,11 +232,12 @@ local function beam_hit_t(ex, ey, ux, uy, len, p, pad)
   return nil
 end
 
--- Fires the laser: locks the beam along the last aimed direction,
--- marched out to the first wall (or the world's edge) -- but a beam
--- that would reach the player stops dead at them instead: the impact
--- throws sparks off the contact point and the hit lands right away
--- (a full heart, unless i-frames shield it). The beam is a brief flash.
+-- Fires the laser: the beam flashes along the direction the sight line
+-- locked in when the telegraph began, marched out to the first wall (or
+-- the world's edge) -- but a beam that would reach the player stops dead
+-- at them instead: the impact throws sparks off the contact point and
+-- the hit lands right away (a full heart, unless i-frames shield it).
+-- The beam is a brief flash.
 function Enemies.fire_beam(ctx, e)
   local cfg = config.enemies
   local ex, ey = e.x + e.w/2, e.y + e.h/2
@@ -302,7 +308,9 @@ local RANGED_SPECS = {
     burst_extra_field  = "laser_burst_extra",
     solve              = solve_beam_aim,
     fire               = Enemies.fire_beam,
-    clear_aim          = function(e) e.aim_dx, e.aim_dy = nil, nil end,
+    clear_aim          = function(e)
+      e.aim_dx, e.aim_dy, e.aim_len = nil, nil, nil
+    end,
     holds_blocked      = false,
   },
   rocketeer = {

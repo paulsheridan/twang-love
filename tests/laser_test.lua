@@ -386,5 +386,42 @@ do
   assert_true(e.state == "aim", "lasers resume hunting after re-enabling")
 end
 
+-- ==== 9. the aim locks when the flash starts ====
+do
+  local env = fresh_game()
+  local g = env.TWANG_TEST.game
+  local e = make_laser(g, FLOOR_X, FLOOR_Y)
+  e.facing = 1
+  place_player(g, SPOT_X, SPOT_Y)
+  settle(env, g, e, FLOOR_X, FLOOR_Y, 3)
+  assert_true(e.state == "aim" and e.aim_dx and e.aim_len,
+    "the telegraph solved a locked aim (direction and range)")
+  local lock_dx, lock_dy, lock_len = e.aim_dx, e.aim_dy, e.aim_len
+  -- the visible player moves during the flash: the locked aim must not
+  -- re-track (the flash and the fire share one vector)
+  for _ = 1, 6 do
+    env.love.update(1/30)
+    env.love.draw()
+    hold_laser(g, e, FLOOR_X, FLOOR_Y)
+    place_player(g, SPOT_X, SPOT_Y - 24)
+  end
+  assert_true(e.state == "aim", "the laser is still mid-telegraph")
+  assert_true(e.aim_dx == lock_dx and e.aim_dy == lock_dy
+    and e.aim_len == lock_len,
+    "a moving player cannot bend the locked flash line")
+  assert_true(fire_first_beam(env, g, e, FLOOR_X, FLOOR_Y),
+    "the telegraph fired anyway")
+  assert_true(e.beam.dx == lock_dx and e.beam.dy == lock_dy,
+    "the beam fires along the flash line's locked vector")
+  local b = e.beam
+  local ex, ey = e.x + e.w/2, e.y + e.h/2
+  local hx, hy = ex + b.dx*b.len, ey + b.dy*b.len
+  local p = g.ctx.player
+  local pad = (config.enemies.laser_beam_width - 2) / 2
+  assert_true(math.abs(hx - (p.x - pad)) < 6
+    and hy >= p.y - pad and hy <= p.y + p.h + pad,
+    "the locked beam stops dead at the player in its path")
+end
+
 print(("laser tests: %d passed, %d failed"):format(PASS, FAIL))
 if FAIL > 0 then os.exit(1) end

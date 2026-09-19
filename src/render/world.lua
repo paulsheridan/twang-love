@@ -145,11 +145,12 @@ end
 
 -- ==== laser riflemen ====
 
--- An aiming laser telegraphs a blinking red sight line at the player's
--- centre; a firing laser shows its live beam: a thick red ribbon (two
--- outer lines) around a hot white core, from the muzzle out to the wall
--- it stops at. Vector primitives draw 2px thick, so the offsets fake the
--- extra width without transforming the pixel canvas.
+-- An aiming laser telegraphs a blinking red sight line locked onto the
+-- direction it solved when the aim began (the flash and the beam that
+-- follows share one vector); a firing laser shows its live beam: a thick
+-- red ribbon (two outer lines) around a hot white core, from the muzzle
+-- out to the wall it stops at. Vector primitives draw 2px thick, so the
+-- offsets fake the extra width without transforming the pixel canvas.
 local function draw_lasers(ctx)
   if not config.enemies.enabled then return end  -- toggled off: invisible
   local cfg = config.enemies
@@ -166,14 +167,16 @@ local function draw_lasers(ctx)
         love.graphics.line(ex - ox, ey - oy, tx - ox, ty - oy)
         love.graphics.setColor(pcol(7))
         love.graphics.line(ex, ey, tx, ty)
-      elseif e.state == "aim" and e.aim_dx and e.last_known then
-        -- the sight blinks on and off while the shot charges
+      elseif e.state == "aim" and e.aim_dx and e.aim_len then
+        -- the sight blinks on and off while the shot charges, pinned to
+        -- the locked fire direction
         local phase = math.floor((cfg.laser_sight_steps - e.aim_t)
           / cfg.laser_sight_blink) % 2
         if phase == 0 then
           love.graphics.setColor(pcol(8))
           love.graphics.line(ex, ey,
-            math.floor(e.last_known.x), math.floor(e.last_known.y))
+            math.floor(ex + e.aim_dx * e.aim_len),
+            math.floor(ey + e.aim_dy * e.aim_len))
         end
       end
     end

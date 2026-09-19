@@ -149,7 +149,7 @@ function Game:toggle_enemies()
       elseif e.type == "laser" then
         e.state = "patrol"
         e.beam = nil
-        e.aim_dx, e.aim_dy = nil, nil
+        e.aim_dx, e.aim_dy, e.aim_len = nil, nil, nil
         e.suppress_t = nil
         e.burst = nil
       elseif e.type == "rocketeer" then
