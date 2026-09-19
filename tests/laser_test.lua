@@ -2,8 +2,8 @@
 -- LuaJIT).
 --
 -- A synthetic laser is inserted into the level at a stable perch (the
--- long lower floor, px 352/body top y 368 -- committed terrain, so the
--- test geometry doesn't chase map edits of the level's own laser
+-- lower corridor floor, px 224/body top y 368 -- committed terrain, so
+-- the test geometry doesn't chase map edits of the level's own laser
 -- placements).
 --
 -- The laser shares the archer's see -> aim -> shoot -> investigate
@@ -75,11 +75,12 @@ local function make_laser(game, x, y)
 end
 
 -- Test perches on stable, committed terrain:
---   the long lower floor at (352,368), guarding the wide corridor
---   the small mid platform at (512,304): a player standing directly
---   below it on the lower floor is hidden behind the platform tiles
-local FLOOR_X, FLOOR_Y = 352, 368
-local SPOT_X, SPOT_Y = 450, 372  -- ~100px in front on the same floor
+--   the lower corridor floor at (224,368); the corridor's east wall
+--   (tiles at x 384..415) sits a short march out, and a player standing
+--   directly below the small mid platform at (512,304) is hidden
+--   behind the platform tiles
+local FLOOR_X, FLOOR_Y = 224, 368
+local SPOT_X, SPOT_Y = 360, 372  -- ~136px in front on the same floor
 
 -- Pins the laser at its perch and clears its cooldown (setup only: the
 -- per-step hold below must never touch the cooldown fire_beam sets).
@@ -255,12 +256,12 @@ do
   assert_true(p.hp == config.player.hearts * 2,
     "the beam misses the player who fled (hp " .. p.hp .. ")")
   -- with nobody in the path the beam marches on to the wall it was
-  -- aimed at (the corridor floor takes it a few hundred px out)
+  -- aimed at (the corridor's east wall takes it ~150px out)
   local b = e.beam
   local ex, ey = e.x + e.w/2, e.y + e.h/2
   local hx, hy = ex + b.dx*b.len, ey + b.dy*b.len
   local bound = (g.ctx.world.px_w - ex) / b.dx
-  assert_true(b.len > 250 and b.len < bound,
+  assert_true(b.len > 100 and b.len < bound,
     "the beam reaches the far wall (len " .. string.format("%.1f", b.len)
     .. ", bound " .. string.format("%.1f", bound) .. ")")
   local world = g.ctx.world

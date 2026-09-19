@@ -56,6 +56,29 @@ function Particles.sparks(ents, x, y, bdx, bdy)
   end
 end
 
+-- Grey smoke for a rocket's exhaust trail: a slow, short-lived puff
+-- drifting up behind the tail.
+function Particles.smoke(ents, x, y)
+  local cfg = config.particles
+  for _ = 1, cfg.smoke_count do
+    add(ents.particles, x, y, math.random() - 0.5, math.random()*0.5 - 0.75,
+      cfg.smoke_colour, math.random(cfg.smoke_life[1], cfg.smoke_life[2]))
+  end
+end
+
+-- A hot radial burst for a rocket detonation, alternating red/orange
+-- (the flash ring itself is drawn from the booms list, not particles).
+function Particles.boom(ents, x, y)
+  local cfg = config.particles
+  for i = 1, cfg.boom_count do
+    local a   = math.random() * math.pi * 2
+    local spd = math.random() * 3 + 1
+    add(ents.particles, x, y, math.cos(a)*spd, math.sin(a)*spd,
+      (i % 2 == 0) and cfg.boom_colour or 9,
+      math.random(cfg.boom_life[1], cfg.boom_life[2]))
+  end
+end
+
 -- Advances the particles by `dt` steps of world time (1 normally;
 -- reduced while aiming, so the spray slows with everything else).
 function Particles.update(ents, dt)

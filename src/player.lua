@@ -97,6 +97,7 @@ function Player.die(ctx)
   Player.reset(p, ctx.ents.spawn_points, ctx.cam, ctx.world)
   ctx.ents.arrows = {}
   ctx.ents.e_arrows = {}
+  ctx.ents.rockets = {}
 end
 
 -- Taking a hit: half a heart lost by default (unless still invulnerable

@@ -44,6 +44,10 @@ arrow strikes flip them (a spring switch popping back does not).
 - **`laser`** — laser rifleman enemy: hunts like an archer but fires a
   wall-to-wall laser beam (a full heart of damage) after a blinking
   sight telegraph; tuning lives in `config.enemies.laser_*`
+- **`rocketeer`** — rocketeer enemy: hunts like an archer but lobs a
+  homing rocket straight up (a full heart of blast damage, enemies in
+  the blast die too); a player arrow tip detonates the rocket in
+  flight; tuning lives in `config.enemies.rocket_*`
 - **`switch`** — struck by arrows (no key needed); each strike toggles it and
   re-evaluates its group: all switches on -> the group's doors open, any
   off -> they close. The off art is the kind tile, the on art the next tile
@@ -65,9 +69,9 @@ arrow strikes flip them (a spring switch popping back does not).
 
 ## Entities on Object Layers
 
-Entities (spawn/key/lock/door/archer/melee/laser/switch/spring/winch)
-live as tile objects on Object Layers in Tiled (e.g. `items` and
-`entities`).
+Entities (spawn/key/lock/door/archer/melee/laser/rocketeer/switch/
+spring/winch) live as tile objects on Object Layers in Tiled (e.g.
+`items` and `entities`).
 
 The object's role comes from, in order:
 

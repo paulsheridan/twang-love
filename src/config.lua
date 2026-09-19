@@ -176,6 +176,37 @@ local Config = {
     laser_ray_step = 4,       -- px between samples along the beam's ray
     laser_rapid_min = 45,     -- minimum recharge wait after a burst (steps)
     laser_rapid_extra = 45,   -- extra randomized wait on top of laser_rapid_min
+
+    -- rocketeer (archer-like brain: see -> blink-aim -> rocket -> wait/
+    -- investigate); senses and patrol knobs above are shared. Rockets
+    -- launch straight up from just above the head, climb to a hover
+    -- point, hang there briefly, then turn on a dime toward the
+    -- player's live position and hunt (behind cover too), detonating on
+    -- proximity, terrain contact or age.
+    rocketeer_speed = 0.8,    -- patrol speed (px per step)
+    rocket_aim_steps = 18,    -- blinking-telegraph aim duration before firing
+    rocket_sight_blink = 6,   -- telegraph blink cadence (steps per on/off)
+    rocket_burst_count = 2,   -- rockets per charge before the full recharge
+    rocket_burst_min = 15,    -- minimum wait between a burst's rockets (steps)
+    rocket_burst_extra = 15,  -- extra randomized wait on top of rocket_burst_min
+    rocket_rapid_min = 60,    -- minimum recharge wait after a burst (steps)
+    rocket_rapid_extra = 60,  -- extra randomized wait on top of rocket_rapid_min
+    rocket_speed = 4,         -- constant cruise speed once flying (px/step)
+    rocket_turn_rate = 0.05,  -- max heading change toward the player (rad/step)
+    rocket_hover_height = 24, -- px climbed above the launch before the hover
+    rocket_hover_steps = 12,  -- steps it hangs before turning on a dime
+    rocket_hit_w = 12,        -- rocket hitbox (px, around the centre) for
+    rocket_hit_h = 12,        -- arrow-tip detonations: generous, a near
+                              -- miss still counts as a hit
+    rocket_proximity = 12,    -- px from the player's centre that trips the fuse
+    rocket_blast_radius = 28, -- px damage radius of the explosion
+    rocket_half_hearts = 2,   -- damage per blast hit (a full heart)
+    rocket_lifetime = 150,    -- steps before an untriggered rocket detonates
+    rocket_max_alive = 4,     -- rockets airborne at once (global cap)
+    rocket_jitter = 0.1,      -- random launch heading offset (radians, each way)
+    rocket_substep = 4,       -- px between fuse/terrain samples in flight
+    rocket_trail_every = 2,   -- steps between smoke-trail puffs
+    boom_frames = 8,          -- steps the explosion flash expands for
     suppress_steps = 90,      -- cover-fire window after losing sight (3s):
                               -- ranged enemies keep firing blind at the last
                               -- known position, then investigate
@@ -204,6 +235,12 @@ local Config = {
     spark_count = 6,         -- laser-beam impact flecks on a player hit
     spark_colour = 10,
     spark_life = { 5, 10 },
+    smoke_count = 1,         -- puffs per rocket trail emission
+    smoke_colour = 5,
+    smoke_life = { 6, 12 },
+    boom_count = 12,         -- explosion spark flecks (alternates red/orange)
+    boom_colour = 8,
+    boom_life = { 6, 14 },
   },
 
   -- PICO-8 cart fallbacks for special tiles; a Tiled tileset that defines
@@ -221,6 +258,7 @@ local Config = {
     archer = 90,
     melee = 105,
     laser = 138,  -- aiming rifleman (kind also defined in maps/twang.tsx)
+    rocketeer = 138,  -- rocket launcher (placeholder: shares the laser cell art)
     winch = 133,  -- small blue star
   },
 }

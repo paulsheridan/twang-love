@@ -21,10 +21,13 @@ src/
    arrows.lua             player + enemy arrows (flight, bounce, stick, hits);
                           rope arrows (range, anchoring); also exposes
                           simulate_path (shared trajectory solver)
-  enemies.lua            melee patrol; archers with a sense -> aim -> volley ->
-                         investigate brain; patrols bounded by roam_tiles
-  interactables.lua      key/lock/door/switch/spring puzzle logic
-  particles.lua          poofs and blood
+   enemies.lua            melee patrol; archers with a sense -> aim -> volley ->
+                          investigate brain; patrols bounded by roam_tiles
+   rockets.lua            the rocketeer's homing rockets: spawn, pursuit
+                          steering, proximity/terrain/lifetime fuse, blasts
+                          (plus the explosion flashes they leave behind)
+   interactables.lua      key/lock/door/switch/spring puzzle logic
+   particles.lua          poofs, blood, sparks, smoke and explosion bursts
   camera.lua             smooth follow, clamped to the world
    sprites.lua            spritesheet quads + draw helper (flip/rot) -- 16x16
                           tiles, 2x2 upscales of the cart's 8x8 art
@@ -218,7 +221,7 @@ resizable — the blit re-fits every frame.
 ## The archer brain
 
 Archers (`src/enemies.lua`) run a state machine: `patrol -> aim ->
-volley -> (cover fire | investigate) -> patrol`. All three enemy types
+volley -> (cover fire | investigate) -> patrol`. All four enemy types
 share the tracking model: **the player's position is refreshed into
 `last_known` every step it is visible**, in every state (patrol, aim,
 the rapid-fire wait, cover fire and searches included), so a shot fired
@@ -306,6 +309,65 @@ a beam weapon instead of a ballistic volley.
 - **The enemies toggle** (test menu) disarms a firing laser along with
   the archers: live beams go out and the brain drops back to patrol.
 
+## The rocketeer brain
+
+Rocketeers (`src/enemies.lua` + `src/rockets.lua`) run the shared
+`ranged_brain` — the archer's skeleton with a homing rocket launcher
+instead of a ballistic volley. Their ordnance is the game's first
+projectile that hunts on its own: cover does not protect against it,
+and shooting the rocket down is the counterplay.
+
+- **Aim**: on spotting, the rocketeer stops and charges the shot behind
+  a **blinking telegraph** (dotted red sparks rising from its head,
+  same blink math as the laser sight: `rocket_aim_steps` /
+  `rocket_sight_blink`). There is no ballistic solve — the launch is
+  always straight up, so the brain only tracks and turns to face.
+- **Launch**: one rocket spawns **just above the shooter's head** and
+  goes straight up (a `rocket_jitter`-sized random heading offset keeps
+  salvos from stacking perfectly). Rockets live in `ents.rockets`,
+  stepped by `Rockets.update` after the enemies pass (global airborne
+  cap: `rocket_max_alive`).
+- **Climb, hover, strike**: a rocket carries a unit heading and flies
+  in three phases. It **climbs** straight up (no steering) until it has
+  risen `rocket_hover_height` (24px) above the launch point, then
+  **hovers** — velocity zero, nose up, smoking — for
+  `rocket_hover_steps` (12, 0.4s): the player's window to shoot it down
+  while it hangs. When the hover lapses it **turns on a dime**: the
+  heading snaps to the player's live centre and the cruise begins.
+- **Homing**: a rocket cruises at a constant `rocket_speed`, rotating
+  its heading toward the player's **live centre** up to
+  `rocket_turn_rate` per step — pure pursuit, so the flight bends into
+  an arc (turn radius = speed / turn rate ≈ 80px). Sight is irrelevant
+  once airborne: a rocket keeps hunting even after the shooter loses
+  the player, arcing over walls to reach them behind cover.
+- **Fuse**: flight is substepped (`rocket_substep` sampling) so fast
+  turns never skip a wall. A rocket detonates when it gets within
+  `rocket_proximity` (12px) of the player's centre (a player who jumps
+  into a hovering rocket pops it too), touches terrain
+  (`solid_for_arrow`/slopes — just short of the wall, not inside it), or
+  reaches `rocket_lifetime`; flying off the world just removes it. A
+  grey `Particles.smoke` trail puffs behind the tail.
+- **Explosion** (`Rockets.explode`): an expanding flash ring
+  (`ents.booms`, `boom_frames` long, drawn out to the blast radius)
+  around a white core, a red/orange `Particles.boom` spark burst and a
+  poof. Damage is a circle-vs-box test at `rocket_blast_radius`: the
+  player takes `rocket_half_hearts` (2 — a full heart, i-frames
+  respected); **any enemy caught in the blast dies instantly** (arrows
+  are the game's only other killer, and they remove instantly too) —
+  including the launcher itself if it fires under a low ceiling.
+  Other rockets are unaffected (no chain reactions).
+- **Arrow detonation**: a player arrow tip that touches a rocket
+  (generous `rocket_hit_w`/`rocket_hit_h` box at its centre, any arrow
+  kind) detonates it right there — the arrow is consumed like an enemy
+  hit. The hover phase exists to make that read: a hanging rocket is a
+  sitting target. Blasting a rocket at arm's length still catches the
+  player in the blast, so shooting them down early matters.
+- **Bursts / cover fire / toggle**: the laser's numbers with
+  `rocket_*` knobs — 2 rockets per charge on the short cadence (each
+  with its own telegraph, tracking the visible player), the long
+  recharge between charges, blind cover fire at the last known spot,
+  and the enemies toggle clearing rockets and booms from the air.
+
 ## The melee brain
 
 Melee enemies (`src/enemies.lua`) gain a small brain: `patrol -> chase
@@ -350,7 +412,13 @@ luajit tests/trace_diff.lua tests/trace_baseline.txt /tmp/trace.txt
    firing, the wall-stopping beam march, the full-heart hit and its
    i-frame single-hit rule, the last-known-spot shot that misses a
    fleeing player, wall-blocked sight, the slower cadence and the
-   toggle disarm); `tests/player_test.lua` covers
+   toggle disarm); `tests/rocketeer_test.lua` covers the rocketeer
+   (spot -> blink-aim fields, the straight-up launch just above the
+   head, homing that keeps chasing a player behind the shooter's back,
+   the proximity-fuse full-heart blast, ceiling detonation just short
+   of the wall, arrow-tip detonation with the blast's enemy kill, the
+   2-rocket burst cadence, the airborne cap and the toggle disarm);
+   `tests/player_test.lua` covers
    the hearts system (i-frame-gated melee drain, arrow hits, fatal
    refill, void death); `tests/rope_test.lua` covers the rope arrow
    (attach + hang, pendulum swing bounds, detach-preserving-velocity,
@@ -359,6 +427,7 @@ luajit tests/trace_diff.lua tests/trace_baseline.txt /tmp/trace.txt
 ```sh
 luajit tests/enemies_test.lua
 luajit tests/laser_test.lua
+luajit tests/rocketeer_test.lua
 luajit tests/player_test.lua
 luajit tests/rope_test.lua
 ```

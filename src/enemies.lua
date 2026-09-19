@@ -1,11 +1,12 @@
--- Enemies: patrolling melee contact-killers, archers and laser riflemen
--- with a sense -> combat -> cover fire -> investigate brain. Every enemy
--- tracks the player's position every step it is visible; when sight
--- breaks the ranged enemies keep firing at the last known position for
--- enemies.suppress_steps (cover fire), then investigate; the melee
--- sprints after the player while it is seen. Seeing the player again
--- always returns them to combat. Patrols are bounded: an enemy turns
--- back at walls, ledges, or enemies.roam_tiles from its spawn point.
+-- Enemies: patrolling melee contact-killers, archers, laser riflemen
+-- and rocketeers with a sense -> combat -> cover fire -> investigate
+-- brain. Every enemy tracks the player's position every step it is
+-- visible; when sight breaks the ranged enemies keep firing at the last
+-- known position for enemies.suppress_steps (cover fire), then
+-- investigate; the melee sprints after the player while it is seen.
+-- Seeing the player again always returns them to combat. Patrols are
+-- bounded: an enemy turns back at walls, ledges, or enemies.roam_tiles
+-- from its spawn point.
 --
 -- Archer senses:
 --   * the player must be inside `detect_distance`, in front of the archer
@@ -34,6 +35,7 @@ local config = require("src.config")
 local Util = require("src.util")
 local Arrows = require("src.arrows")
 local Particles = require("src.particles")
+local Rockets = require("src.rockets")
 
 local Enemies = {}
 
@@ -255,7 +257,22 @@ function Enemies.fire_beam(ctx, e)
   end
 end
 
--- ==== brains: ranged (archer + laser) and melee ====
+-- ==== rocketeer ====
+
+-- The rocketeer needs no ballistic solve: the rocket launches straight
+-- up from just above its head and homes from there (the telegraph
+-- timer alone charges the shot; the brain still tracks the player and
+-- turns to face it while it is visible).
+local function solve_rocket_aim(ctx, e, tx, ty) end
+
+-- Fires one rocket just above the rocketeer's head.
+function Enemies.fire_rocket(ctx, e)
+  local cfg = config.enemies
+  Rockets.spawn(ctx, e.x + e.w/2, e.y - 4)
+  e.shoot_cd = cfg.shoot_cooldown
+end
+
+-- ==== brains: ranged (archer + laser + rocketeer) and melee ====
 
 -- Per-type knobs for the shared ranged brain. `solve` aims a shot at
 -- (tx, ty), `fire` releases it, `clear_aim` wipes the solved fields
@@ -288,6 +305,18 @@ local RANGED_SPECS = {
     clear_aim          = function(e) e.aim_dx, e.aim_dy = nil, nil end,
     holds_blocked      = false,
   },
+  rocketeer = {
+    aim_steps_field    = "rocket_aim_steps",
+    rapid_min_field    = "rocket_rapid_min",
+    rapid_extra_field  = "rocket_rapid_extra",
+    burst_count_field  = "rocket_burst_count",
+    burst_min_field    = "rocket_burst_min",
+    burst_extra_field  = "rocket_burst_extra",
+    solve              = solve_rocket_aim,
+    fire               = Enemies.fire_rocket,
+    clear_aim          = function(e) end,
+    holds_blocked      = false,
+  },
 }
 
 -- Enters the aim state aimed at (tx, ty): combat aims at the tracked
@@ -305,7 +334,7 @@ local function enter_aim(ctx, e, spec, tx, ty, fresh_charge)
 end
 
 -- One sim tick of a ranged enemy's brain (world time = ctx.dt steps),
--- shared by archers and laser riflemen via RANGED_SPECS:
+-- shared by archers, laser riflemen and rocketeers via RANGED_SPECS:
 --
 --   * the player's position is tracked every step it stays visible, in
 --     every state (combat aims at the live spot; cover fire and searches
@@ -543,8 +572,11 @@ function Enemies.update_one(ctx, e)
         patrol(e, cfg.melee_speed, world)
       end
     else
-      -- archers and laser riflemen share the patrol/investigate instincts
-      local speed = (e.type == "laser") and cfg.laser_speed or cfg.archer_speed
+      -- archers, laser riflemen and rocketeers share the
+      -- patrol/investigate instincts
+      local speed = (e.type == "laser" and cfg.laser_speed)
+        or (e.type == "rocketeer" and cfg.rocketeer_speed)
+        or cfg.archer_speed
       if e.state == "aim" or e.state == "wait" or e.state == "suppress" then
         e.vx = 0  -- stands still while aiming, recharging or covering
       elseif e.state == "investigate" then
@@ -620,6 +652,11 @@ function Enemies.update_one(ctx, e)
       end
     end
     ranged_brain(ctx, e, RANGED_SPECS.laser)
+  elseif e.type == "rocketeer" then
+    -- rockets fly free once launched (src/rockets.lua steps them), so
+    -- the brain only runs its telegraph/cadence side
+    if e.shoot_cd > 0 then e.shoot_cd = math.max(0, e.shoot_cd - dt) end
+    ranged_brain(ctx, e, RANGED_SPECS.rocketeer)
   elseif e.type == "melee" then
     melee_brain(ctx, e)
   end

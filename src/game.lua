@@ -16,6 +16,7 @@ local Camera   = require("src.camera")
 local Player   = require("src.player")
 local Arrows   = require("src.arrows")
 local Enemies  = require("src.enemies")
+local Rockets  = require("src.rockets")
 local Particles = require("src.particles")
 local Interactables = require("src.interactables")
 local Sprites  = require("src.sprites")
@@ -121,6 +122,7 @@ function Game:step()
   if config.enemies.enabled then
     Enemies.update(ctx)
     Arrows.update_enemy_arrows(ctx)
+    Rockets.update(ctx)
   end
   Particles.update(ctx.ents, dt)
   Interactables.update_springs(ctx.ents, dt)
@@ -136,6 +138,8 @@ function Game:toggle_enemies()
   config.enemies.enabled = not config.enemies.enabled
   if not config.enemies.enabled then
     self.ents.e_arrows = {}
+    self.ents.rockets  = {}
+    self.ents.booms    = {}
     for _, e in ipairs(self.ents.enemies) do
       if e.type == "archer" then
         e.state = "patrol"
@@ -146,6 +150,10 @@ function Game:toggle_enemies()
         e.state = "patrol"
         e.beam = nil
         e.aim_dx, e.aim_dy = nil, nil
+        e.suppress_t = nil
+        e.burst = nil
+      elseif e.type == "rocketeer" then
+        e.state = "patrol"
         e.suppress_t = nil
         e.burst = nil
       else

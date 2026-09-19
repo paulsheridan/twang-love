@@ -12,6 +12,7 @@ local Util   = require("src.util")
 local Particles    = require("src.particles")
 local Interactables = require("src.interactables")
 local WinchLog = require("src.winchlog")
+local Rockets = require("src.rockets")
 
 local Arrows = {}
 
@@ -372,6 +373,23 @@ function Arrows.step_one(ctx, a)
           Particles.blood(ents, nx, ny, a.vx, a.vy)
           table.remove(ents.enemies, i)
         end
+        a.active = false
+        return
+      end
+    end
+
+    -- rocket hit: any arrow tip (propel included) detonates the rocket
+    -- where it hangs -- the arrow is consumed by the blast, like an
+    -- enemy hit consumes it. The hitbox is generous (config-sized box
+    -- around the centre) so a near miss still counts.
+    local hw = ctx.config.enemies.rocket_hit_w
+    local hh = ctx.config.enemies.rocket_hit_h
+    for _, r in ipairs(ents.rockets) do
+      if r.active
+      and nx >= r.x - hw/2 and nx < r.x + hw/2
+      and ny >= r.y - hh/2 and ny < r.y + hh/2 then
+        Rockets.explode(ctx, r.x, r.y)
+        r.active = false
         a.active = false
         return
       end

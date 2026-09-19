@@ -180,6 +180,80 @@ local function draw_lasers(ctx)
   end
 end
 
+-- ==== rocketeers ====
+
+-- An aiming rocketeer telegraphs with a blinking red warning of dotted
+-- sparks rising from its head: the shot goes up, so the telegraph does
+-- too (same blink math as the laser sight).
+local function draw_rocketeer_aims(ctx)
+  if not config.enemies.enabled then return end  -- toggled off: invisible
+  local cfg = config.enemies
+  for _, e in ipairs(ctx.ents.enemies) do
+    if e.type == "rocketeer" and e.state == "aim" then
+      local phase = math.floor((cfg.rocket_aim_steps - e.aim_t)
+        / cfg.rocket_sight_blink) % 2
+      if phase == 0 then
+        local ex = math.floor(e.x + e.w/2)
+        local top = math.floor(e.y)
+        love.graphics.setColor(pcol(8))
+        for i = 0, 3 do dot(ex, top - 2 - i*3) end
+      end
+    end
+  end
+end
+
+-- ==== rockets ====
+
+-- Rockets draw fat and readable: a thick red body (two outer lines
+-- around a hot white core, laser-beam style) with a 3x3 white nose
+-- cone and a flickering orange exhaust, oriented by the rocket's
+-- heading (a hovering rocket hangs nose-up). The smoke trail itself is
+-- particles.
+local function draw_rockets(ctx)
+  for _, r in ipairs(ctx.ents.rockets) do
+    if r.active then
+      local x, y = math.floor(r.x), math.floor(r.y)
+      local hx, hy = r.hx or 0, r.hy or -1
+      -- exhaust flame flickers behind the tail
+      love.graphics.setColor(pcol(9))
+      love.graphics.line(x - math.floor(hx*14), y - math.floor(hy*14),
+        x - math.floor(hx*9), y - math.floor(hy*9))
+      -- thick body: nose at the front, tail behind
+      local nx, ny = x + math.floor(hx*4), y + math.floor(hy*4)
+      local tx, ty = x - math.floor(hx*8), y - math.floor(hy*8)
+      local ox, oy = math.floor(-hy * 2), math.floor(hx * 2)
+      love.graphics.setColor(pcol(8))
+      love.graphics.line(nx + ox, ny + oy, tx + ox, ty + oy)
+      love.graphics.line(nx - ox, ny - oy, tx - ox, ty - oy)
+      love.graphics.setColor(pcol(7))
+      love.graphics.line(nx, ny, tx, ty)
+      dot(nx + math.floor(hx*2), ny + math.floor(hy*2))
+    end
+  end
+end
+
+-- ==== explosions ====
+
+-- A detonation flash: an orange ring of dots expanding out to the
+-- blast radius over boom_frames, around a white core while it is young.
+local function draw_booms(ctx)
+  local cfg = config.enemies
+  for _, b in ipairs(ctx.ents.booms) do
+    local f = 1 - math.max(0, b.t) / cfg.boom_frames  -- 0..1 growth
+    local rad = 4 + (cfg.rocket_blast_radius - 4) * f
+    local steps = math.max(10, math.floor(rad))
+    love.graphics.setColor(pcol(9))
+    for i = 0, steps - 1 do
+      local a = i / steps * math.pi * 2
+      dot(b.x + math.cos(a) * rad, b.y + math.sin(a) * rad)
+    end
+    if f < 0.5 then
+      love.graphics.setColor(pcol(7))
+      love.graphics.circle("fill", math.floor(b.x), math.floor(b.y), 3 + f * 10)
+    end
+  end
+end
+
 -- ==== player arrows ====
 
 -- Player arrows draw a size up from the enemy darts: a 9px shaft with a
@@ -257,8 +331,11 @@ function Render.world(ctx)
   draw_enemies(ctx)
   draw_archer_aims(ctx)
   draw_lasers(ctx)
+  draw_rocketeer_aims(ctx)
   draw_e_arrows(ctx)
+  draw_rockets(ctx)
   draw_arrows(ctx)
+  draw_booms(ctx)
   draw_ropes(ctx)
 end
 

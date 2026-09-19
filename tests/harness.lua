@@ -72,6 +72,12 @@ function Harness.new_env(keys_down, quit_flag)
     end
     expect_numbers("rectangle", x, y, w, h)
   end
+  graphics.circle = function(mode, x, y, r)
+    if mode ~= "fill" and mode ~= "line" then
+      error("circle: mode must be 'fill' or 'line'", 2)
+    end
+    expect_numbers("circle", x, y, r)
+  end
   graphics.draw = function(image, ...)
     if type(image) ~= "table" then
       error("draw: first argument must be an image/canvas stub", 2)

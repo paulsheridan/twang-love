@@ -112,12 +112,23 @@ a monitor with a different resolution, so it stays crisp everywhere.
   shots, and only a spent burst buys the full recharge. Lose their
   line of sight and they cover your last known position with blind
   shots before coming to look for you.
+- **Rocketeers lob rockets**: the same senses and cover-fire loop, but
+  the telegraph is a blip of red sparks above their head and the shot
+  goes straight up — the rocket climbs a short way, hangs above the
+  launcher for a beat (your window to shoot it down), then turns on a
+  dime and homes in on your live position, arcing over walls to reach
+  you even behind cover (cover is no protection). Getting caught in its
+  blast costs a full heart, and any enemy caught in the blast dies
+  with you — the launcher included if it fires under a low ceiling.
+  Each charge holds two rockets: the follow-up comes fast, re-tracking
+  you, and only a spent burst buys the full recharge.
 - **Melee enemies charge**: touch one and it hurts, but now they also
   hunt — a spotted player is sprinted after, and when you break their
   line of sight they head for where you were last seen before giving
   up and resuming their patrol. Arrow tips kill them on contact.
 - You have three hearts (drawn top-left): a melee touch or enemy arrow
-  costs half a heart, a laser beam costs a full heart; hits spray blood
+  costs half a heart, a laser beam or rocket blast costs a full heart;
+  hits spray blood
   opposite the impact and shroud you in a fading red silhouette while
   you're invulnerable (further
   hits are ignored until it lapses). Enemy arrows stop dead at you for
@@ -144,6 +155,7 @@ luajit tests/run.lua main.lua /tmp/trace.txt
 luajit tests/trace_diff.lua tests/trace_baseline.txt /tmp/trace.txt
 luajit tests/enemies_test.lua
 luajit tests/laser_test.lua
+luajit tests/rocketeer_test.lua
 luajit tests/player_test.lua
 luajit tests/rope_test.lua
 luajit tests/interactables_test.lua
