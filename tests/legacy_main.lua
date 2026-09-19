@@ -1403,7 +1403,7 @@ end
 
 local function draw()
   love.graphics.setCanvas(canvas)
-  love.graphics.clear(pcol(15))
+  love.graphics.clear(112/255, 112/255, 112/255, 1)
   love.graphics.push()
   love.graphics.translate(-math.floor(cam.x), -math.floor(cam.y))
   draw_world()

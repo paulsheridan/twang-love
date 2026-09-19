@@ -31,7 +31,8 @@ end
 function Blit.render(ctx, menu_open)
   local vw, vh = config.view.width, config.view.height
   love.graphics.setCanvas(canvas)
-  love.graphics.clear(Palette.rgb(15))
+  -- background: neutral gray, slightly darker than 50%
+  love.graphics.clear(112/255, 112/255, 112/255, 1)
   -- world-pass vector lines (arrow shafts, rope, aim lines) draw 2px thick
   -- to match the 2x2-upscaled sheet; the controls panel resets its own 1px
   love.graphics.setLineWidth(2)
