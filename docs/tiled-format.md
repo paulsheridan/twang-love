@@ -108,6 +108,22 @@ scanned from tile layers except the legacy `spawn` marker (see
 visible tile layers is allowed; later layers overwrite earlier ones where
 they place a nonzero tile (higher layer wins, like Tiled's draw order).
 
+Layer names give two of them a special, purely visual role
+(case-insensitive):
+
+- **`background`** — backdrop scenery, drawn behind everything (player,
+  items, entities, terrain). It never takes part in collision, so
+  terrain-wall art can be reused as scenery there even when the tile is
+  flagged `solid`.
+- **`foreground`** — overlay scenery (buildings, hidden spaces), drawn on
+  top of everything, the player included. It never collides either.
+  Whenever the player walks behind any of it, the whole layer fades out
+  smoothly (`config.foreground`) so their avatar stays visible, and
+  fades back in once they step out.
+
+Every other visible tile layer is gameplay terrain: merged into one
+collision/draw grid, later layers winning on nonzero tiles.
+
 ## Cart fallbacks
 
 If the tileset defines no kind/slope properties at all, the pico-8 cart

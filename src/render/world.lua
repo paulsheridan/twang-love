@@ -23,6 +23,32 @@ end
 
 -- ==== terrain ====
 
+-- The visible tile rect, top-left corner in tiles.
+local function cam_tiles(cam)
+  local tw = config.tile_size
+  return math.floor(cam.x / tw), math.floor(cam.y / tw),
+    config.view.width / tw, config.view.height / tw
+end
+
+-- The visual-only "background" layer (docs/tiled-format.md): pure
+-- backdrop, drawn before everything so it always renders behind the
+-- player, items and entities.
+local function draw_background(ctx)
+  local world = ctx.world
+  if not world.bg_map then return end
+  local mx, my, vw_t, vh_t = cam_tiles(ctx.cam)
+  local tw = config.tile_size
+  love.graphics.setColor(1, 1, 1, 1)
+  for r = my, my + vh_t do
+    for c = mx, mx + vw_t + 1 do
+      local t = world:bg_tile(c, r)
+      if t ~= 0 then
+        love.graphics.draw(Sprites.sheet(), Sprites.quad(t), c*tw, r*tw)
+      end
+    end
+  end
+end
+
 local function draw_map(ctx)
   local cam, world = ctx.cam, ctx.world
   local tw = config.tile_size
@@ -205,6 +231,30 @@ local function draw_rocketeer_aims(ctx)
   end
 end
 
+-- ==== bombers ====
+
+-- An aiming bomber telegraphs with a blinking orange dot held above
+-- its head (the raised bomb) around a flickering white fuse spark,
+-- same blink math as the other telegraphs.
+local function draw_bomber_aims(ctx)
+  if not config.enemies.enabled then return end  -- toggled off: invisible
+  local cfg = config.enemies
+  for _, e in ipairs(ctx.ents.enemies) do
+    if e.type == "bomber" and e.state == "aim" then
+      local phase = math.floor((cfg.bomber_aim_steps - e.aim_t)
+        / cfg.bomber_sight_blink) % 2
+      if phase == 0 then
+        local ex = math.floor(e.x + e.w/2)
+        local top = math.floor(e.y)
+        love.graphics.setColor(pcol(9))
+        dot(ex, top - 5)
+        love.graphics.setColor(pcol(7))
+        dot(ex + 2, top - 8)
+      end
+    end
+  end
+end
+
 -- ==== rockets ====
 
 -- Rockets draw fat and readable: a thick red body (two outer lines
@@ -235,15 +285,35 @@ local function draw_rockets(ctx)
   end
 end
 
+-- ==== bombs ====
+
+-- A thrown bomb draws as a small round grenade: a 6px red body with a
+-- white fuse spark that blinks as the fuse burns down.
+local function draw_bombs(ctx)
+  for _, b in ipairs(ctx.ents.bombs) do
+    if b.active then
+      local x, y = math.floor(b.x), math.floor(b.y)
+      love.graphics.setColor(pcol(8))
+      love.graphics.circle("fill", x, y, 3)
+      love.graphics.setColor(pcol(7))
+      if math.floor(b.fuse / 2) % 2 == 0 then
+        dot(x + 3, y - 3)
+      end
+    end
+  end
+end
+
 -- ==== explosions ====
 
 -- A detonation flash: an orange ring of dots expanding out to the
 -- blast radius over boom_frames, around a white core while it is young.
+-- Each boom carries the radius its blast used (rockets and thrown
+-- bombs differ).
 local function draw_booms(ctx)
   local cfg = config.enemies
   for _, b in ipairs(ctx.ents.booms) do
     local f = 1 - math.max(0, b.t) / cfg.boom_frames  -- 0..1 growth
-    local rad = 4 + (cfg.rocket_blast_radius - 4) * f
+    local rad = 4 + ((b.r or cfg.rocket_blast_radius) - 4) * f
     local steps = math.max(10, math.floor(rad))
     love.graphics.setColor(pcol(9))
     for i = 0, steps - 1 do
@@ -326,8 +396,10 @@ local function draw_ropes(ctx)
     math.floor(ctx.player.y + ctx.player.h/2))
 end
 
--- The full world pass, in draw order (player drawn separately on top).
+-- The full world pass, in draw order (player drawn separately on top;
+-- the foreground overlay renders after them, see render/blit.lua).
 function Render.world(ctx)
+  draw_background(ctx)
   draw_map(ctx)
   draw_interactables(ctx)
   draw_particles(ctx)
@@ -335,11 +407,37 @@ function Render.world(ctx)
   draw_archer_aims(ctx)
   draw_lasers(ctx)
   draw_rocketeer_aims(ctx)
+  draw_bomber_aims(ctx)
   draw_e_arrows(ctx)
   draw_rockets(ctx)
+  draw_bombs(ctx)
   draw_arrows(ctx)
   draw_booms(ctx)
   draw_ropes(ctx)
+end
+
+-- Foreground overlay pass: drawn after the player so buildings and
+-- hidden spaces cover the world. The layer fades as a whole
+-- (World:foreground_step drives the layer alpha to 0 while the player
+-- walks behind any of it, so their avatar stays visible, and back to 1
+-- after) — one color set for the whole pass.
+function Render.foreground(ctx)
+  local world = ctx.world
+  if not world.fg_map then return end
+  local alpha = world.fg_alpha
+  if alpha <= 0 then return end
+  local mx, my, vw_t, vh_t = cam_tiles(ctx.cam)
+  local tw = config.tile_size
+  love.graphics.setColor(1, 1, 1, alpha)
+  for r = my, my + vh_t do
+    for c = mx, mx + vw_t + 1 do
+      local t = world:fg_tile(c, r)
+      if t ~= 0 then
+        love.graphics.draw(Sprites.sheet(), Sprites.quad(t), c*tw, r*tw)
+      end
+    end
+  end
+  if alpha ~= 1 then love.graphics.setColor(1, 1, 1, 1) end
 end
 
 return Render

@@ -1,12 +1,13 @@
 -- Test menu tests (deterministic, headless; requires LuaJIT).
 --
--- Covers the panel (m / tab / start) and its three toggles
--- (see Game:menu_step / src/render/menu.lua):
+-- Covers the panel (m / tab / start) and its rows (see Game:menu_step /
+-- src/render/menu.lua):
 --   1. opening and closing the panel (m, start; z / x close)
 --   2. up/down selection with wraparound
 --   3. the swap key toggles the highlighted row: puzzle pieces hidden,
 --      invincibility, enemies off
 --   4. the old enemies shortcuts (keyboard e, pad Y) are unmapped
+--   5. row 4 returns to the launch level select (world paused)
 --
 -- Usage (from the project root): luajit tests/menu_test.lua
 
@@ -69,12 +70,12 @@ do
   end
   nudge("down")
   assert_true(g.menu_sel == 2, "down moves the selection")
-  nudge("down", 2)
+  nudge("down", 3)
   assert_true(g.menu_sel == 1, "down wraps from the last row to the first")
   nudge("up")
-  assert_true(g.menu_sel == 3, "up wraps from the first row to the last")
+  assert_true(g.menu_sel == 4, "up wraps from the first row to the last")
   nudge("up")
-  assert_true(g.menu_sel == 2, "up moves the selection")
+  assert_true(g.menu_sel == 3, "up moves the selection")
 end
 
 -- ==== 3. each row toggles its feature ====
@@ -142,6 +143,35 @@ do
     "the pad Y button no longer toggles the enemies")
   assert_true(not g.menu_open,
     "neither e nor Y disturbs the test menu")
+end
+
+-- ==== 5. row 4 returns to the launch level select ====
+do
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local keys = env.TWANG_TEST.keys_down
+  assert_true(g.mode == "play", "the harness boots into play")
+  env.love.keypressed("m")
+  step(env)
+  assert_true(g.menu_open, "m opens the test menu")
+  -- down three times: row 4 (level select)
+  for _ = 1, 3 do
+    keys.down = true; step(env); keys.down = nil; step(env)
+  end
+  assert_true(g.menu_sel == 4, "the level-select row is selected")
+  env.love.keypressed("c")
+  step(env)
+  assert_true(g.mode == "select" and not g.menu_open,
+    "row 4 opens the level select and closes the panel")
+  -- the select screen is its own mode: the panel can't be opened there
+  env.love.keypressed("m")
+  step(env)
+  assert_true(g.mode == "select" and not g.menu_open,
+    "m does nothing while the level select is open")
+  -- and jump starts the highlighted level again (a fresh load)
+  env.love.keypressed("x")
+  step(env)
+  assert_true(g.mode == "play", "jump starts the selected level")
 end
 
 print(("menu tests: %d passed, %d failed"):format(PASS, FAIL))

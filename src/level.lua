@@ -44,6 +44,7 @@ function Level.build(level, config)
     melee      = level.special.melee      or config.tiles.melee,
     laser      = level.special.laser      or config.tiles.laser,
     rocketeer  = level.special.rocketeer  or config.tiles.rocketeer,
+    bomber     = level.special.bomber     or config.tiles.bomber,
   }
 
   local ents = {
@@ -51,6 +52,7 @@ function Level.build(level, config)
     e_arrows     = {},
     enemies      = {},
     rockets      = {},
+    bombs        = {},
     booms        = {},
     particles    = {},
     spawn_points = {},
@@ -85,7 +87,7 @@ function Level.build(level, config)
   -- ==== enemies ====
   for _, o in ipairs(level.objects) do
     if o.kind == "archer" or o.kind == "melee" or o.kind == "laser"
-    or o.kind == "rocketeer" then
+    or o.kind == "rocketeer" or o.kind == "bomber" then
       local ex, ey = snap_tile(o.x, tw), snap_tile(o.y, tw)
       local e = {
         x = ex, y = ey,
@@ -95,14 +97,16 @@ function Level.build(level, config)
         shoot_cd = cfg.shoot_cooldown,
         spr = o.spr or ((o.kind == "melee") and tiles.melee
           or (o.kind == "laser") and tiles.laser
-          or (o.kind == "rocketeer") and tiles.rocketeer or tiles.archer),
+          or (o.kind == "rocketeer") and tiles.rocketeer
+          or (o.kind == "bomber") and tiles.bomber or tiles.archer),
         rot = o.rot,
       }
       -- every brain starts on patrol with nothing tracked yet; the
       -- ranged brains also carry an aim telegraph timer
       e.state = "patrol"
       e.last_known = nil
-      if o.kind == "archer" or o.kind == "laser" or o.kind == "rocketeer" then
+      if o.kind == "archer" or o.kind == "laser" or o.kind == "rocketeer"
+      or o.kind == "bomber" then
         e.aim_t = 0
       end
       apply_object_props(e, o)

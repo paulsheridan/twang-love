@@ -36,6 +36,12 @@ function World.new(level, ents, tile_size)
   self.switches  = ents.switches
   self.phase_tiles = level.phase_tiles or {}
   self.phase_solid = true  -- phase tiles start solid; phase-switch strikes flip this
+  -- visual-only named Tiled layers (see docs/tiled-format.md): the
+  -- backdrop draws behind everything; the foreground overlay draws on
+  -- top of the player and fades out as a whole while they walk behind it
+  self.bg_map   = level.background
+  self.fg_map   = level.foreground
+  self.fg_alpha = 1    -- foreground layer's current draw alpha
   return self
 end
 
@@ -46,6 +52,21 @@ function World:tile(c, r)
   if c < 0 or c >= self.w or r < 0 or r >= self.h then return 0 end
   local row = self.map[r + 1]
   return row and tonumber(row:sub(c*2 + 1, c*2 + 2), 16) or 0
+end
+
+-- Tile id on a visual-only named layer (nil grid -> 0 everywhere).
+local function layer_tile(rows, w, h, c, r)
+  if not rows or c < 0 or c >= w or r < 0 or r >= h then return 0 end
+  local row = rows[r + 1]
+  return row and tonumber(row:sub(c*2 + 1, c*2 + 2), 16) or 0
+end
+
+function World:bg_tile(c, r)
+  return layer_tile(self.bg_map, self.w, self.h, c, r)
+end
+
+function World:fg_tile(c, r)
+  return layer_tile(self.fg_map, self.w, self.h, c, r)
 end
 
 function World:set_tile(c, r, t)
@@ -74,6 +95,44 @@ end
 -- are normal ground.
 function World:friction(t)
   return (t ~= 0 and self:flag(t, 2)) and config.player.slippery_friction or 1.0
+end
+
+-- ==== foreground overlay fade ====
+
+-- One sim step of the foreground overlay's fade (runs in world time:
+-- `dt` is the step's world-time scale, so the fade slows with aiming's
+-- slow motion like everything else). While the player's box (grown by
+-- the fade margin) touches any overlay tile the whole layer eases to
+-- invisible -- buildings and hidden spaces vanish together, so the
+-- avatar stays readable -- and it eases back once they step out.
+function World:foreground_step(player, dt)
+  if not self.fg_map or not player then return end
+  local cfg = config.foreground
+  local tw = self.tw
+  -- the player's box grown by the fade margin, in tile columns/rows
+  local c0 = math.floor((player.x - cfg.fade_margin_px) / tw)
+  local c1 = math.floor((player.x + player.w - 1 + cfg.fade_margin_px) / tw)
+  local r0 = math.floor((player.y - cfg.fade_margin_px) / tw)
+  local r1 = math.floor((player.y + player.h - 1 + cfg.fade_margin_px) / tw)
+  -- behind = any overlay tile in that band
+  local behind = false
+  for r = r0, r1 do
+    for c = c0, c1 do
+      if self:fg_tile(c, r) ~= 0 then
+        behind = true
+        break
+      end
+    end
+    if behind then break end
+  end
+  local target = behind and 0 or 1
+  local k = cfg.fade_alpha_step * (dt or 1)
+  local a = self.fg_alpha
+  if a < target then
+    self.fg_alpha = math.min(a + k, target)
+  else
+    self.fg_alpha = math.max(a - k, target)
+  end
 end
 
 -- ==== solidity queries ====

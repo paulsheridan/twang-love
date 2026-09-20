@@ -27,13 +27,19 @@ love .
 | menu: select item | up/down | dpad up/down |
 | menu: toggle item | c | X |
 | menu: close | z / x | right bumper / A / B |
+| level select: choose level | up/down | dpad / left stick |
+| level select: play | z / x / c | right bumper / A / B / X |
 | fullscreen | f11 | — |
 | quit | escape | back |
+
+The game opens on a **level select** (see `config.levels`): the chosen
+level loads fresh and play begins. The test menu's last row returns to
+it, so levels can be swapped without restarting.
 
 ## Test menu
 
 The panel (`m` / `tab` / `start`) doubles as a test menu with three
-toggles. The game world pauses while it's open.
+toggles and a level-select row. The game world pauses while it's open.
 
 - **doors/keys/locks hidden** — every key, lock and door vanishes: they
   stop rendering, doors stop blocking (and stop bouncing arrows), keys
@@ -47,6 +53,9 @@ toggles. The game world pauses while it's open.
   stop updating, their arrows vanish and archers drop back to patrol
   (they were previously toggled with the keyboard `e` key / pad `Y`,
   both now unmapped). Toggling back on re-enables them.
+- **level select** — leaves play for the launch level select (the game
+  world stays paused behind it), where any level in `config.levels` can
+  be started fresh.
 
 While aiming, the world runs in slow motion and the bow's trajectory is
 previewed. The world keeps simulating (and rendering) at the steady
@@ -160,6 +169,9 @@ luajit tests/player_test.lua
 luajit tests/rope_test.lua
 luajit tests/interactables_test.lua
 luajit tests/slowmo_test.lua
+luajit tests/menu_test.lua
+luajit tests/levelselect_test.lua
+luajit tests/foreground_test.lua
 ```
 
 The trace diff must be empty. After an *intentional* gameplay change,

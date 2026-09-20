@@ -399,6 +399,11 @@
    <property name="kind" value="melee"/>
   </properties>
  </tile>
+ <tile id="143">
+  <properties>
+   <property name="kind" value="bomber"/>
+  </properties>
+ </tile>
  <tile id="37">
   <properties>
    <property name="solid" type="bool" value="true"/>

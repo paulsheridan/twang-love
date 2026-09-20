@@ -10,6 +10,7 @@ local render_player = require("src.render.player")
 local render_hearts = require("src.render.hearts")
 local render_hud    = require("src.render.hud")
 local render_menu   = require("src.render.menu")
+local render_levelselect = require("src.render.levelselect")
 
 local Blit = {}
 
@@ -26,9 +27,9 @@ function Blit.canvas()
   return canvas
 end
 
--- One rendered frame: world + (menu overlay) into the native canvas,
--- blit to the window, then HUD.
-function Blit.render(ctx, menu_open)
+-- One rendered frame: world + (level select or menu overlay) into the
+-- native canvas, blit to the window, then HUD.
+function Blit.render(ctx, menu_open, level_select)
   local vw, vh = config.view.width, config.view.height
   love.graphics.setCanvas(canvas)
   -- background: neutral gray, slightly darker than 50%
@@ -40,11 +41,13 @@ function Blit.render(ctx, menu_open)
   love.graphics.translate(-math.floor(ctx.cam.x), -math.floor(ctx.cam.y))
   render_world.world(ctx)
   render_player(ctx)
+  render_world.foreground(ctx)  -- buildings/hidden spaces, above the player
   love.graphics.pop()
   -- HUD on the canvas: hearts live in screen space (outside the camera
   -- translate), so they stay pinned to the top-left corner
   render_hearts(ctx)
-  if menu_open then render_menu(ctx) end
+  if level_select then render_levelselect(ctx)
+  elseif menu_open then render_menu(ctx) end
   love.graphics.setCanvas()
 
   -- blit the native canvas to the window at an INTEGER scale: fractional

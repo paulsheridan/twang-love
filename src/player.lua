@@ -98,6 +98,7 @@ function Player.die(ctx)
   ctx.ents.arrows = {}
   ctx.ents.e_arrows = {}
   ctx.ents.rockets = {}
+  ctx.ents.bombs = {}
 end
 
 -- Taking a hit: half a heart lost by default (unless still invulnerable

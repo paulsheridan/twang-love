@@ -10,7 +10,10 @@ local Game = require("src.game")
 local game
 
 function love.load()
-  game = Game.new()
+  -- the launch level select is a real-LÖVE screen: the headless harness
+  -- passes skip_select and boots straight into play so its scripted runs
+  -- exercise the simulation
+  game = Game.new(TWANG_TEST ~= nil)
   game:load()
   -- test hook: expose the live game to the headless harness
   if TWANG_TEST then

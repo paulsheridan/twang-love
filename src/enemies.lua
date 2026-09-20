@@ -1,12 +1,12 @@
--- Enemies: patrolling melee contact-killers, archers, laser riflemen
--- and rocketeers with a sense -> combat -> cover fire -> investigate
--- brain. Every enemy tracks the player's position every step it is
--- visible; when sight breaks the ranged enemies keep firing at the last
--- known position for enemies.suppress_steps (cover fire), then
--- investigate; the melee sprints after the player while it is seen.
--- Seeing the player again always returns them to combat. Patrols are
--- bounded: an enemy turns back at walls, ledges, or enemies.roam_tiles
--- from its spawn point.
+-- Enemies: patrolling melee contact-killers, archers, laser riflemen,
+-- rocketeers and bombers with a sense -> combat -> cover fire ->
+-- investigate brain. Every enemy tracks the player's position every
+-- step it is visible; when sight breaks the ranged enemies keep firing
+-- at the last known position for enemies.suppress_steps (cover fire),
+-- then investigate; the melee sprints after the player while it is
+-- seen. Seeing the player again always returns them to combat. Patrols
+-- are bounded: an enemy turns back at walls, ledges, or
+-- enemies.roam_tiles from its spawn point.
 --
 -- Archer senses:
 --   * the player must be inside `detect_distance`, in front of the archer
@@ -36,6 +36,7 @@ local Util = require("src.util")
 local Arrows = require("src.arrows")
 local Particles = require("src.particles")
 local Rockets = require("src.rockets")
+local Bombs = require("src.bombs")
 
 local Enemies = {}
 
@@ -278,7 +279,39 @@ function Enemies.fire_rocket(ctx, e)
   e.shoot_cd = cfg.shoot_cooldown
 end
 
--- ==== brains: ranged (archer + laser + rocketeer) and melee ====
+-- ==== bomber ====
+
+-- The bomber needs no ballistic solve: the throw aims in a straight
+-- line at the tracked spot when the telegraph lapses (the brain still
+-- tracks the player and turns to face it while it is visible).
+local function solve_bomb_aim(ctx, e, tx, ty) end
+
+-- Throws one bomb from just above the bomber's head, flying in a
+-- straight line at the tracked spot. The fuse is the thrower's cheap,
+-- deliberately rough guess -- flight time to the target (straight-line
+-- distance over throw speed, floored to whole steps), jittered
+-- ±bomb_fuse_error steps. No trajectory or terrain solve: the bomber
+-- errs on the side of inaccurate but inexpensive. Returns the thrown
+-- bomb (nil under the airborne cap).
+function Enemies.fire_bomb(ctx, e)
+  local cfg = config.enemies
+  local mx, my = e.x + e.w/2, e.y - 4
+  local known = e.last_known
+    or { x = e.x + e.w/2 + e.facing * 8, y = e.y + e.h/2 }
+  local dx, dy = known.x - mx, known.y - my
+  local dist = math.sqrt(dx*dx + dy*dy)
+  local vx, vy = e.facing * cfg.bomb_speed, 0
+  if dist > 0 then
+    vx, vy = dx/dist * cfg.bomb_speed, dy/dist * cfg.bomb_speed
+  end
+  local fuse = dist > 0 and math.floor(dist / cfg.bomb_speed) or 1
+  fuse = math.max(1, fuse + math.random(-cfg.bomb_fuse_error,
+    cfg.bomb_fuse_error))
+  e.shoot_cd = cfg.shoot_cooldown
+  return Bombs.spawn(ctx, mx, my, vx, vy, fuse)
+end
+
+-- ==== brains: ranged (archer + laser + rocketeer + bomber) and melee ====
 
 -- Per-type knobs for the shared ranged brain. `solve` aims a shot at
 -- (tx, ty), `fire` releases it, `clear_aim` wipes the solved fields
@@ -325,6 +358,18 @@ local RANGED_SPECS = {
     clear_aim          = function(e) end,
     holds_blocked      = false,
   },
+  bomber = {
+    aim_steps_field    = "bomber_aim_steps",
+    rapid_min_field    = "bomber_rapid_min",
+    rapid_extra_field  = "bomber_rapid_extra",
+    burst_count_field  = "bomber_burst_count",
+    burst_min_field    = "bomber_burst_min",
+    burst_extra_field  = "bomber_burst_extra",
+    solve              = solve_bomb_aim,
+    fire               = Enemies.fire_bomb,
+    clear_aim          = function(e) end,
+    holds_blocked      = false,
+  },
 }
 
 -- Enters the aim state aimed at (tx, ty): combat aims at the tracked
@@ -342,16 +387,18 @@ local function enter_aim(ctx, e, spec, tx, ty, fresh_charge)
 end
 
 -- One sim tick of a ranged enemy's brain (world time = ctx.dt steps),
--- shared by archers, laser riflemen and rocketeers via RANGED_SPECS:
+-- shared by archers, laser riflemen, rocketeers and bombers via
+-- RANGED_SPECS:
 --
 --   * the player's position is tracked every step it stays visible, in
 --     every state (combat aims at the live spot; cover fire and searches
 --     aim at the freshest known spot)
 --   * combat: aim (telegraphed) -> fire -> a quick, semi randomized
 --     follow-up cadence while the player stays visible; burst-firing
---     specs (the laser) instead spend a shot budget per charge -- shots
---     follow one another on the short burst cadence, tracking the
---     player, and the full recharge only comes once it is spent
+--     specs (the laser, rocketeer and bomber) instead spend a shot
+--     budget per charge -- shots follow one another on the short burst
+--     cadence, tracking the player, and the full recharge only comes
+--     once it is spent
 --   * sight broken: a cover-fire window opens -- the shooter stands
 --     still and keeps firing at the last known position (blind shots on
 --     the same cadence) for enemies.suppress_steps, then investigates
@@ -580,10 +627,11 @@ function Enemies.update_one(ctx, e)
         patrol(e, cfg.melee_speed, world)
       end
     else
-      -- archers, laser riflemen and rocketeers share the
+      -- archers, laser riflemen, rocketeers and bombers share the
       -- patrol/investigate instincts
       local speed = (e.type == "laser" and cfg.laser_speed)
         or (e.type == "rocketeer" and cfg.rocketeer_speed)
+        or (e.type == "bomber" and cfg.bomber_speed)
         or cfg.archer_speed
       if e.state == "aim" or e.state == "wait" or e.state == "suppress" then
         e.vx = 0  -- stands still while aiming, recharging or covering
@@ -665,6 +713,11 @@ function Enemies.update_one(ctx, e)
     -- the brain only runs its telegraph/cadence side
     if e.shoot_cd > 0 then e.shoot_cd = math.max(0, e.shoot_cd - dt) end
     ranged_brain(ctx, e, RANGED_SPECS.rocketeer)
+  elseif e.type == "bomber" then
+    -- bombs fly free once thrown (src/bombs.lua steps them), so the
+    -- brain only runs its telegraph/cadence side
+    if e.shoot_cd > 0 then e.shoot_cd = math.max(0, e.shoot_cd - dt) end
+    ranged_brain(ctx, e, RANGED_SPECS.bomber)
   elseif e.type == "melee" then
     melee_brain(ctx, e)
   end

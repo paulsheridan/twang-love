@@ -13,6 +13,7 @@ local Particles    = require("src.particles")
 local Interactables = require("src.interactables")
 local WinchLog = require("src.winchlog")
 local Rockets = require("src.rockets")
+local Bombs = require("src.bombs")
 
 local Arrows = {}
 
@@ -390,6 +391,22 @@ function Arrows.step_one(ctx, a)
       and ny >= r.y - hh/2 and ny < r.y + hh/2 then
         Rockets.explode(ctx, r.x, r.y)
         r.active = false
+        a.active = false
+        return
+      end
+    end
+
+    -- bomb hit: any arrow tip (propel included) detonates the thrown
+    -- bomb in flight too, through the same generous hitbox and shared
+    -- blast (the arrow is consumed either way)
+    local bw = ctx.config.enemies.bomb_hit_w
+    local bh = ctx.config.enemies.bomb_hit_h
+    for _, b in ipairs(ents.bombs) do
+      if b.active
+      and nx >= b.x - bw/2 and nx < b.x + bw/2
+      and ny >= b.y - bh/2 and ny < b.y + bh/2 then
+        Bombs.explode(ctx, b.x, b.y)
+        b.active = false
         a.active = false
         return
       end

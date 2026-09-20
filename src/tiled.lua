@@ -9,7 +9,10 @@
 --   arrow_pass, kind (entity role) and slope (collision shape)
 -- * entities (spawn/key/lock/door/archer/melee/switch/spring) live as
 --   tile objects on Object Layers
--- * any number of visible tile layers; later layers win on nonzero tiles
+-- * any number of visible tile layers; layers named "background" /
+--   "foreground" (case-insensitive) are purely visual backdrop/overlay
+--   grids, every other visible layer merges into the terrain grid (later
+--   layers win on nonzero tiles)
 -- * if the tileset defines no kind/slope properties at all, the pico-8
 --   cart defaults below apply, so migrated levels need no manual setup
 
@@ -19,8 +22,8 @@ local json = require("lib.json")
 -- tileset does not define the matching property
 local DEFAULT_KINDS = {
   spawn = 63, key = 70, lock = 71, door = 72, archer = 112, melee = 116,
-  laser = 138, rocketeer = 138, switch = 171, spring = 16, spring_ext = 33,
-  winch = 133,
+  laser = 138, rocketeer = 138, bomber = 138, switch = 171, spring = 16,
+  spring_ext = 33, winch = 133,
 }
 local DEFAULT_SLOPES = {
   [6] = "/floor",  [13] = "/floor", -- / floor
@@ -176,10 +179,28 @@ function tiled.load(path)
     for t, s in pairs(DEFAULT_SLOPES) do slope_type[t] = SLOPE_IDS[s] end
   end
 
-  -- merge visible tile layers into one grid (later layers win on nonzero)
+  -- tile layers by role: named "background"/"foreground" (case-insensitive)
+  -- are purely visual layers, kept out of the collision grid entirely --
+  -- their tiles are often solid-flagged terrain art reused as scenery.
+  -- Every other visible layer is gameplay terrain, merged into one grid
+  -- (later layers win on nonzero tiles).
   local W, H = m.width, m.height
-  local cells = {}
+  local cells, bg_cells, fg_cells = {}, {}, {}
   local n_layers = 0
+  local function merge(data, into)
+    for i = 1, W * H do
+      local gid = data[i] or 0
+      if gid > 0 then
+        local t = gid - ts.firstgid
+        if t < 0 or t >= n_tiles then
+          print("tiled: warning - GID " .. gid .. " is outside the "
+            .. "tileset (tile " .. tostring(t) .. "); ignored")
+          t = 0
+        end
+        if t > 0 then into[i] = t end
+      end
+    end
+  end
   for _, layer in ipairs(m.layers or {}) do
     if layer.type == "tilelayer" and layer.visible ~= false then
       n_layers = n_layers + 1
@@ -188,18 +209,10 @@ function tiled.load(path)
         "tiled: tile layer '" .. tostring(layer.name) .. "' has no data")
       assert(layer.width == W and layer.height == H,
         "tiled: layer '" .. tostring(layer.name) .. "' size mismatch")
-      for i = 1, W * H do
-        local gid = data[i] or 0
-        if gid > 0 then
-          local t = gid - ts.firstgid
-          if t < 0 or t >= n_tiles then
-            print("tiled: warning - GID " .. gid .. " is outside the "
-              .. "tileset (tile " .. tostring(t) .. "); ignored")
-            t = 0
-          end
-          if t > 0 then cells[i] = t end
-        end
-      end
+      local role = layer.name and layer.name:lower() or nil
+      if     role == "background" then merge(data, bg_cells)
+      elseif role == "foreground" then merge(data, fg_cells)
+      else merge(data, cells) end
     end
   end
   assert(n_layers > 0, "tiled: map has no visible tile layers")
@@ -294,19 +307,24 @@ function tiled.load(path)
   end
 
   -- serialize to the game's map format: one hex byte per tile, row-major
-  local rows = {}
-  for r = 0, H - 1 do
-    local buf = {}
-    for c = 1, W do
-      buf[c] = string.format("%02x", cells[(r) * W + c] or 0)
+  local function hex_rows(grid)
+    local rows = {}
+    for r = 0, H - 1 do
+      local buf = {}
+      for c = 1, W do
+        buf[c] = string.format("%02x", grid[(r) * W + c] or 0)
+      end
+      rows[r + 1] = table.concat(buf)
     end
-    rows[r + 1] = table.concat(buf)
+    return rows
   end
 
   return {
     MAP_W = W,
     MAP_H = H,
-    map   = rows,          -- array of hex row strings (game's mget format)
+    map   = hex_rows(cells), -- terrain grid (game's mget format)
+    background = next(bg_cells) and hex_rows(bg_cells) or nil,
+    foreground = next(fg_cells) and hex_rows(fg_cells) or nil,
     gff   = gff,           -- per-tile flag bytes (bit0 solid, 1 sticky, 2 friction)
     special = special,     -- kind name -> tile id
     phase_tiles = phase_by_tile, -- tile ids flagged "phase" (switch-flipped platforms)

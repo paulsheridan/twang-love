@@ -26,6 +26,10 @@ src/
    rockets.lua            the rocketeer's homing rockets: spawn, pursuit
                           steering, proximity/terrain/lifetime fuse, blasts
                           (plus the explosion flashes they leave behind)
+   bombs.lua              the bomber's thrown explosives: straight-line
+                          flight, the thrower's crude timed fuse, flak
+                          proximity bursts over an airborne player,
+                          grenade bounces over one on the ground
    interactables.lua      key/lock/door/switch/spring puzzle logic
    particles.lua          poofs, blood, sparks, smoke and explosion bursts
   camera.lua             smooth follow, clamped to the world
@@ -40,6 +44,7 @@ src/
     player.lua           player sprite + aim trajectory preview
     hud.lua              power indicator + control hints (window scale)
     menu.lua             controls panel overlay
+    levelselect.lua      launch level-select panel
 lib/
   json.lua               vendored third-party JSON encoder/decoder
 tests/
@@ -64,8 +69,8 @@ ctx = { config, input, world, ents, tiles, cam, player, die }
 - `world` — the tile grid + flags + slope shapes (from `src/world.lua`),
   created from the loaded Tiled map and the interactable entity lists
 - `ents` — live entity lists from `src/level.lua`: spawn_points, arrows,
-  e_arrows, enemies, particles, keys, locks, doors, switches, springs,
-  winches
+  e_arrows, enemies, rockets, bombs, particles, keys, locks, doors,
+  switches, springs, winches
 - `player` — the player body
 - `die` — routes player deaths to `Player.die`; `hurt` routes damage to
   `Player.hurt` (systems never require `src/player.lua` for those;
@@ -93,6 +98,14 @@ number (letterboxing the remainder, fullscreen included), so game
 pixels stay square and sharp at any window size; F11 toggles desktop
 fullscreen. The window opens at `config.window.scale` (3x) and is
 resizable — the blit re-fits every frame.
+
+**Boot mode.** The game boots into the default level (`config.map_file`)
+but opens on the **launch level select** over the paused world
+(`Game:select_step`; rows from `config.levels`). Confirming always
+performs a fresh `Game:load_level` and resumes. The test menu's last row
+returns to the select. The headless harness passes `skip_select` to
+`Game.new` (main.lua, when `TWANG_TEST` is set) and boots straight into
+play, so the scripted gates stay simulation-only.
 
 ## Dependency rules
 
@@ -265,7 +278,10 @@ after sight breaks aims at the freshest known spot.
 
 The laser rifleman shares this brain verbatim (`ranged_brain` with a
 per-type spec: aim solve, telegraph length, cadence, shot release), so
-future ranged enemies inherit the whole loop.
+future ranged enemies inherit the whole loop. (Doc note: the laser's
+aim now **locks** when the sight line first flashes — the telegraph
+line and the beam that follows share one locked vector, and a player
+who moves mid-flash cannot bend the shot.)
 
 ## The laser rifleman brain
 
@@ -273,12 +289,16 @@ Laser riflemen (`src/enemies.lua`) run the shared `ranged_brain` — the
 archer's skeleton (same senses, same cover-fire/investigate loop) with
 a beam weapon instead of a ballistic volley.
 
-- **Aim**: on spotting, the rifleman stops, locks a unit fire direction
-  at the player and re-tracks it every step the player stays visible.
-  The shot is telegraphed with a **blinking laser sight**: a thin red
-  line from the muzzle to the player's centre, blinking on/off every
-  `enemies.laser_sight_blink` steps for `enemies.laser_sight_steps`
-  (a quicker draw than the archer's, 0.6s) before firing.
+- **Aim**: on spotting, the rifleman stops and **locks a unit fire
+  direction** at the player the moment the telegraph begins — the aim
+  stays locked through the telegraph, so the flashing sight line and
+  the beam that follows fire along the same vector, and a player who
+  moves mid-flash cannot bend the shot. The shot is telegraphed with a
+  **blinking laser sight**: a thin red line from the muzzle out along
+  the locked direction (to where the beam would reach), blinking on/off
+  every `enemies.laser_sight_blink` steps for
+  `enemies.laser_sight_steps` (a quicker draw than the archer's, 0.6s)
+  before firing.
 - **Beam**: when the telegraph lapses the beam fires along the last
   solved direction, marched out (`enemies.laser_ray_step` sampling) to
   the first wall — anything arrows cannot fly through (doors included,
@@ -297,7 +317,7 @@ a beam weapon instead of a ballistic volley.
 - **Bursts**: each charge holds `laser_burst_count` (3) shots. Once the
   first beam lands the next shots follow on the short burst cadence
   (`laser_burst_min`..`+laser_burst_extra`, each with its own quick
-  telegraph, re-tracking the visible player) — no full recharge in
+  telegraph locked at that telegraph's start) — no full recharge in
   between. Only once the budget is spent does the
   `laser_rapid_min`..`+laser_rapid_extra` recharge apply before the
   next charge. Sight breaks mid-burst spend the budget (the cover-fire
@@ -368,6 +388,62 @@ and shooting the rocket down is the counterplay.
   recharge between charges, blind cover fire at the last known spot,
   and the enemies toggle clearing rockets and booms from the air.
 
+## The bomber brain
+
+Bombers (`src/enemies.lua` + `src/bombs.lua`) run the shared
+`ranged_brain` — the archer's skeleton with a thrown explosive instead
+of a ballistic volley. Their ordnance is the game's cheap shot: the
+thrower deliberately guesses the fuse instead of solving it, so bursts
+land near-but-not-on the target and a player who keeps moving stays
+hard to pin.
+
+- **Aim**: on spotting, the bomber stops and charges the throw behind a
+  **blinking telegraph** (a raised orange bomb dot with a flickering
+  white fuse spark above its head, same blink math as the laser sight:
+  `bomber_aim_steps` / `bomber_sight_blink`). No ballistic solve — the
+  throw is read off the live target when the telegraph lapses.
+- **Throw**: one bomb spawns **just above the shooter's head** and
+  flies in a **straight line** (no gravity, no steering) at the last
+  known spot at a constant `bomb_speed`. Bombs live in `ents.bombs`,
+  stepped by `Bombs.update` after the rockets pass (global airborne
+  cap: `bomb_max_alive`).
+- **The crude fuse**: the bomber picks the detonation time it *thinks*
+  will catch the player — straight-line distance to the target over
+  throw speed, floored to whole steps, then jittered
+  ±`bomb_fuse_error` (8) steps. Deliberately inaccurate but
+  inexpensive: no trajectory integration, no terrain march, no
+  intercept solve — against a moving player the burst usually lands
+  short or behind.
+- **Flak / grenade**: the fuse burns wherever the bomb is, and the
+  player's grounded state picks the burst style live. While the player
+  is **airborne** the bomb bursts like **flak**: proximity to their
+  live centre within `bomb_flak_proximity` (14px) pops it early — the
+  jump that clears a throw still gets caught in the air-burst. Over a
+  **grounded** player it acts like a **grenade**: no proximity check at
+  all, the body flies (or bounces) on and the timer alone decides the
+  burst point.
+- **Bounce**: flight is substepped (`bomb_substep` sampling) so a fast
+  throw never skips a tile. Terrain contact (anything arrows cannot fly
+  through, plus slopes) **bounces the grenade body instead of
+  detonating** — the hit axis reflects and both axes damp by
+  `bomb_bounce_damp` (0.5), a bounce slower than `bomb_rest_speed`
+  rests the bomb where it lies (fuse still burning). Flying off the
+  world just removes it.
+- **Explosion**: detonates through the **shared blast** with bomb
+  knobs — the flash ring rides the boom entry's own radius (rockets
+  and bombs differ), the spark/poof burst, `bomb_blast_radius` (24px)
+  circle-vs-box damage: the player takes `bomb_half_hearts` (2 — a
+  full heart, i-frames respected); **any enemy caught in the blast
+  dies instantly**, the launcher included.
+- **Arrow detonation**: a player arrow tip that touches a bomb in
+  flight (generous `bomb_hit_w`/`bomb_hit_h` box, any arrow kind)
+  detonates it right there — the arrow is consumed like a rocket hit.
+- **Bursts / cover fire / toggle**: the laser's numbers with
+  `bomber_*` knobs — 2 bombs per charge on the short cadence (each
+  with its own telegraph, tracking the visible player), the long
+  recharge between charges, blind cover fire at the last known spot,
+  and the enemies toggle clearing bombs from the air.
+
 ## The melee brain
 
 Melee enemies (`src/enemies.lua`) gain a small brain: `patrol -> chase
@@ -408,17 +484,25 @@ luajit tests/trace_diff.lua tests/trace_baseline.txt /tmp/trace.txt
    walk (roam exemption, deep-drop refusal, leaving the platform), the
    backed-perch hold and the melee brain (chase speed, search, re-chase,
    deep-drop refusal); `tests/laser_test.lua` covers
-   the laser rifleman (spot -> blink-aim fields, telegraph expiry
-   firing, the wall-stopping beam march, the full-heart hit and its
-   i-frame single-hit rule, the last-known-spot shot that misses a
-   fleeing player, wall-blocked sight, the slower cadence and the
-   toggle disarm); `tests/rocketeer_test.lua` covers the rocketeer
+   the laser rifleman (spot -> blink-aim fields, the locked aim that
+   survives a moving player, telegraph expiry firing, the wall-stopping
+   beam march, the full-heart hit and its i-frame single-hit rule, the
+   last-known-spot shot that misses a fleeing player, wall-blocked
+   sight, the slower cadence and the toggle disarm);
+   `tests/rocketeer_test.lua` covers the rocketeer
    (spot -> blink-aim fields, the straight-up launch just above the
    head, homing that keeps chasing a player behind the shooter's back,
    the proximity-fuse full-heart blast, ceiling detonation just short
    of the wall, arrow-tip detonation with the blast's enemy kill, the
    2-rocket burst cadence, the airborne cap and the toggle disarm);
-   `tests/player_test.lua` covers
+   `tests/bomber_test.lua` covers the bomber (spot -> blink-aim
+   fields, the straight-line throw from above the head with the crude
+   jittered fuse estimate, the grenade timer burst that a dodging
+   grounded player escapes, the flak proximity burst over an airborne
+   player, the never-proximity rule over a grounded one, the damped
+   grenade bounce with the fuse still burning, arrow-tip detonation
+   with the blast's enemy kill, the 2-bomb burst cadence, the airborne
+   cap and the toggle disarm); `tests/player_test.lua` covers
    the hearts system (i-frame-gated melee drain, arrow hits, fatal
    refill, void death); `tests/rope_test.lua` covers the rope arrow
    (attach + hang, pendulum swing bounds, detach-preserving-velocity,
@@ -428,8 +512,12 @@ luajit tests/trace_diff.lua tests/trace_baseline.txt /tmp/trace.txt
 luajit tests/enemies_test.lua
 luajit tests/laser_test.lua
 luajit tests/rocketeer_test.lua
+luajit tests/bomber_test.lua
 luajit tests/player_test.lua
 luajit tests/rope_test.lua
+luajit tests/menu_test.lua
+luajit tests/levelselect_test.lua
+luajit tests/foreground_test.lua
 ```
 
 `tests/legacy_main.lua` is the frozen pre-refactor monolith with a

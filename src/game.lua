@@ -17,6 +17,7 @@ local Player   = require("src.player")
 local Arrows   = require("src.arrows")
 local Enemies  = require("src.enemies")
 local Rockets  = require("src.rockets")
+local Bombs    = require("src.bombs")
 local Particles = require("src.particles")
 local Interactables = require("src.interactables")
 local Sprites  = require("src.sprites")
@@ -25,11 +26,17 @@ local Blit     = require("src.render.blit")
 local Game = {}
 Game.__index = Game
 
-function Game.new()
+function Game.new(skip_select)
   local self = setmetatable({}, Game)
   self.input      = Input.new()
+  -- boot mode: a real launch opens on the level select (Game:select_step,
+  -- over the paused default level); the headless harness passes
+  -- skip_select and boots straight into play so its scripted runs
+  -- exercise the simulation
+  self.mode       = skip_select and "play" or "select"
+  self.level_sel  = 1      -- level-select cursor (1..#config.levels)
   self.menu_open  = false  -- test menu panel (m / tab / start)
-  self.menu_sel   = 1      -- highlighted menu row (1..3)
+  self.menu_sel   = 1      -- highlighted menu row (1..4)
   self.settings   = { no_puzzle = false, invincible = false }
   self.step_count = 0
   self.acc        = 0
@@ -43,13 +50,26 @@ function Game:load()
   Sprites.init(love.graphics.newImage("spritesheet.png"))
   Blit.init()
 
+  -- boot into the default level; the level select then starts the
+  -- chosen one (preloading keeps the paused world as its backdrop)
+  self:load_level(config.map_file)
+  for i, entry in ipairs(config.levels) do
+    if entry.file == config.map_file then self.level_sel = i end
+  end
+end
+
+-- Builds the live game state for one Tiled map (world, entities, camera
+-- and the shared context), replacing whatever was loaded before. Used at
+-- boot and by the level select.
+function Game:load_level(path)
   -- level: Tiled JSON map (flags/kinds/slopes come from tileset properties)
-  local level = tiled.load(config.map_file)
+  local level = tiled.load(path)
   local ents, tiles = Level.build(level, config)
   self.world = World.new(level, ents, config.tile_size)
   self.ents  = ents
   self.tiles = tiles
   self.cam   = Camera.new()
+  self.map_file = path
 
   -- The shared context every system reads; `die` routes player deaths to
   -- Player.die and `hurt` routes damage to Player.hurt (systems never
@@ -64,7 +84,7 @@ function Game:load()
     cam    = self.cam,
     player = self.player,
     settings = self.settings,  -- test-menu toggles (see menu_step)
-    menu   = self,             -- menu panel reads menu_sel/settings
+    menu   = self,             -- menu panels read menu_sel/level_sel/settings
     die    = Player.die,
     hurt   = Player.hurt,
     dt     = 1,  -- world-time scale of the current step (Game:step sets it)
@@ -123,22 +143,26 @@ function Game:step()
     Enemies.update(ctx)
     Arrows.update_enemy_arrows(ctx)
     Rockets.update(ctx)
+    Bombs.update(ctx)
   end
   Particles.update(ctx.ents, dt)
   Interactables.update_springs(ctx.ents, dt)
+  ctx.world:foreground_step(ctx.player, dt)
   Camera.update(ctx.cam, ctx.player, ctx.world, dt)
 end
 
 -- Toggles all enemies on/off (test-menu row 3). Turning them off also
 -- disarms anything in flight or mid-shot: enemy arrows vanish, archers
--- drop back to patrol, live beams go out and chasing/searching melee
--- calm down, so nothing resumes mid-shot when the toggle comes back
--- on. Disabled enemies are also not drawn.
+-- drop back to patrol, live beams go out, rockets and bombs clear from
+-- the air and chasing/searching melee calm down, so nothing resumes
+-- mid-shot when the toggle comes back on. Disabled enemies are also not
+-- drawn.
 function Game:toggle_enemies()
   config.enemies.enabled = not config.enemies.enabled
   if not config.enemies.enabled then
     self.ents.e_arrows = {}
     self.ents.rockets  = {}
+    self.ents.bombs    = {}
     self.ents.booms    = {}
     for _, e in ipairs(self.ents.enemies) do
       if e.type == "archer" then
@@ -156,6 +180,10 @@ function Game:toggle_enemies()
         e.state = "patrol"
         e.suppress_t = nil
         e.burst = nil
+      elseif e.type == "bomber" then
+        e.state = "patrol"
+        e.suppress_t = nil
+        e.burst = nil
       else
         e.state = "patrol"
       end
@@ -163,12 +191,38 @@ function Game:toggle_enemies()
   end
 end
 
+-- One 30hz tick of the launch level select (the world sits paused
+-- behind it). Up/down move the cursor (wrapping), jump/aim/swap start
+-- the highlighted level, escape quits (love.keypressed).
+function Game:select_step()
+  local ctx = self.ctx
+  ctx.input:step()
+  local n = #config.levels
+  if ctx.input:pressed("up") then
+    self.level_sel = ((self.level_sel - 2) % n) + 1
+  end
+  if ctx.input:pressed("down") then
+    self.level_sel = (self.level_sel % n) + 1
+  end
+  if ctx.input:pressed("jump") or ctx.input:pressed("aim")
+  or ctx.input:pressed("swap") then
+    self:start_level(config.levels[self.level_sel])
+  end
+end
+
+-- Starts the chosen level: always a fresh load (switching to another
+-- map or restarting the current one), then the game begins.
+function Game:start_level(entry)
+  self:load_level(entry.file)
+  self.mode = "play"
+end
+
 -- One 30hz tick of the test menu (game world is paused). Up/down move
 -- the selection, c/X toggles the highlighted row, aim/jump closes.
 function Game:menu_step()
   local ctx = self.ctx
   ctx.input:step()
-  local rows = 3
+  local rows = 4
   if ctx.input:pressed("up") then
     self.menu_sel = ((self.menu_sel - 2) % rows) + 1
   end
@@ -178,7 +232,8 @@ function Game:menu_step()
   if ctx.input:pressed("swap") then
     if self.menu_sel == 1 then self:toggle_puzzle()
     elseif self.menu_sel == 2 then self:toggle_invincibility()
-    else self:toggle_enemies() end
+    elseif self.menu_sel == 3 then self:toggle_enemies()
+    else self:open_level_select() end
   end
   if ctx.input:pressed("aim") or ctx.input:pressed("jump") then
     self.menu_open = false
@@ -200,6 +255,12 @@ function Game:toggle_invincibility()
   self.settings.invincible = not self.settings.invincible
 end
 
+-- Test-menu row 4: leave play for the launch level select.
+function Game:open_level_select()
+  self.menu_open = false
+  self.mode = "select"
+end
+
 function Game:update(dt)
   self:fit_window()
   self.input:poll()
@@ -207,14 +268,15 @@ function Game:update(dt)
   self.acc = math.min(self.acc + dt, config.sim.max_accumulator)
   while self.acc >= self.step_dt do
     self.acc = self.acc - self.step_dt
-    if self.menu_open then self:menu_step() else self:step() end
+    if self.mode == "select" then self:select_step()
+    elseif self.menu_open then self:menu_step() else self:step() end
   end
 end
 
 -- ==== rendering ====
 
 function Game:draw()
-  Blit.render(self.ctx, self.menu_open)
+  Blit.render(self.ctx, self.menu_open, self.mode == "select")
 end
 
 -- ==== input callbacks ====
@@ -229,15 +291,17 @@ function Game:keypressed(key, isrepeat)
   -- latch presses immediately so sub-frame taps are never lost; OS key
   -- repeats are ignored (the 30hz input:step provides pico-8-style repeat)
   self.input:latch_key(key, isrepeat)
-  -- m / tab toggle the test menu (start does it on gamepads)
-  if not isrepeat and (key == "m" or key == "tab") then
+  -- m / tab toggle the test menu (start does it on gamepads); play
+  -- mode only — the level select has its own controls
+  if self.mode == "play" and not isrepeat
+  and (key == "m" or key == "tab") then
     self.menu_open = not self.menu_open
   end
 end
 
 function Game:gamepadpressed(button)
-  if button == "start" then  -- start toggles the test menu
-    self.menu_open = not self.menu_open
+  if button == "start" then  -- start toggles the test menu (play mode only)
+    if self.mode == "play" then self.menu_open = not self.menu_open end
     return
   end
   if button == "back" then love.event.quit() return end

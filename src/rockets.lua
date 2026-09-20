@@ -26,17 +26,28 @@ end
 -- blast damage to the player (2 half-hearts) and instant removal of any
 -- enemy caught in the radius. Other rockets are unaffected.
 function Rockets.explode(ctx, x, y)
-  local ents, cfg = ctx.ents, ctx.config.enemies
-  table.insert(ents.booms, { x = x, y = y, t = cfg.boom_frames })
+  local cfg = ctx.config.enemies
+  Rockets.blast(ctx, x, y, cfg.rocket_blast_radius, cfg.rocket_half_hearts)
+end
+
+-- The shared blast every explosive detonates through (rockets and the
+-- bomber's thrown bombs alike): a flash ring sized to `radius`, the
+-- spark/poof burst, damage to the player caught in it and instant
+-- removal of any enemy in the radius. `radius` rides on the boom entry
+-- so the flash draws itself out to the right size.
+function Rockets.blast(ctx, x, y, radius, half_hearts)
+  local ents = ctx.ents
+  table.insert(ents.booms, { x = x, y = y, t = ctx.config.enemies.boom_frames,
+    r = radius })
   Particles.boom(ents, x, y)
   Particles.poof(ents, x, y)
   local p = ctx.player
-  if circle_hits_box(x, y, cfg.rocket_blast_radius, p) then
-    ctx.hurt(ctx, p.x + p.w/2 - x, p.y + p.h/2 - y, cfg.rocket_half_hearts)
+  if circle_hits_box(x, y, radius, p) then
+    ctx.hurt(ctx, p.x + p.w/2 - x, p.y + p.h/2 - y, half_hearts)
   end
   for i = #ents.enemies, 1, -1 do
     local e = ents.enemies[i]
-    if circle_hits_box(x, y, cfg.rocket_blast_radius, e) then
+    if circle_hits_box(x, y, radius, e) then
       -- impact direction runs from the enemy toward the blast, so the
       -- blood spray flies away from the explosion
       Particles.blood(ents, e.x + e.w/2, e.y + e.h/2, x - e.x, y - e.y)

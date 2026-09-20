@@ -25,7 +25,17 @@ local Config = {
   tile_size = 16,
 
   -- The Tiled map driving the level (see src/tiled.lua for the format).
+  -- Booted before the launch level select opens (it's the paused
+  -- backdrop behind the menu).
   map_file = "maps/level1.json",
+
+  -- Levels offered by the launch level select (Game:select_step).
+  -- `file` is the Tiled JSON map, `name` the menu row.
+  levels = {
+    { file = "maps/level1.json",    name = "level 1" },
+    { file = "maps/level2.json",    name = "level 2" },
+    { file = "maps/farmhouse.json", name = "farmhouse" },
+  },
 
   camera = {
     follow = 0.15, -- fraction of the remaining distance per step
@@ -207,6 +217,37 @@ local Config = {
     rocket_substep = 4,       -- px between fuse/terrain samples in flight
     rocket_trail_every = 2,   -- steps between smoke-trail puffs
     boom_frames = 8,          -- steps the explosion flash expands for
+
+    -- bomber (archer-like brain: see -> blink-aim -> thrown bomb ->
+    -- wait/investigate); senses and patrol knobs above are shared. The
+    -- throw flies in a straight line at the player's live centre; the
+    -- bomber sets the bomb's fuse to a cheap, deliberately rough guess
+    -- (straight-line distance over throw speed, jittered by
+    -- bomb_fuse_error) instead of solving the shot exactly. In flight a
+    -- bomb bursts like flak around an airborne player (proximity fuse)
+    -- and like a grenade over one on the ground (pure timer, bounces
+    -- off terrain, damped); a player arrow detonates it either way.
+    bomber_speed = 0.8,       -- patrol speed (px per step)
+    bomber_aim_steps = 18,    -- blinking-telegraph aim duration before throwing
+    bomber_sight_blink = 6,   -- telegraph blink cadence (steps per on/off)
+    bomber_burst_count = 2,   -- bombs per charge before the full recharge
+    bomber_burst_min = 15,    -- minimum wait between a burst's bombs (steps)
+    bomber_burst_extra = 15,  -- extra randomized wait on top of bomber_burst_min
+    bomber_rapid_min = 60,    -- minimum recharge wait after a burst (steps)
+    bomber_rapid_extra = 60,  -- extra randomized wait on top of bomber_rapid_min
+    bomb_speed = 3.5,         -- straight-line flight speed (px per step)
+    bomb_fuse_error = 8,      -- ± steps of jitter on the crude fuse estimate
+    bomb_flak_proximity = 14, -- px from an airborne player's centre that
+                              -- bursts the bomb early (flak air-burst)
+    bomb_blast_radius = 24,   -- px damage radius of the explosion
+    bomb_half_hearts = 2,     -- damage per blast hit (a full heart)
+    bomb_hit_w = 12,          -- bomb hitbox (px, around the centre) for
+    bomb_hit_h = 12,          -- arrow-tip detonations: generous, like a rocket
+    bomb_bounce_damp = 0.5,   -- speed kept per grenade bounce off terrain
+    bomb_rest_speed = 0.5,    -- damped below this: the bomb rests where it
+                              -- lies and burns its fuse out
+    bomb_max_alive = 4,       -- bombs airborne at once (global cap)
+    bomb_substep = 4,         -- px between fuse/terrain samples in flight
     suppress_steps = 90,      -- cover-fire window after losing sight (3s):
                               -- ranged enemies keep firing blind at the last
                               -- known position, then investigate
@@ -222,6 +263,17 @@ local Config = {
 
   phase = {
     alpha = 0.35,  -- draw alpha of phase tiles while they are non-solid
+  },
+
+  -- The visual "Foreground" Tiled layer (buildings / hidden spaces).
+  -- While the player walks behind any of it the whole layer fades to
+  -- invisible so their avatar stays readable, then eases back once
+  -- they step out.
+  foreground = {
+    fade_margin_px = 6,    -- px grown around the player's box: touching
+                           -- any overlay tile starts the fade
+    fade_alpha_step = 0.125, -- alpha closed per world-time step (30hz):
+                             -- a full fade either way in 8 steps (~0.27s)
   },
 
   particles = {
@@ -259,6 +311,7 @@ local Config = {
     melee = 105,
     laser = 138,  -- aiming rifleman (kind also defined in maps/twang.tsx)
     rocketeer = 138,  -- rocket launcher (placeholder: shares the laser cell art)
+    bomber = 138,  -- explosive thrower (placeholder: shares the laser cell art)
     winch = 133,  -- small blue star
   },
 }
