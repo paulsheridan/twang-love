@@ -76,7 +76,9 @@ function Player.reset(p, spawn_points, cam, world)
   p.rope_cd = 0
   p.winch = nil
   p.winch_grace = nil
-  -- snap camera to the spawn point (pico-8 snapped per screen; no slow pan)
+  -- the respawn point picks the active room (no wipe on respawn); the
+  -- camera then snaps under that room's clamp
+  world:sync_room(p.x, p.y)
   if cam then
     Camera.snap(cam, p, world)
   end

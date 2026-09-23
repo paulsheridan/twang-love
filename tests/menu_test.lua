@@ -7,7 +7,8 @@
 --   3. the swap key toggles the highlighted row: puzzle pieces hidden,
 --      invincibility, enemies off
 --   4. the old enemies shortcuts (keyboard e, pad Y) are unmapped
---   5. row 4 returns to the launch level select (world paused)
+--   5. row 4 (unlock all) lifts the level-select progress gating
+--   6. row 5 returns to the launch level select (world paused)
 --
 -- Usage (from the project root): luajit tests/menu_test.lua
 
@@ -70,12 +71,12 @@ do
   end
   nudge("down")
   assert_true(g.menu_sel == 2, "down moves the selection")
-  nudge("down", 3)
+  nudge("down", 4)
   assert_true(g.menu_sel == 1, "down wraps from the last row to the first")
   nudge("up")
-  assert_true(g.menu_sel == 4, "up wraps from the first row to the last")
+  assert_true(g.menu_sel == 5, "up wraps from the first row to the last")
   nudge("up")
-  assert_true(g.menu_sel == 3, "up moves the selection")
+  assert_true(g.menu_sel == 4, "up moves the selection")
 end
 
 -- ==== 3. each row toggles its feature ====
@@ -145,7 +146,33 @@ do
     "neither e nor Y disturbs the test menu")
 end
 
--- ==== 5. row 4 returns to the launch level select ====
+-- ==== 5. row 4 (unlock all) lifts the level-select gating ====
+do
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local keys = env.TWANG_TEST.keys_down
+  local entry = g.select_levels[2]
+  assert_true(not g:level_unlocked(entry),
+    "with no save, the second level is locked")
+  env.love.keypressed("m")
+  step(env)
+  for _ = 1, 3 do
+    keys.down = true; step(env); keys.down = nil; step(env)
+  end
+  assert_true(g.menu_sel == 4, "the unlock-all row is selected")
+  env.love.keypressed("c")
+  step(env)
+  assert_true(g.unlocked_all, "row 4 turns unlock-all on")
+  assert_true(g:level_unlocked(entry),
+    "unlock-all lifts the second level's gate")
+  env.love.keypressed("c")
+  step(env)
+  assert_true(not g.unlocked_all, "row 4 turns unlock-all back off")
+  env.love.keypressed("z")
+  step(env)
+end
+
+-- ==== 6. row 5 returns to the launch level select ====
 do
   local env = Harness.boot()
   local g = env.TWANG_TEST.game
@@ -154,21 +181,23 @@ do
   env.love.keypressed("m")
   step(env)
   assert_true(g.menu_open, "m opens the test menu")
-  -- down three times: row 4 (level select)
-  for _ = 1, 3 do
+  -- down four times: row 5 (level select)
+  for _ = 1, 4 do
     keys.down = true; step(env); keys.down = nil; step(env)
   end
-  assert_true(g.menu_sel == 4, "the level-select row is selected")
+  assert_true(g.menu_sel == 5, "the level-select row is selected")
   env.love.keypressed("c")
   step(env)
   assert_true(g.mode == "select" and not g.menu_open,
-    "row 4 opens the level select and closes the panel")
+    "row 5 opens the level select and closes the panel")
   -- the select screen is its own mode: the panel can't be opened there
   env.love.keypressed("m")
   step(env)
   assert_true(g.mode == "select" and not g.menu_open,
     "m does nothing while the level select is open")
-  -- and jump starts the highlighted level again (a fresh load)
+  -- the cursor sits on the booted level (locked with an empty save):
+  -- unlock-all lets jump start the highlighted level again (fresh load)
+  g.unlocked_all = true
   env.love.keypressed("x")
   step(env)
   assert_true(g.mode == "play", "jump starts the selected level")

@@ -109,10 +109,10 @@ function Bombs.update(ctx)
     if not b then break end
     if not b.active then
       table.remove(ents.bombs, i)
-    else
+    elseif ctx.world:in_room(b.x, b.y) then
       step_bomb(ctx, b)
       if not b.active then table.remove(ents.bombs, i) end
-    end
+    end  -- bombs beyond the active room hang frozen (off-screen)
   end
 end
 

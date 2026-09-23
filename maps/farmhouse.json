@@ -154,9 +154,42 @@
          "width":200,
          "x":0,
          "y":0
+        },
+        {
+         "draworder":"topdown",
+         "name":"Objects",
+         "objects":[
+                {
+                 "height":0,
+                 "id":1,
+                 "name":"spawn",
+                 "point":true,
+                 "rotation":0,
+                 "type":"Spawn",
+                 "visible":true,
+                 "width":0,
+                 "x":48,
+                 "y":512
+                },
+                {
+                 "height":16,
+                 "id":2,
+                 "name":"exit",
+                 "rotation":0,
+                 "type":"Exit",
+                 "visible":true,
+                 "width":16,
+                 "x":3152,
+                 "y":192
+                }],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
         }],
- "nextlayerid":4,
- "nextobjectid":1,
+ "nextlayerid":5,
+ "nextobjectid":3,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.11.0",

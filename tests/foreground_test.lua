@@ -2,12 +2,14 @@
 --
 -- Covers the visual "Foreground" Tiled layer (docs/tiled-format.md,
 -- World:foreground_step / Render.foreground), exercised on the
--- farmhouse map (loaded directly):
+-- farmhouse map (loaded directly; it has no rooms, so its overlay
+-- alpha lives under key 0):
 --   1. the layer is purely visual: overlay tiles never collide (even
 --      when the tileset flags them solid), while terrain still does
---   2. walking behind any overlay tile fades the WHOLE layer out
---      smoothly (config.foreground), so the avatar stays readable
+--   2. walking behind any overlay tile fades the layer out smoothly
+--      (config.foreground), so the avatar stays readable
 --   3. stepping out eases the layer back to opaque
+-- Room-scoped fading is covered in tests/rooms_test.lua.
 --
 -- Usage (from the project root): luajit tests/foreground_test.lua
 
@@ -38,6 +40,12 @@ local function find_tile(test)
   end
 end
 
+-- foreground alpha of the room the player is in (the farmhouse now
+-- carries rooms; the spawn and both probe spots sit in its first room)
+local function fga(w)
+  return w.fg_alpha[w.active_room and w.active_room.i or 0]
+end
+
 local function step_at(x, y, n)
   for _ = 1, (n or 1) do
     p.x, p.y, p.vx, p.vy = x, y, 0, 0  -- pinned: the fade sees a still player
@@ -62,21 +70,21 @@ assert_true(w:solid_at(tc*16 + 8, tr*16 + 8),
 
 -- ==== 2. behind any overlay tile, the whole layer fades out ====
 step_at(fc*16, fr*16, 12)  -- 12 steps: past the ~8-step full fade
-assert_true(w.fg_alpha == 0, "the layer fades fully out while behind it")
+assert_true(fga(w) == 0, "the layer fades fully out while behind it")
 
 -- the fade eases rather than snapping
 g:load_level("maps/farmhouse.json")
 w = g.ctx.world
 p = g.ctx.player
 step_at(fc*16, fr*16, 2)
-local a1, a2 = w.fg_alpha, nil
+local a1, a2 = fga(w), nil
 step_at(fc*16, fr*16, 1)
-a2 = w.fg_alpha
+a2 = fga(w)
 assert_true(a1 < 1 and a2 < a1, "the fade eases step by step")
 
 -- ==== 3. stepping out fades the layer back in ====
 step_at(16, 16, 12)  -- far from any overlay tile
-assert_true(w.fg_alpha == 1, "the layer fades back in once the player steps out")
+assert_true(fga(w) == 1, "the layer fades back in once the player steps out")
 
 print(("foreground tests: %d passed, %d failed"):format(PASS, FAIL))
 if FAIL > 0 then os.exit(1) end

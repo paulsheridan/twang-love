@@ -76,9 +76,12 @@ end
 -- group has reset, the struck switch pops back out so it can be shot
 -- again (door-driving switches stay latched; they belong to groups
 -- without springs).
-function Interactables.update_springs(ents, dt)
+function Interactables.update_springs(ents, dt, world)
+  local tw = config.tile_size
   for _, spring in ipairs(ents.springs) do
-    if spring.ext then
+    -- springs beyond the active room hold their extension (off-screen)
+    if spring.ext and (not world
+    or world:in_room(spring.x + tw/2, spring.y + tw/2)) then
       spring.ext = spring.ext - dt
       if spring.ext <= 0 then
         spring.ext = nil

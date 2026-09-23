@@ -40,6 +40,7 @@ function Level.build(level, config)
     spring     = level.special.spring     or config.tiles.spring,
     spring_ext = level.special.spring_ext or config.tiles.spring_ext,
     winch      = level.special.winch      or config.tiles.winch,
+    exit       = level.special.exit       or config.tiles.exit,
     archer     = level.special.archer     or config.tiles.archer,
     melee      = level.special.melee      or config.tiles.melee,
     laser      = level.special.laser      or config.tiles.laser,
@@ -62,6 +63,7 @@ function Level.build(level, config)
     switches     = {},
     springs      = {},
     winches      = {},
+    exits        = {},
   }
 
   -- ==== spawn points ====
@@ -145,6 +147,10 @@ function Level.build(level, config)
       local wx, wy = snap_tile(o.x, tw), snap_tile(o.y, tw)
       table.insert(ents.winches, {x = wx, y = wy, g = o.g,
         spr = o.spr or tiles.winch, rot = o.rot})
+    elseif k == "exit" then
+      local wx, wy = snap_tile(o.x, tw), snap_tile(o.y, tw)
+      table.insert(ents.exits, {x = wx, y = wy,
+        spr = o.spr or tiles.exit, rot = o.rot})
     end
   end
 

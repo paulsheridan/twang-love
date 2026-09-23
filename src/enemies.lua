@@ -543,15 +543,26 @@ end
 
 -- Patrol walk: turn around at walls, ledges and the roam limit (an
 -- enemy never patrols more than enemies.roam_tiles from its spawn
--- point, so it cannot wander off along flat ground).
+-- point, so it cannot wander off along flat ground). The bounds never
+-- cross the home room's edges either (docs/tiled-format.md): the patrol
+-- turns around at the seam instead of pacing off-room.
 local function patrol(e, spd, world)
   local px = e.facing > 0 and (e.x+e.w) or (e.x-1)
   local wall_ahead  = world:solid_at(px, e.y+e.h/2)
   local ledge_ahead = not world:solid_at(px, e.y+e.h)
   local roam = config.enemies.roam_tiles * config.tile_size
-  local beyond_roam = e.home_x ~= nil
-    and ((e.facing > 0 and e.x + e.w >= e.home_x + roam)
-      or (e.facing < 0 and e.x <= e.home_x - roam))
+  local lo, hi = e.home_x and e.home_x - roam or nil,
+                 e.home_x and e.home_x + roam or nil
+  if lo or hi then
+    local room = world:room_at(e.home_x, e.y + e.h/2)
+    if room then
+      lo = lo and math.max(lo, room.x) or lo
+      hi = hi and math.min(hi, room.x + room.w - e.w) or hi
+    end
+  end
+  local beyond_roam = lo ~= nil
+    and ((e.facing > 0 and e.x + e.w >= hi)
+      or (e.facing < 0 and e.x <= lo))
   if wall_ahead or ledge_ahead or beyond_roam then e.facing = -e.facing end
   e.vx = spd * e.facing
 end
@@ -724,15 +735,17 @@ function Enemies.update_one(ctx, e)
 end
 
 -- One sim step over all enemies (world time = ctx.dt steps); only
--- enemies near the camera are simulated.
+-- enemies near the camera and inside the active room are simulated
+-- (off-room enemies freeze mid-state and resume on re-entry).
 function Enemies.update(ctx)
-  local ents, cam = ctx.ents, ctx.cam
+  local ents, cam, world = ctx.ents, ctx.cam, ctx.world
   local vw = config.view.width
   local m, M = 640, vw + 640
   for i = #ents.enemies, 1, -1 do
     local e = ents.enemies[i]
     if e.x >= cam.x - m and e.x <= cam.x + M
-    and e.y >= cam.y - 512 and e.y <= cam.y + config.view.height + 512 then
+    and e.y >= cam.y - 512 and e.y <= cam.y + config.view.height + 512
+    and world:in_room(e.x + e.w/2, e.y + e.h/2) then
       Enemies.update_one(ctx, e)
     end
   end

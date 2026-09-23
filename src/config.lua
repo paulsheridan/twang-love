@@ -25,20 +25,35 @@ local Config = {
   tile_size = 16,
 
   -- The Tiled map driving the level (see src/tiled.lua for the format).
-  -- Booted before the launch level select opens (it's the paused
-  -- backdrop behind the menu).
+  -- The headless harness boots this level; a real launch boots the
+  -- level select's first entry (the intro level) instead.
   map_file = "maps/level1.json",
 
   -- Levels offered by the launch level select (Game:select_step).
-  -- `file` is the Tiled JSON map, `name` the menu row.
+  -- `file` is the Tiled JSON map, `name` the menu row. The first entry
+  -- is the intro level a real launch opens on. `gold`/`par` are the
+  -- grade thresholds in seconds (<= gold: gold, <= par: silver, else
+  -- bronze — M0 placeholders, retuned once real levels exist). Entries
+  -- flagged `hidden` stay out of the level select.
   levels = {
-    { file = "maps/level1.json",    name = "level 1" },
-    { file = "maps/level2.json",    name = "level 2" },
-    { file = "maps/farmhouse.json", name = "farmhouse" },
+    { file = "maps/farmhouse.json", name = "farmhouse", gold = 60, par = 120 },
+    { file = "maps/level1.json",    name = "level 1",   gold = 90, par = 180 },
+    { file = "maps/level2.json",    name = "level 2",   gold = 90, par = 180 },
   },
 
   camera = {
     follow = 0.15, -- fraction of the remaining distance per step
+  },
+
+  -- Rooms: camera-framed regions authored as "room" rectangles in the
+  -- Tiled map (docs/tiled-format.md). A hysteresis-checked border
+  -- crossing wipes the screen, re-frames the camera and switches which
+  -- room's entities simulate.
+  rooms = {
+    fade_steps = 6,      -- wipe length in world-time steps (~0.2s):
+                         -- half fading out, half in
+    hysteresis_px = 4,   -- px the player's centre must sit inside a new
+                         -- room before the switch fires
   },
 
   physics = {
@@ -123,6 +138,10 @@ local Config = {
   keys = {
     pickup_pad = 6,  -- px grown around a key for forgiving pickup proximity
     lock_pad   = 8,  -- px grown around a lock for forgiving trigger proximity
+  },
+
+  exits = {
+    touch_pad = 4, -- px grown around an exit for forgiving completion
   },
 
   rope = {
@@ -313,6 +332,7 @@ local Config = {
     rocketeer = 138,  -- rocket launcher (placeholder: shares the laser cell art)
     bomber = 138,  -- explosive thrower (placeholder: shares the laser cell art)
     winch = 133,  -- small blue star
+    exit = 172,   -- the level's exit flag (touching it clears the level)
   },
 }
 

@@ -31,6 +31,8 @@ src/
                           proximity bursts over an airborne player,
                           grenade bounces over one on the ground
    interactables.lua      key/lock/door/switch/spring puzzle logic
+   save.lua               per-level best time/grade, persisted to the
+                          LÖVE save directory (no-op headless)
    particles.lua          poofs, blood, sparks, smoke and explosion bursts
   camera.lua             smooth follow, clamped to the world
    sprites.lua            spritesheet quads + draw helper (flip/rot) -- 16x16
@@ -38,13 +40,15 @@ src/
   palette.lua            the 16-colour pico-8 palette
   util.lua               small math/geometry helpers
   tiled.lua              Tiled JSON/TSX loader
-  render/
-    blit.lua             native canvas + window blit + HUD/menu composition
-    world.lua            map, interactables, particles, enemies, arrows
-    player.lua           player sprite + aim trajectory preview
-    hud.lua              power indicator + control hints (window scale)
-    menu.lua             controls panel overlay
-    levelselect.lua      launch level-select panel
+   render/
+     blit.lua             native canvas + window blit + HUD/menu composition
+     world.lua            map, interactables, particles, enemies, arrows
+     player.lua           player sprite + aim trajectory preview
+     hearts.lua           heart slots (full/half/empty), top-left
+     hud.lua              level clock + power indicator + control hints
+     menu.lua             controls panel overlay
+     levelselect.lua      launch level-select panel (grades, locks)
+     results.lua          level-clear results panel
 lib/
   json.lua               vendored third-party JSON encoder/decoder
 tests/
@@ -101,11 +105,38 @@ resizable — the blit re-fits every frame.
 
 **Boot mode.** The game boots into the default level (`config.map_file`)
 but opens on the **launch level select** over the paused world
-(`Game:select_step`; rows from `config.levels`). Confirming always
-performs a fresh `Game:load_level` and resumes. The test menu's last row
-returns to the select. The headless harness passes `skip_select` to
-`Game.new` (main.lua, when `TWANG_TEST` is set) and boots straight into
-play, so the scripted gates stay simulation-only.
+(`Game:select_step`; rows from `config.levels` minus `hidden` entries,
+held on `Game.select_levels`). Confirming always performs a fresh
+`Game:load_level` and resumes. The test menu's last row returns to the
+select. The headless harness passes `skip_select` to `Game.new`
+(main.lua, when `TWANG_TEST` is set) and boots straight into play, so
+the scripted gates stay simulation-only.
+
+**Completion.** A level's exit entities (`ents.exits`, the `exit` kind)
+are touch-checked at the end of `Game:step`; the first player overlap
+runs `Game:complete_level`: the run's clock (`Game.play_steps`, real
+30hz steps) and death count (`ctx.die` is wrapped at level load to count
+`Player.die` calls) are graded against the level's `gold`/`par` times,
+recorded via `src/save.lua` (best time strictly, best grade
+independently, keyed by map file) and the world freezes on the results
+panel (`mode == "complete"`, `Game:complete_step`). Action continues to
+the next visible level (the level select after the last), swap replays
+the same level fresh. The level select gates each row on the previous
+row's recorded clearance (`Save.cleared`), lifted by the test menu's
+unlock-all toggle.
+
+**Rooms.** Levels can be split into camera-framed rooms (`room`
+rectangles in the Tiled map — `docs/tiled-format.md`). The world stays
+one grid; a room's job is to clamp the camera (`World:clamp_rect` drives
+`Camera.clamp`/`snap`), scope the foreground fade (per-room alphas) and
+gate simulation: only entities inside the active room step (guards in
+the enemies/arrows/rockets/bombs/particles/springs loops, `World:in_room`),
+so off-room enemies freeze mid-state and resume on re-entry. Crossing a
+border (hysteresis-checked, `World:room_target`) runs a fade wipe in
+`Game:step`: fade out, switch the room and snap the camera at full
+black, fade in. Roomless maps reduce every path to the pre-rooms
+behavior — one implicit room, whole-map clamping, everything simulates —
+which is what keeps the trace baseline stable.
 
 ## Dependency rules
 
@@ -506,7 +537,10 @@ luajit tests/trace_diff.lua tests/trace_baseline.txt /tmp/trace.txt
    the hearts system (i-frame-gated melee drain, arrow hits, fatal
    refill, void death); `tests/rope_test.lua` covers the rope arrow
    (attach + hang, pendulum swing bounds, detach-preserving-velocity,
-   winching, max-range expiry, platform exemption, swap, anchor loss):
+   winching, max-range expiry, platform exemption, swap, anchor loss);
+   `tests/results_test.lua` covers the completion flow (exit touch ->
+   results, grade thresholds, best time/grade recording, results-panel
+   inputs, next-level/replay flow, death counting):
 
 ```sh
 luajit tests/enemies_test.lua
@@ -518,6 +552,8 @@ luajit tests/rope_test.lua
 luajit tests/menu_test.lua
 luajit tests/levelselect_test.lua
 luajit tests/foreground_test.lua
+luajit tests/rooms_test.lua
+luajit tests/results_test.lua
 ```
 
 `tests/legacy_main.lua` is the frozen pre-refactor monolith with a

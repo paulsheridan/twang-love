@@ -373,6 +373,11 @@
    <property name="kind" value="switch"/>
   </properties>
  </tile>
+ <tile id="172">
+  <properties>
+   <property name="kind" value="exit"/>
+  </properties>
+ </tile>
  <tile id="93">
   <properties>
    <property name="kind" value="switch"/>

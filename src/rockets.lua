@@ -195,10 +195,10 @@ function Rockets.update(ctx)
     if not r then break end
     if not r.active then
       table.remove(ents.rockets, i)
-    else
+    elseif ctx.world:in_room(r.x, r.y) then
       step_rocket(ctx, r)
       if not r.active then table.remove(ents.rockets, i) end
-    end
+    end  -- rockets beyond the active room hang frozen (off-screen)
   end
   for i = #ents.booms, 1, -1 do
     local b = ents.booms[i]

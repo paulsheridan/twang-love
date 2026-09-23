@@ -432,9 +432,9 @@ function Arrows.update(ctx)
       if p.rope and p.rope.arrow == a then p.rope = nil end
       Arrows.release(ctx, a)  -- poof the key back into the world if never consumed
       table.remove(ents.arrows, i)
-    else
+    elseif ctx.world:in_room(a.x, a.y) then
       Arrows.step_one(ctx, a)
-    end
+    end  -- arrows beyond the active room hang frozen (off-screen)
   end
 end
 
@@ -495,6 +495,8 @@ function Arrows.update_enemy_arrows(ctx)
       -- frozen at the player-impact point: no motion, no collisions
       a.hit_stick = a.hit_stick - dt
       if a.hit_stick <= 0 then table.remove(ents.e_arrows, i) end
+    elseif not world:in_room(a.x, a.y) then
+      -- beyond the active room: hang frozen (off-screen)
     else
       a.vy = a.vy + cfg.gravity * dt
       local nsub = math.max(1,

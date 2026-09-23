@@ -66,11 +66,15 @@ arrow strikes flip them (a spring switch popping back does not).
   line and the built-up momentum throws the player through the centre
   and out the opposite side (at least `config.winch.min_throw_speed`).
   Firing any arrow cancels a reel. Non-rope arrows fly straight through.
+- **`exit`** — the level's exit flag: touching it clears the level
+  (the run's time, deaths and grade go to the results panel, and the
+  best time/grade are saved for the level select). Multiple exits
+  allowed; the first touch wins.
 
 ## Entities on Object Layers
 
 Entities (spawn/key/lock/door/archer/melee/laser/rocketeer/switch/
-spring/winch) live as tile objects on Object Layers in Tiled (e.g.
+spring/winch/exit) live as tile objects on Object Layers in Tiled (e.g.
 `items` and `entities`).
 
 The object's role comes from, in order:
@@ -123,6 +127,41 @@ Layer names give two of them a special, purely visual role
 
 Every other visible tile layer is gameplay terrain: merged into one
 collision/draw grid, later layers winning on nonzero tiles.
+
+## Rooms
+
+A level can be split into **rooms** — camera-framed regions that gate
+what the camera shows and what simulates. Rooms are **plain rectangle
+objects** (no tile) on any Object Layer with the Class/kind `room`
+(case-insensitive), optionally named for debugging. The map stays one
+contiguous world: terrain, entities and puzzle state are shared across
+rooms and persist.
+
+- Rooms snap to the tile grid at load; overlaps warn.
+- Rooms should be at least one view (480x320) — smaller ones centre the
+  camera in the room instead of scrolling (a load warning notes it).
+- Rooms need not cover the whole map: uncovered "wilderness" clamps the
+  camera to the whole map and simulates everything (a warning notes it).
+- A map with no `room` objects behaves exactly as before (one implicit
+  room, the whole map).
+
+At runtime:
+
+- **Camera** — clamped to the active room's bounds (the room containing
+  the player's centre).
+- **Transitions** — crossing into another room (hysteresis-checked,
+  `config.rooms.hysteresis_px`) wipes the screen (`config.rooms.fade_steps`):
+  fade out, the room switches with the camera snapped to the player at
+  full black, fade in.
+- **Simulation** — only entities inside the active room simulate
+  (enemies, arrows, rockets, bombs, particles, spring timers). Off-room
+  entities freeze mid-state and resume on re-entry. The player and
+  player-facing systems always run.
+- **Foreground** — the overlay fade is per room: walking behind any
+  overlay tile of the active room fades that room's foreground; other
+  rooms keep theirs. The fade holds during a wipe.
+- **Spawns/respawns** resolve the room from the spawn point (camera
+  snaps, no wipe).
 
 ## Cart fallbacks
 

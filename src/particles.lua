@@ -81,15 +81,19 @@ end
 
 -- Advances the particles by `dt` steps of world time (1 normally;
 -- reduced while aiming, so the spray slows with everything else).
-function Particles.update(ents, dt)
+-- `world` (optional) gates the pass to the active room: particles
+-- beyond it hang frozen (off-screen) and resume on re-entry.
+function Particles.update(ents, dt, world)
   local list = ents.particles
   for i = #list, 1, -1 do
     local pt = list[i]
-    pt.x   = pt.x + pt.vx * dt
-    pt.y   = pt.y + pt.vy * dt
-    pt.vy  = pt.vy + config.particles.gravity * dt
-    pt.life = pt.life - dt
-    if pt.life <= 0 then table.remove(list, i) end
+    if not world or world:in_room(pt.x, pt.y) then
+      pt.x   = pt.x + pt.vx * dt
+      pt.y   = pt.y + pt.vy * dt
+      pt.vy  = pt.vy + config.particles.gravity * dt
+      pt.life = pt.life - dt
+      if pt.life <= 0 then table.remove(list, i) end
+    end
   end
 end
 

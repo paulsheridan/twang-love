@@ -41,7 +41,11 @@ function World.new(level, ents, tile_size)
   -- top of the player and fades out as a whole while they walk behind it
   self.bg_map   = level.background
   self.fg_map   = level.foreground
-  self.fg_alpha = 1    -- foreground layer's current draw alpha
+  self.fg_alpha = {}   -- foreground draw alpha per room key (0 = roomless)
+  -- rooms: camera-framed regions authored as "room" rectangles in the
+  -- map (docs/tiled-format.md). nil = one implicit room, the whole map.
+  self.rooms       = level.rooms
+  self.active_room = nil
   return self
 end
 
@@ -97,41 +101,116 @@ function World:friction(t)
   return (t ~= 0 and self:flag(t, 2)) and config.player.slippery_friction or 1.0
 end
 
+-- ==== rooms ====
+
+-- The room containing the point, or nil for roomless maps / uncovered
+-- wilderness (both behave as one implicit room, the whole map).
+function World:room_at(x, y)
+  if not self.rooms then return nil end
+  for _, room in ipairs(self.rooms) do
+    if x >= room.x and x < room.x + room.w
+    and y >= room.y and y < room.y + room.h then
+      return room
+    end
+  end
+  return nil
+end
+
+-- Is (x, y) at least `margin` px inside the room? Room switching waits
+-- for this depth into a new room, so border wiggling never flickers.
+function World:room_contains(room, x, y, margin)
+  return x >= room.x + margin and x < room.x + room.w - margin
+     and y >= room.y + margin and y < room.y + room.h - margin
+end
+
+-- The camera clamp rect (lo_x, hi_x, lo_y, hi_y): the active room's
+-- bounds, or the whole map. Rooms smaller than the view are centred, so
+-- the clamp range stays valid.
+function World:clamp_rect()
+  local vw, vh = config.view.width, config.view.height
+  local room = self.active_room
+  if not room then
+    return 0, self.px_w - vw, 0, self.px_h - vh
+  end
+  local lo_x, hi_x = room.x, room.x + room.w - vw
+  if room.w < vw then
+    lo_x, hi_x = room.x + (room.w - vw) / 2, room.x + (room.w - vw) / 2
+  end
+  local lo_y, hi_y = room.y, room.y + room.h - vh
+  if room.h < vh then
+    lo_y, hi_y = room.y + (room.h - vh) / 2, room.y + (room.h - vh) / 2
+  end
+  return lo_x, hi_x, lo_y, hi_y
+end
+
+-- Resolves the active room from a position with no wipe (spawns,
+-- respawns, level loads).
+function World:sync_room(x, y)
+  self.active_room = self:room_at(x, y)
+end
+
+-- The room a switch is warranted to (false when none): the room under
+-- the player's centre once it sits hysteresis_px deep inside it. A nil
+-- result means wilderness (leaving every room) and switches at once.
+function World:room_target(player)
+  local cx, cy = player.x + player.w / 2, player.y + player.h / 2
+  local room = self:room_at(cx, cy)
+  if room == self.active_room then return false end
+  if room == nil or self:room_contains(room, cx, cy,
+       config.rooms.hysteresis_px) then
+    return room
+  end
+  return false
+end
+
+-- Is a point live for simulation? With an active room only what is
+-- inside it simulates; roomless maps (and wilderness) simulate all.
+function World:in_room(x, y)
+  local room = self.active_room
+  if not room then return true end
+  return x >= room.x and x < room.x + room.w
+     and y >= room.y and y < room.y + room.h
+end
+
 -- ==== foreground overlay fade ====
 
 -- One sim step of the foreground overlay's fade (runs in world time:
 -- `dt` is the step's world-time scale, so the fade slows with aiming's
--- slow motion like everything else). While the player's box (grown by
--- the fade margin) touches any overlay tile the whole layer eases to
--- invisible -- buildings and hidden spaces vanish together, so the
--- avatar stays readable -- and it eases back once they step out.
+-- slow motion like everything else). Rooms fade independently: while
+-- the player's box (grown by the fade margin) touches any overlay tile
+-- of the active room, that room's layer eases to invisible -- buildings
+-- and hidden spaces vanish together, so the avatar stays readable --
+-- and eases back when they step out. Roomless maps and wilderness
+-- share one alpha (key 0), exactly the pre-rooms behavior.
 function World:foreground_step(player, dt)
-  if not self.fg_map or not player then return end
+  if not self.fg_map then return end
   local cfg = config.foreground
   local tw = self.tw
-  -- the player's box grown by the fade margin, in tile columns/rows
-  local c0 = math.floor((player.x - cfg.fade_margin_px) / tw)
-  local c1 = math.floor((player.x + player.w - 1 + cfg.fade_margin_px) / tw)
-  local r0 = math.floor((player.y - cfg.fade_margin_px) / tw)
-  local r1 = math.floor((player.y + player.h - 1 + cfg.fade_margin_px) / tw)
-  -- behind = any overlay tile in that band
+  local key = self.active_room and self.active_room.i or 0
   local behind = false
-  for r = r0, r1 do
-    for c = c0, c1 do
-      if self:fg_tile(c, r) ~= 0 then
-        behind = true
-        break
+  if player then
+    local c0 = math.floor((player.x - cfg.fade_margin_px) / tw)
+    local c1 = math.floor((player.x + player.w - 1 + cfg.fade_margin_px) / tw)
+    local r0 = math.floor((player.y - cfg.fade_margin_px) / tw)
+    local r1 = math.floor((player.y + player.h - 1 + cfg.fade_margin_px) / tw)
+    for r = r0, r1 do
+      for c = c0, c1 do
+        -- only overlay tiles of the active room trigger its fade
+        if self:fg_tile(c, r) ~= 0 and self:in_room(c * tw, r * tw) then
+          behind = true
+          break
+        end
       end
+      if behind then break end
     end
-    if behind then break end
   end
   local target = behind and 0 or 1
   local k = cfg.fade_alpha_step * (dt or 1)
-  local a = self.fg_alpha
+  local a = self.fg_alpha[key] or 1
   if a < target then
-    self.fg_alpha = math.min(a + k, target)
+    self.fg_alpha[key] = math.min(a + k, target)
   else
-    self.fg_alpha = math.max(a - k, target)
+    self.fg_alpha[key] = math.max(a - k, target)
   end
 end
 

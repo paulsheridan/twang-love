@@ -100,6 +100,9 @@ local function draw_interactables(ctx)
   for _, w in ipairs(ents.winches) do
     Sprites.draw(w.spr or tiles.winch, w.x, w.y, false, w.rot)
   end
+  for _, e in ipairs(ents.exits) do
+    Sprites.draw(e.spr or tiles.exit, e.x, e.y, false, e.rot)
+  end
 end
 
 -- ==== particles ====
@@ -417,22 +420,25 @@ function Render.world(ctx)
 end
 
 -- Foreground overlay pass: drawn after the player so buildings and
--- hidden spaces cover the world. The layer fades as a whole
--- (World:foreground_step drives the layer alpha to 0 while the player
+-- hidden spaces cover the world. The active room fades as a whole
+-- (World:foreground_step drives that room's alpha to 0 while the player
 -- walks behind any of it, so their avatar stays visible, and back to 1
--- after) — one color set for the whole pass.
+-- after); tiles beyond the active room never draw.
 function Render.foreground(ctx)
   local world = ctx.world
   if not world.fg_map then return end
-  local alpha = world.fg_alpha
+  local alpha = world.fg_alpha[world.active_room and world.active_room.i or 0] or 1
   if alpha <= 0 then return end
   local mx, my, vw_t, vh_t = cam_tiles(ctx.cam)
   local tw = config.tile_size
+  local room = world.active_room
   love.graphics.setColor(1, 1, 1, alpha)
   for r = my, my + vh_t do
     for c = mx, mx + vw_t + 1 do
       local t = world:fg_tile(c, r)
-      if t ~= 0 then
+      if t ~= 0
+      and (not room or (c*tw >= room.x and c*tw < room.x + room.w
+                   and r*tw >= room.y and r*tw < room.y + room.h)) then
         love.graphics.draw(Sprites.sheet(), Sprites.quad(t), c*tw, r*tw)
       end
     end

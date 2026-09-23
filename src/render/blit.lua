@@ -11,6 +11,7 @@ local render_hearts = require("src.render.hearts")
 local render_hud    = require("src.render.hud")
 local render_menu   = require("src.render.menu")
 local render_levelselect = require("src.render.levelselect")
+local render_results = require("src.render.results")
 
 local Blit = {}
 
@@ -27,9 +28,9 @@ function Blit.canvas()
   return canvas
 end
 
--- One rendered frame: world + (level select or menu overlay) into the
--- native canvas, blit to the window, then HUD.
-function Blit.render(ctx, menu_open, level_select)
+-- One rendered frame: world + (level select / results / menu overlay)
+-- into the native canvas, blit to the window, then HUD.
+function Blit.render(ctx, menu_open, level_select, complete)
   local vw, vh = config.view.width, config.view.height
   love.graphics.setCanvas(canvas)
   -- background: neutral gray, slightly darker than 50%
@@ -46,7 +47,19 @@ function Blit.render(ctx, menu_open, level_select)
   -- HUD on the canvas: hearts live in screen space (outside the camera
   -- translate), so they stay pinned to the top-left corner
   render_hearts(ctx)
+  -- room-transition wipe: black at the fade's progress (the test menu
+  -- renders above it; hearts live below)
+  local f = ctx.menu and ctx.menu.room_fade
+  if f then
+    local steps = config.rooms.fade_steps
+    local a = (f.phase == "out") and math.min(f.t / steps, 1)
+                                   or math.max(0, 1 - f.t / steps)
+    love.graphics.setColor(0, 0, 0, a)
+    love.graphics.rectangle("fill", 0, 0, vw, vh)
+    love.graphics.setColor(1, 1, 1, 1)
+  end
   if level_select then render_levelselect(ctx)
+  elseif complete then render_results(ctx)
   elseif menu_open then render_menu(ctx) end
   love.graphics.setCanvas()
 

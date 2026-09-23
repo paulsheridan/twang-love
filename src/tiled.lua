@@ -13,6 +13,8 @@
 --   "foreground" (case-insensitive) are purely visual backdrop/overlay
 --   grids, every other visible layer merges into the terrain grid (later
 --   layers win on nonzero tiles)
+-- * plain rectangles with Class/kind "room" are camera-framed rooms
+--   (see docs/tiled-format.md)
 -- * if the tileset defines no kind/slope properties at all, the pico-8
 --   cart defaults below apply, so migrated levels need no manual setup
 
@@ -23,7 +25,7 @@ local json = require("lib.json")
 local DEFAULT_KINDS = {
   spawn = 63, key = 70, lock = 71, door = 72, archer = 112, melee = 116,
   laser = 138, rocketeer = 138, bomber = 138, switch = 171, spring = 16,
-  spring_ext = 33, winch = 133,
+  spring_ext = 33, winch = 133, exit = 172,
 }
 local DEFAULT_SLOPES = {
   [6] = "/floor",  [13] = "/floor", -- / floor
@@ -225,12 +227,36 @@ function tiled.load(path)
   local kind_by_tile = {}
   for t, k in pairs(kinds_by_tile) do kind_by_tile[t] = k end
   local objects = {}
+  local rooms = {}
   local skipped_kinds = {}
   for _, layer in ipairs(m.layers or {}) do
     if layer.type == "objectgroup" then
       for _, o in ipairs(layer.objects or {}) do
         local p = prop_map(o.properties)
-        local t = o.gid and (o.gid - ts.firstgid) or nil
+        -- rooms: plain rectangles with Class/kind "room" frame the
+        -- camera (docs/tiled-format.md); they are not entities
+        local oclass = ((o.type or o.class or ""):lower())
+        if not o.gid and (oclass == "room" or p.kind == "room") then
+          if (o.rotation or 0) % 360 ~= 0 then
+            print("tiled: warning - room '" .. tostring(o.name)
+              .. "' is rotated; rotation ignored")
+          end
+          local tw, th = ts.tilewidth, ts.tileheight
+          local rx = math.floor((o.x or 0) / tw + 0.5) * tw
+          local ry = math.floor((o.y or 0) / th + 0.5) * th
+          local rw = math.max(tw,
+            math.floor((o.width or 0) / tw + 0.5) * tw)
+          local rh = math.max(th,
+            math.floor((o.height or 0) / th + 0.5) * th)
+          if o.x and o.x % tw ~= 0 or o.y and o.y % th ~= 0
+          or o.width and o.width % tw ~= 0
+          or o.height and o.height % th ~= 0 then
+            print("tiled: warning - room '" .. tostring(o.name)
+              .. "' is not tile-aligned; snapped to the tile grid")
+          end
+          rooms[#rooms + 1] = { name = o.name, x = rx, y = ry, w = rw, h = rh }
+        else
+          local t = o.gid and (o.gid - ts.firstgid) or nil
         local kind = p.kind
           or (t and t >= 0 and t < n_tiles and kind_by_tile[t]) or nil
         if not kind and o.type then
@@ -296,6 +322,7 @@ function tiled.load(path)
             .. tostring(t) .. " has none, and its Class is not a kind); "
             .. "ignored")
         end
+        end
       end
     end
   end
@@ -304,6 +331,30 @@ function tiled.load(path)
     print("tiled: note - object '" .. label .. "' has no resolvable kind "
       .. "(no 'kind' property, its tile has none, and its Class is not a "
       .. "kind); ignored")
+  end
+
+  -- room validation: warnings only (rooms are camera frames, not law).
+  -- Uncovered map areas are "wilderness": whole-map clamping and
+  -- everything simulates there.
+  for i, room in ipairs(rooms) do room.i = i end
+  if #rooms > 0 then
+    local th = ts.tileheight
+    for a = 1, #rooms do
+      for b = a + 1, #rooms do
+        local ra, rb = rooms[a], rooms[b]
+        if ra.x < rb.x + rb.w and rb.x < ra.x + ra.w
+        and ra.y < rb.y + rb.h and rb.y < ra.y + ra.h then
+          print("tiled: warning - rooms '" .. tostring(ra.name)
+            .. "' and '" .. tostring(rb.name) .. "' overlap")
+        end
+      end
+    end
+    local covered = 0
+    for _, room in ipairs(rooms) do covered = covered + room.w * room.h end
+    if covered < W * H * ts.tilewidth * th then
+      print("tiled: note - rooms do not cover the whole map; uncovered "
+        .. "areas clamp the camera to the whole map")
+    end
   end
 
   -- serialize to the game's map format: one hex byte per tile, row-major
@@ -330,6 +381,7 @@ function tiled.load(path)
     phase_tiles = phase_by_tile, -- tile ids flagged "phase" (switch-flipped platforms)
     slope_type = slope_type,
     objects = objects,     -- entities placed as objects on object layers
+    rooms = #rooms > 0 and rooms or nil, -- "room" rectangles (camera frames)
     map_layers = m.layers, -- raw layer list (tools/tests may inspect it)
     tileset_image = ts.image,
   }

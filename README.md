@@ -27,18 +27,26 @@ love .
 | menu: select item | up/down | dpad up/down |
 | menu: toggle item | c | X |
 | menu: close | z / x | right bumper / A / B |
+| results: next level | z / x | right bumper / A / B |
+| results: replay level | c | X |
 | level select: choose level | up/down | dpad / left stick |
 | level select: play | z / x / c | right bumper / A / B / X |
 | fullscreen | f11 | — |
 | quit | escape | back |
 
 The game opens on a **level select** (see `config.levels`): the chosen
-level loads fresh and play begins. The test menu's last row returns to
-it, so levels can be swapped without restarting.
+level loads fresh and play begins. Levels are gated on progress — a
+level opens once the previous one is cleared (best time/grade recorded
+in the save directory), with the test menu's *unlock all* row lifting
+the gate for testing. Touching an level's **exit flag** clears it: the
+results panel shows the run's time, deaths and grade (gold ≤ the
+level's `gold` time, silver ≤ `par`, bronze for the rest; thresholds
+live on `config.levels`), then continues to the next level — the level
+select after the last one. Swap replays.
 
 ## Test menu
 
-The panel (`m` / `tab` / `start`) doubles as a test menu with three
+The panel (`m` / `tab` / `start`) doubles as a test menu with four
 toggles and a level-select row. The game world pauses while it's open.
 
 - **doors/keys/locks hidden** — every key, lock and door vanishes: they
@@ -53,9 +61,11 @@ toggles and a level-select row. The game world pauses while it's open.
   stop updating, their arrows vanish and archers drop back to patrol
   (they were previously toggled with the keyboard `e` key / pad `Y`,
   both now unmapped). Toggling back on re-enables them.
+- **unlock all levels** — lifts the level select's progress gating so
+  any level can be started without clearing the previous ones.
 - **level select** — leaves play for the launch level select (the game
-  world stays paused behind it), where any level in `config.levels` can
-  be started fresh.
+  world stays paused behind it), where any unlocked level in
+  `config.levels` can be started fresh.
 
 While aiming, the world runs in slow motion and the bow's trajectory is
 previewed. The world keeps simulating (and rendering) at the steady
@@ -77,6 +87,9 @@ a monitor with a different resolution, so it stays crisp everywhere.
 
 ## Gameplay
 
+- Reach the level's **exit flag** to clear it; the level clock ticks in
+  the HUD (top-centre) and the run is graded on the results panel
+  (time / deaths / grade, best saved per level).
 - Walk, jump (coyote time + jump buffering, and head-corner forgiveness
   that slides you around ledges you jumped beneath), and shoot arrows.
 - Arrows stick into walls, bounce off sticky surfaces and closed doors
@@ -100,6 +113,12 @@ a monitor with a different resolution, so it stays crisp everywhere.
   level's phase switches (flagged in Tiled) flip the phase-platform
   tiles — each system reacts to its own switches alone. Spring switches
   pop back out once the spring resets, ready to be shot again.
+- **Rooms**: a level may be split into camera-framed rooms (rectangles
+  flagged `room` in Tiled — see `docs/tiled-format.md`). Crossing a
+  border wipes the screen and re-frames the camera on the new room;
+  only the room you're in simulates, so nothing acts on you from
+  off-screen, and everything (keys, opened doors, switches) persists
+  across rooms.
 - **Archers hunt**: they spot you only in front of them, with clear line
   of sight and within range, and keep tracking your position the whole
   time you're visible. Once spotted they draw briefly (you'll see
@@ -152,7 +171,9 @@ a monitor with a different resolution, so it stays crisp everywhere.
 ## Code
 
 See `docs/architecture.md` for the module map, data flow and the
-simulation's quirks. All tuning constants live in `src/config.lua`.
+simulation's quirks. The plan for turning this tech demo into a game
+lives in `docs/gameplan.md`. All tuning constants live in
+`src/config.lua`.
 
 ## Tests
 
@@ -165,6 +186,7 @@ luajit tests/trace_diff.lua tests/trace_baseline.txt /tmp/trace.txt
 luajit tests/enemies_test.lua
 luajit tests/laser_test.lua
 luajit tests/rocketeer_test.lua
+luajit tests/bomber_test.lua
 luajit tests/player_test.lua
 luajit tests/rope_test.lua
 luajit tests/interactables_test.lua
@@ -172,6 +194,8 @@ luajit tests/slowmo_test.lua
 luajit tests/menu_test.lua
 luajit tests/levelselect_test.lua
 luajit tests/foreground_test.lua
+luajit tests/rooms_test.lua
+luajit tests/results_test.lua
 ```
 
 The trace diff must be empty. After an *intentional* gameplay change,

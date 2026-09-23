@@ -20,6 +20,7 @@ local Rockets  = require("src.rockets")
 local Bombs    = require("src.bombs")
 local Particles = require("src.particles")
 local Interactables = require("src.interactables")
+local Save     = require("src.save")
 local Sprites  = require("src.sprites")
 local Blit     = require("src.render.blit")
 
@@ -33,11 +34,24 @@ function Game.new(skip_select)
   -- over the paused default level); the headless harness passes
   -- skip_select and boots straight into play so its scripted runs
   -- exercise the simulation
+  self.skip_select = skip_select and true or nil
   self.mode       = skip_select and "play" or "select"
-  self.level_sel  = 1      -- level-select cursor (1..#config.levels)
+  -- visible level-select rows (config.levels minus hidden entries)
+  self.select_levels = {}
+  for _, entry in ipairs(config.levels) do
+    if not entry.hidden then table.insert(self.select_levels, entry) end
+  end
+  self.level_sel  = 1      -- level-select cursor (1..#select_levels)
+  self.unlocked_all = false -- test-menu debug toggle: start any level
   self.menu_open  = false  -- test menu panel (m / tab / start)
-  self.menu_sel   = 1      -- highlighted menu row (1..4)
+  self.menu_sel   = 1      -- highlighted menu row (1..5)
   self.settings   = { no_puzzle = false, invincible = false }
+  self.save       = {}     -- best results per level file (Save.load at boot)
+  -- per-level run state: sim steps played (the level clock, 30hz), deaths
+  -- and the finished-run summary the results panel shows
+  self.play_steps = 0
+  self.deaths     = 0
+  self.result     = nil
   self.step_count = 0
   self.acc        = 0
   self.step_dt    = 1 / config.sim.rate
@@ -50,11 +64,19 @@ function Game:load()
   Sprites.init(love.graphics.newImage("spritesheet.png"))
   Blit.init()
 
+  -- best times/grades gate the level select
+  self.save = Save.load()
+
   -- boot into the default level; the level select then starts the
-  -- chosen one (preloading keeps the paused world as its backdrop)
-  self:load_level(config.map_file)
-  for i, entry in ipairs(config.levels) do
-    if entry.file == config.map_file then self.level_sel = i end
+  -- chosen one (preloading keeps the paused world as its backdrop).
+  -- The harness pins config.map_file (level1) so its scripted gates
+  -- stay valid; a real launch opens on the intro level, the level
+  -- select's first entry.
+  self:load_level(self.skip_select and config.map_file
+    or config.levels[1].file)
+  self.level_sel = 1
+  for i, entry in ipairs(self.select_levels) do
+    if entry.file == self.map_file then self.level_sel = i end
   end
 end
 
@@ -70,6 +92,14 @@ function Game:load_level(path)
   self.tiles = tiles
   self.cam   = Camera.new()
   self.map_file = path
+  self.room_fade = nil
+
+  -- fresh run: the level clock restarts and deaths reset; deaths are
+  -- counted by wrapping the death route (Player.die is the single funnel
+  -- for fatal hits and void falls)
+  self.play_steps = 0
+  self.deaths     = 0
+  self.result     = nil
 
   -- The shared context every system reads; `die` routes player deaths to
   -- Player.die and `hurt` routes damage to Player.hurt (systems never
@@ -89,6 +119,11 @@ function Game:load_level(path)
     hurt   = Player.hurt,
     dt     = 1,  -- world-time scale of the current step (Game:step sets it)
   }
+  local die = Player.die
+  self.ctx.die = function(ctx)
+    self.deaths = self.deaths + 1
+    die(ctx)
+  end
 
   Player.reset(self.player, ents.spawn_points, self.cam, self.world)
 end
@@ -145,10 +180,118 @@ function Game:step()
     Rockets.update(ctx)
     Bombs.update(ctx)
   end
-  Particles.update(ctx.ents, dt)
-  Interactables.update_springs(ctx.ents, dt)
-  ctx.world:foreground_step(ctx.player, dt)
+  Particles.update(ctx.ents, dt, ctx.world)
+  Interactables.update_springs(ctx.ents, dt, ctx.world)
+
+  -- rooms: a hysteresis-checked border crossing starts the fade wipe;
+  -- the room actually switches at full black (Game:room_fade_step)
+  if not self.room_fade then
+    local target = ctx.world:room_target(ctx.player)
+    if target ~= false then
+      self.room_fade = { t = 0, phase = "out", target = target }
+    end
+  end
+  local f = self.room_fade
+  if f then
+    f.t = f.t + dt
+    if f.phase == "out" then
+      if f.t >= config.rooms.fade_steps then
+        ctx.world.active_room = f.target
+        Camera.snap(ctx.cam, ctx.player, ctx.world)
+        f.phase, f.t = "in", 0
+      end
+    elseif f.t >= config.rooms.fade_steps then
+      self.room_fade = nil
+    end
+  end
+
+  -- the overlay fade holds during a wipe: the leaving room keeps the
+  -- alpha the player left it at until they return
+  if not self.room_fade then
+    ctx.world:foreground_step(ctx.player, dt)
+  end
   Camera.update(ctx.cam, ctx.player, ctx.world, dt)
+
+  -- the level clock ticks every sim step (real 30hz time: slow motion
+  -- still costs time), and touching the exit flag clears the level
+  self.play_steps = self.play_steps + 1
+  if #ctx.ents.exits > 0 then
+    local pad = config.exits.touch_pad
+    local tw = config.tile_size
+    local p = ctx.player
+    for _, exit in ipairs(ctx.ents.exits) do
+      if p.x < exit.x + tw + pad and p.x + p.w > exit.x - pad
+      and p.y < exit.y + tw + pad and p.y + p.h > exit.y - pad then
+        self:complete_level()
+        break
+      end
+    end
+  end
+end
+
+-- ==== level completion ====
+
+-- Grade for a finished run against the level's thresholds (seconds):
+-- <= gold -> gold, <= par -> silver, anything slower -> bronze. A level
+-- without thresholds grades bronze (cleared).
+function Game.grade_for(entry, time)
+  if entry.gold and time <= entry.gold then return "gold" end
+  if entry.par and time <= entry.par then return "silver" end
+  return "bronze"
+end
+
+-- The current level's config entry (nil for the harness-pinned map when
+-- it is not listed).
+function Game:current_entry()
+  for _, entry in ipairs(config.levels) do
+    if entry.file == self.map_file then return entry end
+  end
+  return nil
+end
+
+-- Touching the exit flag: freeze the world on the results panel, grade
+-- the run and record the best time/grade for this level.
+function Game:complete_level()
+  local time = self.play_steps / config.sim.rate
+  local entry = self:current_entry()
+  local grade = Game.grade_for(entry or {}, time)
+  Save.record(self.save, self.map_file, time, grade)
+  Save.write(self.save)
+  self.result = {
+    time = time, deaths = self.deaths, grade = grade,
+    best = self.save[self.map_file],
+    last = self:next_entry() == nil,
+  }
+  self.room_fade = nil
+  self.mode = "complete"
+end
+
+-- The next visible level after the current one (nil = the run is over).
+function Game:next_entry()
+  local idx
+  for i, entry in ipairs(config.levels) do
+    if entry.file == self.map_file then idx = i end
+  end
+  for i = (idx or 0) + 1, #config.levels do
+    local entry = config.levels[i]
+    if not entry.hidden then return entry end
+  end
+  return nil
+end
+
+-- One 30hz tick of the results panel (world frozen behind it): action
+-- continues to the next level (the level select after the last one),
+-- swap replays the same level fresh.
+function Game:complete_step()
+  local ctx = self.ctx
+  ctx.input:step()
+  if ctx.input:pressed("swap") then
+    self:start_level(self:current_entry() or { file = self.map_file })
+  elseif ctx.input:pressed("jump") or ctx.input:pressed("aim") then
+    local nxt = self:next_entry()
+    if nxt then self:start_level(nxt)
+    else self.mode = "select" end
+  end
 end
 
 -- Toggles all enemies on/off (test-menu row 3). Turning them off also
@@ -194,10 +337,15 @@ end
 -- One 30hz tick of the launch level select (the world sits paused
 -- behind it). Up/down move the cursor (wrapping), jump/aim/swap start
 -- the highlighted level, escape quits (love.keypressed).
+--
+-- Progress gating: a level starts only once the previous one is cleared
+-- (best time in the save); the test menu's "unlock all" toggle lifts the
+-- gate. Rows come from self.select_levels (config.levels minus hidden).
 function Game:select_step()
   local ctx = self.ctx
   ctx.input:step()
-  local n = #config.levels
+  local n = #self.select_levels
+  if n == 0 then return end
   if ctx.input:pressed("up") then
     self.level_sel = ((self.level_sel - 2) % n) + 1
   end
@@ -206,8 +354,24 @@ function Game:select_step()
   end
   if ctx.input:pressed("jump") or ctx.input:pressed("aim")
   or ctx.input:pressed("swap") then
-    self:start_level(config.levels[self.level_sel])
+    local entry = self.select_levels[self.level_sel]
+    if self:level_unlocked(entry) then
+      self:start_level(entry)
+    end
   end
+end
+
+-- May this level-select entry be started? The first visible level is
+-- always open; the rest need the previous one cleared, unless the test
+-- menu's unlock-all toggle is on.
+function Game:level_unlocked(entry)
+  if self.unlocked_all then return true end
+  local idx
+  for i, visible in ipairs(self.select_levels) do
+    if visible == entry then idx = i break end
+  end
+  if not idx or idx == 1 then return true end
+  return Save.cleared(self.save, self.select_levels[idx - 1].file)
 end
 
 -- Starts the chosen level: always a fresh load (switching to another
@@ -222,7 +386,7 @@ end
 function Game:menu_step()
   local ctx = self.ctx
   ctx.input:step()
-  local rows = 4
+  local rows = 5
   if ctx.input:pressed("up") then
     self.menu_sel = ((self.menu_sel - 2) % rows) + 1
   end
@@ -233,6 +397,7 @@ function Game:menu_step()
     if self.menu_sel == 1 then self:toggle_puzzle()
     elseif self.menu_sel == 2 then self:toggle_invincibility()
     elseif self.menu_sel == 3 then self:toggle_enemies()
+    elseif self.menu_sel == 4 then self.unlocked_all = not self.unlocked_all
     else self:open_level_select() end
   end
   if ctx.input:pressed("aim") or ctx.input:pressed("jump") then
@@ -269,6 +434,7 @@ function Game:update(dt)
   while self.acc >= self.step_dt do
     self.acc = self.acc - self.step_dt
     if self.mode == "select" then self:select_step()
+    elseif self.mode == "complete" then self:complete_step()
     elseif self.menu_open then self:menu_step() else self:step() end
   end
 end
@@ -276,7 +442,8 @@ end
 -- ==== rendering ====
 
 function Game:draw()
-  Blit.render(self.ctx, self.menu_open, self.mode == "select")
+  Blit.render(self.ctx, self.menu_open, self.mode == "select",
+    self.mode == "complete")
 end
 
 -- ==== input callbacks ====

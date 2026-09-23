@@ -12,6 +12,11 @@ local pcol = Palette.rgb
 local POWER_COLOURS = { [1]=12, [2]=10, [3]=8 }
 local POWER_LABELS = { "lo", "md", "hi" }
 
+-- Seconds -> "m:ss" (the level clock; the results panel shows tenths).
+local function fmt_time(t)
+  return string.format("%d:%02d", math.floor(t / 60), math.floor(t % 60))
+end
+
 return function(ctx, blit)
   local vw, vh = config.view.width, config.view.height
   love.graphics.push()
@@ -20,6 +25,15 @@ return function(ctx, blit)
   if not config.enemies.enabled then
     love.graphics.setColor(pcol(8))
     love.graphics.print("enemies off", 2, 14)
+    love.graphics.setColor(1, 1, 1, 1)
+  end
+  local menu = ctx.menu
+  -- level clock, top-centre while playing (heart slots top-left, arrow
+  -- type top-right)
+  if menu and menu.mode == "play" and not menu.menu_open then
+    love.graphics.setColor(pcol(7))
+    love.graphics.print(fmt_time(menu.play_steps / config.sim.rate),
+      vw / 2 - 16, 2)
     love.graphics.setColor(1, 1, 1, 1)
   end
   -- equipped arrow type: always shown top-right (rope colour when rope)
