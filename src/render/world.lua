@@ -103,6 +103,9 @@ local function draw_interactables(ctx)
   for _, e in ipairs(ents.exits) do
     Sprites.draw(e.spr or tiles.exit, e.x, e.y, false, e.rot)
   end
+  for _, cp in ipairs(ents.checkpoints) do
+    Sprites.draw(cp.spr or tiles.checkpoint, cp.x, cp.y, false, cp.rot)
+  end
 end
 
 -- ==== particles ====

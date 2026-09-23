@@ -33,12 +33,19 @@ local Config = {
   -- `file` is the Tiled JSON map, `name` the menu row. The first entry
   -- is the intro level a real launch opens on. `gold`/`par` are the
   -- grade thresholds in seconds (<= gold: gold, <= par: silver, else
-  -- bronze — M0 placeholders, retuned once real levels exist). Entries
-  -- flagged `hidden` stay out of the level select.
+  -- bronze — placeholders, retuned against real runs). Entries flagged
+  -- `hidden` stay out of the level select (the workshop levels: the
+  -- original cart's sandbox maps, kept for testing).
   levels = {
-    { file = "maps/farmhouse.json", name = "farmhouse", gold = 60, par = 120 },
-    { file = "maps/level1.json",    name = "level 1",   gold = 90, par = 180 },
-    { file = "maps/level2.json",    name = "level 2",   gold = 90, par = 180 },
+    -- the v1 ladder (docs/gameplan.md): one new idea per level
+    { file = "maps/meadow.json",      name = "meadow",       gold = 50,  par = 120 },
+    { file = "maps/battlements.json", name = "battlements",  gold = 80,  par = 180 },
+    { file = "maps/crossing.json",    name = "the crossing", gold = 90,  par = 210 },
+    { file = "maps/springside.json",  name = "springside",   gold = 110, par = 240 },
+    -- workshop levels (hidden from the select)
+    { file = "maps/farmhouse.json",   name = "farmhouse",    gold = 60,  par = 120, hidden = true },
+    { file = "maps/level1.json",      name = "level 1",      gold = 90,  par = 180, hidden = true },
+    { file = "maps/level2.json",      name = "level 2",      gold = 90,  par = 180, hidden = true },
   },
 
   camera = {
@@ -144,8 +151,12 @@ local Config = {
     touch_pad = 4, -- px grown around an exit for forgiving completion
   },
 
+  checkpoints = {
+    touch_pad = 6, -- px grown around a checkpoint flag for forgiving set
+  },
+
   rope = {
-    max_range = 112,           -- px an unattached rope arrow flies before expiring
+    max_range = 132,           -- px an unattached rope arrow flies before expiring
     min_length = 16,           -- shortest allowed rope (px)
     max_length = 112,          -- longest allowed rope (px)
     winch_speed = 0.7,         -- px per step the rope reels in/out
@@ -333,6 +344,7 @@ local Config = {
     bomber = 138,  -- explosive thrower (placeholder: shares the laser cell art)
     winch = 133,  -- small blue star
     exit = 172,   -- the level's exit flag (touching it clears the level)
+    checkpoint = 173,  -- green checkpoint flag (touch sets the respawn)
   },
 }
 

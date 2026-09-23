@@ -34,15 +34,17 @@ love .
 | fullscreen | f11 | — |
 | quit | escape | back |
 
-The game opens on a **level select** (see `config.levels`): the chosen
-level loads fresh and play begins. Levels are gated on progress — a
-level opens once the previous one is cleared (best time/grade recorded
-in the save directory), with the test menu's *unlock all* row lifting
-the gate for testing. Touching an level's **exit flag** clears it: the
-results panel shows the run's time, deaths and grade (gold ≤ the
-level's `gold` time, silver ≤ `par`, bronze for the rest; thresholds
-live on `config.levels`), then continues to the next level — the level
-select after the last one. Swap replays.
+The game opens on a **level select**: the v1 ladder (see
+`config.levels`) — four handcrafted levels, one new idea each:
+**meadow** (walk/jump/keys), **battlements** (archers + the first
+switch-shot gate), **the crossing** (the rope swing), and **springside**
+(spring vaults + phase tiles). Levels are gated on progress — a level
+opens once the previous one is cleared (best time/grade recorded in the
+save directory), with the test menu's *unlock all* row lifting the gate
+for testing. Touching a level's **exit flag** clears it: the results
+panel shows the run's time, deaths and grade (gold ≤ the level's `gold`
+time, silver ≤ `par`, bronze for the rest), then continues to the next
+level — the level select after the last one. Swap replays.
 
 ## Test menu
 
@@ -90,6 +92,8 @@ a monitor with a different resolution, so it stays crisp everywhere.
 - Reach the level's **exit flag** to clear it; the level clock ticks in
   the HUD (top-centre) and the run is graded on the results panel
   (time / deaths / grade, best saved per level).
+- **Checkpoint flags** (green) become your respawn point when touched,
+  so falls and deaths don't cost the whole level.
 - Walk, jump (coyote time + jump buffering, and head-corner forgiveness
   that slides you around ledges you jumped beneath), and shoot arrows.
 - Arrows stick into walls, bounce off sticky surfaces and closed doors
@@ -196,6 +200,9 @@ luajit tests/levelselect_test.lua
 luajit tests/foreground_test.lua
 luajit tests/rooms_test.lua
 luajit tests/results_test.lua
+luajit tests/checkpoints_test.lua
+luajit tests/levels_test.lua
+luajit tests/levels_flow_test.lua
 ```
 
 The trace diff must be empty. After an *intentional* gameplay change,
@@ -204,6 +211,10 @@ rebase the baseline first (see docs/architecture.md). Requires LuaJIT
 
 ## Tools
 
+- `tools/build_level.lua` — the v1 ladder's level DSL: emits the four
+  Tiled maps (`luajit tools/build_level.lua`)
+- `tools/render_map.py` — renders any Tiled map to a sprite-accurate PNG
+  (`python3 tools/render_map.py maps/meadow.json /tmp/meadow.png`)
 - `tools/p8_to_tiled.lua` — migrates the original pico-8 cart to a Tiled
   JSON map: `luajit tools/p8_to_tiled.lua ../twang.p8 maps/level1.json`
 - `tools/import_kenney.py` — spritesheet asset import (builds the

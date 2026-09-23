@@ -125,6 +125,19 @@ the same level fresh. The level select gates each row on the previous
 row's recorded clearance (`Save.cleared`), lifted by the test menu's
 unlock-all toggle.
 
+**Checkpoints.** Checkpoint flags (`ents.checkpoints`, kind
+`checkpoint`) are touch-checked in `Player.physics`: the first overlap
+becomes `ctx.checkpoint` (a small poof marks it) and `Player.die`
+respawns there until another flag is touched. Without a touched flag,
+deaths respawn at a random spawn point — the legacy behaviour, so
+checkpointless maps are unchanged.
+
+**The generated levels.** The v1 ladder's maps are emitted by
+`tools/build_level.lua` (a level DSL over the Tiled JSON format —
+terrain vocabulary: orange grass surface 36 over dark fill 2, orange
+blocks, sticky pebbles, the phase tile); `tools/render_map.py` renders
+any map to a sprite-accurate PNG for authoring QA.
+
 **Rooms.** Levels can be split into camera-framed rooms (`room`
 rectangles in the Tiled map — `docs/tiled-format.md`). The world stays
 one grid; a room's job is to clamp the camera (`World:clamp_rect` drives
@@ -554,6 +567,9 @@ luajit tests/levelselect_test.lua
 luajit tests/foreground_test.lua
 luajit tests/rooms_test.lua
 luajit tests/results_test.lua
+luajit tests/checkpoints_test.lua
+luajit tests/levels_test.lua
+luajit tests/levels_flow_test.lua
 ```
 
 `tests/legacy_main.lua` is the frozen pre-refactor monolith with a

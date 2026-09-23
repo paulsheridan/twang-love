@@ -41,6 +41,7 @@ function Level.build(level, config)
     spring_ext = level.special.spring_ext or config.tiles.spring_ext,
     winch      = level.special.winch      or config.tiles.winch,
     exit       = level.special.exit       or config.tiles.exit,
+    checkpoint = level.special.checkpoint or config.tiles.checkpoint,
     archer     = level.special.archer     or config.tiles.archer,
     melee      = level.special.melee      or config.tiles.melee,
     laser      = level.special.laser      or config.tiles.laser,
@@ -64,6 +65,7 @@ function Level.build(level, config)
     springs      = {},
     winches      = {},
     exits        = {},
+    checkpoints  = {},
   }
 
   -- ==== spawn points ====
@@ -151,6 +153,10 @@ function Level.build(level, config)
       local wx, wy = snap_tile(o.x, tw), snap_tile(o.y, tw)
       table.insert(ents.exits, {x = wx, y = wy,
         spr = o.spr or tiles.exit, rot = o.rot})
+    elseif k == "checkpoint" then
+      local wx, wy = snap_tile(o.x, tw), snap_tile(o.y, tw)
+      table.insert(ents.checkpoints, {x = wx, y = wy,
+        spr = o.spr or tiles.checkpoint, rot = o.rot})
     end
   end
 

@@ -86,7 +86,9 @@ end
 
 -- Death: a carried (unconsumed) key drops back into the world where the
 -- player fell, then respawn; arrows in flight are cleared (so any rope
--- attachment goes with them).
+-- attachment goes with them). The respawn point is the last touched
+-- checkpoint flag (ctx.checkpoint) or, without one, a random spawn
+-- point (the legacy behaviour).
 function Player.die(ctx)
   local p = ctx.player
   p.rope = nil
@@ -96,7 +98,12 @@ function Player.die(ctx)
     Particles.poof(ctx.ents, p.x, p.y)
     p.key.taken = false
   end
-  Player.reset(p, ctx.ents.spawn_points, ctx.cam, ctx.world)
+  local cp = ctx.checkpoint
+  if cp then
+    Player.reset(p, { cp }, ctx.cam, ctx.world)
+  else
+    Player.reset(p, ctx.ents.spawn_points, ctx.cam, ctx.world)
+  end
   ctx.ents.arrows = {}
   ctx.ents.e_arrows = {}
   ctx.ents.rockets = {}
@@ -461,6 +468,21 @@ function Player.physics(ctx)
         Interactables.trigger_lock(ctx.ents, lock)
         p.key.used = true  -- consumed; not released on death
         p.key      = nil
+        break
+      end
+    end
+  end
+
+  -- checkpoint flags: touching one makes it the respawn point (a small
+  -- poof marks the handover; re-touching the current one is silent)
+  if #ctx.ents.checkpoints > 0 then
+    local cpad = config.checkpoints.touch_pad
+    for _, cp in ipairs(ctx.ents.checkpoints) do
+      if p.x < cp.x+tw+cpad and p.x+p.w > cp.x-cpad
+      and p.y < cp.y+tw+cpad and p.y+p.h > cp.y-cpad
+      and ctx.checkpoint ~= cp then
+        ctx.checkpoint = cp
+        Particles.poof(ctx.ents, cp.x + tw/2, cp.y + tw/2)
         break
       end
     end

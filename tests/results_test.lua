@@ -118,23 +118,36 @@ do
   -- jump continues to the next level
   local env = Harness.boot()
   local g = env.TWANG_TEST.game
-  touch_exit_with_player(env)
+  g:start_level(config.levels[1])  -- the ladder's first level
+  local p = g.ctx.player
+  table.insert(g.ctx.ents.exits, { x = p.x, y = p.y })
   step(env)
-  assert_true(g.mode == "complete", "level 1 completed")
+  assert_true(g.mode == "complete", "the meadow completed")
   env.love.keypressed("x")
   step(env)
   assert_true(g.mode == "play", "jump leaves the results panel")
-  assert_true(g.map_file == "maps/level2.json",
+  assert_true(g.map_file == config.levels[2].file,
     "the next level in the list loads")
-  assert_true(g.ctx.ents.exits ~= nil and #g.ctx.ents.exits == 0,
-    "the new level is a fresh load without exits")
+  assert_true(g.ctx.ents.exits ~= nil and #g.ctx.ents.exits >= 1,
+    "the new level is a fresh load (with its own exit)")
   assert_true(g.play_steps == 0, "the new level's clock restarts at zero")
   step(env)
   assert_true(g.play_steps == 1, "the new level's clock runs again")
 
-  -- completing the last level sends jump to the level select
-  local p = g.ctx.player
-  table.insert(g.ctx.ents.exits, { x = p.x, y = p.y })
+  -- completing the last visible level sends jump to the level select
+  local p2 = g.ctx.player
+  table.insert(g.ctx.ents.exits, { x = p2.x, y = p2.y })
+  step(env)
+  assert_true(g.mode == "complete", "the second level completed")
+  -- make it the final run: point the game at the ladder's last level
+  local last = nil
+  for _, entry in ipairs(config.levels) do
+    if not entry.hidden then last = entry end
+  end
+  g:load_level(last.file)
+  g.mode = "play"
+  local p3 = g.ctx.player
+  table.insert(g.ctx.ents.exits, { x = p3.x, y = p3.y })
   step(env)
   assert_true(g.mode == "complete" and g.result.last,
     "the final level's results know it is last")

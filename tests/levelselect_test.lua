@@ -3,8 +3,9 @@
 -- Covers the launch level select (Game:select_step /
 -- src/render/levelselect.lua). The harness boots straight into play, so
 -- these tests flip game.mode to "select" to exercise the screen:
---   1. the harness skips the launch screen and boots into play
---   2. the cursor starts on the booted level and wraps with up/down
+--   1. the harness skips the launch screen and boots into play; hidden
+--      workshop levels are not select rows and the cursor falls to row 1
+--   2. the cursor wraps with up/down over the v1 ladder's rows
 --   3. locked levels refuse to start (no save, unlock-all off)
 --   4. unlock-all (or a save entry) opens the gates; jump/aim/swap then
 --      start the highlighted level: a fresh load of that map
@@ -45,13 +46,16 @@ do
   assert_true(g.mode == "play", "the harness boots into play, no select")
   assert_true(g.map_file == config.map_file,
     "the booted level is config.map_file")
-  local boot_index
-  for i, entry in ipairs(g.select_levels) do
-    if entry.file == g.map_file then boot_index = i end
+  -- level1 is a hidden workshop level: not a select row; the cursor
+  -- falls to the first row (the intro level of the v1 ladder)
+  local boot_in_rows = false
+  for _, entry in ipairs(g.select_levels) do
+    if entry.file == g.map_file then boot_in_rows = true end
   end
-  assert_true(boot_index ~= nil, "the booted level is in the select rows")
-  assert_true(g.level_sel == boot_index,
-    "the cursor starts on the booted level")
+  assert_true(not boot_in_rows, "the booted workshop level is hidden")
+  assert_true(g.level_sel == 1, "the cursor falls to the first row")
+  assert_true(g.select_levels[1].file == "maps/meadow.json",
+    "row 1 is the meadow (the ladder's intro)")
 end
 
 -- ==== 2. cursor movement with wraparound ====
@@ -62,7 +66,16 @@ do
   g.mode = "select"
   step(env)
   local n = #g.select_levels
-  assert_true(n == #config.levels, "no hidden levels: all rows show")
+  assert_true(n == 4, "the v1 ladder shows four rows")
+  for _, entry in ipairs(config.levels) do
+    if entry.hidden then
+      local shown = false
+      for _, visible in ipairs(g.select_levels) do
+        if visible == entry then shown = true end
+      end
+      assert_true(not shown, "hidden level " .. entry.file .. " is not shown")
+    end
+  end
   local start = g.level_sel
   local function nudge(key)
     keys[key] = true
@@ -90,16 +103,15 @@ do
   assert_true(#g.select_levels >= 2, "there is a second row to test")
   g.mode = "select"
   step(env)
-  -- the harness boots level1: the cursor starts on it, row 2 (row 1 is
-  -- the farmhouse, still uncleared)
-  assert_true(g.level_sel == 2, "the cursor starts on the booted level")
+  -- the cursor is on row 1 (the meadow, unlocked); nudge to row 2
+  keys.down = true; step(env); keys.down = nil; step(env)
   assert_true(not g:level_unlocked(g.select_levels[2]),
     "with an empty save the second level is locked")
   env.love.keypressed("x")
   step(env)
   assert_true(g.mode == "select", "a locked level does not start")
   -- a cleared previous level opens the gate
-  g.save["maps/farmhouse.json"] = { time = 50, grade = "silver" }
+  g.save["maps/meadow.json"] = { time = 50, grade = "silver" }
   assert_true(g:level_unlocked(g.select_levels[2]),
     "clearing the previous level unlocks the next")
   env.love.keypressed("x")
@@ -149,7 +161,7 @@ do
   assert_true(g.mode == "play", "aim starts the selected level")
 end
 
--- ==== 4. the test menu is unreachable in select mode ====
+-- ==== 5. the test menu is unreachable in select mode ====
 do
   local env = Harness.boot()
   local g = env.TWANG_TEST.game

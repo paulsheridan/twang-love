@@ -70,12 +70,15 @@ arrow strikes flip them (a spring switch popping back does not).
   (the run's time, deaths and grade go to the results panel, and the
   best time/grade are saved for the level select). Multiple exits
   allowed; the first touch wins.
+- **`checkpoint`** — a green checkpoint flag: touching it makes it the
+  death respawn point (a small poof marks the handover). Without a
+  touched flag, deaths respawn at a spawn point (the legacy behaviour).
 
 ## Entities on Object Layers
 
 Entities (spawn/key/lock/door/archer/melee/laser/rocketeer/switch/
-spring/winch/exit) live as tile objects on Object Layers in Tiled (e.g.
-`items` and `entities`).
+spring/winch/exit/checkpoint) live as tile objects on Object Layers in
+Tiled (e.g. `items` and `entities`).
 
 The object's role comes from, in order:
 
