@@ -140,9 +140,10 @@ do
   step(env)
   assert_true(g.mode == "complete", "the second level completed")
   -- make it the final run: point the game at the ladder's last level
+  -- (debug rows sit outside the ladder)
   local last = nil
   for _, entry in ipairs(config.levels) do
-    if not entry.hidden then last = entry end
+    if not entry.hidden and not entry.debug then last = entry end
   end
   g:load_level(last.file)
   g.mode = "play"

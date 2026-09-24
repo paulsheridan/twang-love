@@ -158,6 +158,7 @@ function tiled.load(path)
       if p.sticky   then gff[t + 1] = gff[t + 1] + 2 end
       if p.friction then gff[t + 1] = gff[t + 1] + 4 end
       if p.arrow_pass then gff[t + 1] = gff[t + 1] + 8 end
+      if p.runnable then gff[t + 1] = gff[t + 1] + 16 end
       if p.kind     then kinds_by_tile[t]  = p.kind end
       if p.slope    then slopes_by_tile[t] = p.slope end
       if p.phase    then phase_by_tile[t]  = true end

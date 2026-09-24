@@ -56,6 +56,7 @@ function Level.build(level, config)
     rockets      = {},
     bombs        = {},
     booms        = {},
+    burns        = {},
     shockwaves   = {},
     particles    = {},
     spawn_points = {},

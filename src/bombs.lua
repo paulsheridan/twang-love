@@ -11,6 +11,7 @@
 
 local config = require("src.config")
 local Rockets = require("src.rockets")
+local Particles = require("src.particles")
 
 local Bombs = {}
 
@@ -76,12 +77,15 @@ local function step_bomb(ctx, b)
       if world:solid_for_arrow(nx, ny) or world:in_slope_solid(nx, ny) then
         -- grenade body: bounce, don't detonate (axis-separated checks,
         -- like the arrow bounce; a corner reverses both axes) -- then
-        -- spend the rest of the step at the last free spot
+        -- spend the rest of the step at the last free spot. Each bounce
+        -- cracks the surface: scorched chunks blast off it.
+        local ivx, ivy = b.vx, b.vy
         local hx = world:solid_for_arrow(nx, b.y) or world:in_slope_solid(nx, b.y)
         local hy = world:solid_for_arrow(b.x, ny) or world:in_slope_solid(b.x, ny)
         if hx then b.vx = -b.vx end
         if hy then b.vy = -b.vy end
         if not hx and not hy then b.vx, b.vy = -b.vx, -b.vy end
+        Particles.scorch(ctx.ents, b.x, b.y, ivx, ivy)
         b.vx = b.vx * cfg.bomb_bounce_damp
         b.vy = b.vy * cfg.bomb_bounce_damp
         if math.sqrt(b.vx*b.vx + b.vy*b.vy) < cfg.bomb_rest_speed then

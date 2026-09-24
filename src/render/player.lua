@@ -31,7 +31,11 @@ return function(ctx)
   end
 
   local s
-  if not p.gr then
+  if p.wallrun then
+    -- the wall-run's own cycle (sprite_base points at the ground-run
+    -- frames until dedicated wall-run art lands)
+    s = config.wallrun.sprite_base + (Player.wallrun_state())
+  elseif not p.gr then
     s = 97
   elseif p.vx ~= 0 and not ctx.input:down("aim") then
     s = 100 + (Player.run_state())

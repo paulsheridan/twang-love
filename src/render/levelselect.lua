@@ -39,19 +39,20 @@ return function(ctx)
     local best = menu.save[entry.file]
     local locked = not menu:level_unlocked(entry)
     local cursor = i == menu.level_sel
+    local label = entry.debug and entry.name .. " (debug)" or entry.name
     if best then
       love.graphics.setColor(pcol(cursor and 12 or 7))
-      love.graphics.print((cursor and ">" or " ") .. entry.name, px + 14, y)
+      love.graphics.print((cursor and ">" or " ") .. label, px + 14, y)
       love.graphics.setColor(pcol(GRADE_COLOURS[best.grade] or 6))
       love.graphics.print(best.grade .. " " .. fmt_time(best.time),
         px + 118, y)
     elseif locked then
       love.graphics.setColor(pcol(5))
-      love.graphics.print((cursor and ">" or " ") .. entry.name, px + 14, y)
+      love.graphics.print((cursor and ">" or " ") .. label, px + 14, y)
       love.graphics.print("locked", px + 118, y)
     else
       love.graphics.setColor(pcol(cursor and 12 or 7))
-      love.graphics.print((cursor and ">" or " ") .. entry.name, px + 14, y)
+      love.graphics.print((cursor and ">" or " ") .. label, px + 14, y)
     end
   end
 

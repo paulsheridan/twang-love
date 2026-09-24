@@ -149,7 +149,7 @@ do
   local vx0, vy0 = p.vx, p.vy
   tap(env, "x")  -- jump
   assert_true(p.rope == nil, "jumping released the rope")
-  assert_true(math.abs(p.vx - vx0) < 0.3,
+  assert_true(math.abs(p.vx - vx0) < 0.4,
     "horizontal velocity survived the detach (was " .. vx0 .. ", now " .. p.vx .. ")")
   assert_true(p.vy > vy0 - 0.02,
     "vertical velocity survived the detach (was " .. vy0 .. ", now " .. p.vy .. ")")

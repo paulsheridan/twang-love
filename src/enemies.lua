@@ -260,7 +260,18 @@ function Enemies.fire_beam(ctx, e)
   e.shoot_cd = cfg.shoot_cooldown
   if hit then
     Particles.sparks(ctx.ents, ex + dx*hit, ey + dy*hit, dx, dy)
+    Particles.shards(ctx.ents, ex + dx*hit, ey + dy*hit, dx, dy,
+      ctx.player.vx, ctx.player.vy)
     ctx.hurt(ctx, dx, dy, cfg.laser_half_hearts)
+  else
+    -- the beam slams into the wall it stops at: scorched chunks blast
+    -- off the struck surface, back along the beam (the march can
+    -- overshoot the wall face by up to a ray step, so pull the burst
+    -- point back out of the terrain) -- and the burnt wall keeps
+    -- sparking for a beat after the flash
+    local ix, iy = ex + dx*(len - 2), ey + dy*(len - 2)
+    Particles.scorch(ctx.ents, ix, iy, dx, dy)
+    Particles.aftermath(ctx.ents, ctx.world, ix, iy, false)
   end
 end
 
@@ -714,6 +725,8 @@ function Enemies.update_one(ctx, e)
           b.len = t
           b.hit = true
           Particles.sparks(ctx.ents, ex + b.dx*t, ey + b.dy*t, b.dx, b.dy)
+          Particles.shards(ctx.ents, ex + b.dx*t, ey + b.dy*t, b.dx, b.dy,
+            p.vx, p.vy)
           ctx.hurt(ctx, b.dx, b.dy, cfg.laser_half_hearts)
         end
       end

@@ -268,10 +268,25 @@ do
   local solid_past = world:solid_for_arrow(hx + b.dx*3, hy + b.dy*3)
     or world:in_slope_solid(hx + b.dx*3, hy + b.dy*3)
   assert_true(solid_past, "the beam stops at a wall (solid just past its tip)")
-  -- no impact: no sparks, no blood spray
-  assert_true(#g.ctx.ents.particles == 0,
-    "a missed beam throws no sparks ("
+  -- no player impact: no sparks, no blood spray — but the wall the
+  -- beam slams into throws its scorched chunks off the surface
+  assert_true(#g.ctx.ents.particles > 0,
+    "a missed beam scorch-chunks the wall it hits ("
     .. #g.ctx.ents.particles .. " particles)")
+  -- and every particle is a chunky scorch piece, none of them blood-red
+  local scorch_seen = false
+  for _, pt in ipairs(g.ctx.ents.particles) do
+    assert_true((pt.s or 0) >= 2, "scorch particles are chunk-sized")
+    if pt.s and pt.s > 2 then scorch_seen = true end
+  end
+  assert_true(scorch_seen, "the wall hit threw scorched chunks")
+  -- the burnt wall keeps sparking: a burning spot anchors at the beam's
+  -- wall end (its emissions are exercised in tests/aftermath_test.lua;
+  -- no sim steps here — this suite's later asserts lean on shared state)
+  assert_true(#g.ctx.ents.burns == 1,
+    "a burning spot anchors at the beam's wall end")
+  assert_true(g.ctx.ents.burns[1].smoke == nil,
+    "a laser's burn spot spits sparks only")
   -- and it must fire along the last known spot (not chase the player
   -- to the spawn): the segment must pass through it
   local known = e.last_known

@@ -41,9 +41,16 @@ function Rockets.blast(ctx, x, y, radius, half_hearts)
     r = radius })
   Particles.boom(ents, x, y)
   Particles.poof(ents, x, y)
+  -- the burnt remains: when the blast happened near level geometry the
+  -- struck surface keeps sparking and smoking for a beat
+  Particles.aftermath(ents, ctx.world, x, y, true)
   local p = ctx.player
   if circle_hits_box(x, y, radius, p) then
     ctx.hurt(ctx, p.x + p.w/2 - x, p.y + p.h/2 - y, half_hearts)
+    -- set-piece debris: slabs of the player's kit tearing off, flying
+    -- away from the blast with the body's own motion carried
+    Particles.shards(ents, p.x + p.w/2, p.y + p.h/2,
+      p.x + p.w/2 - x, p.y + p.h/2 - y, p.vx, p.vy)
   end
   for i = #ents.enemies, 1, -1 do
     local e = ents.enemies[i]
@@ -166,6 +173,9 @@ local function step_rocket(ctx, r)
     for _ = 1, nsub do
       local nx, ny = r.x + sx, r.y + sy
       if world:solid_for_arrow(nx, ny) or world:in_slope_solid(nx, ny) then
+        -- scorched chunks off the struck wall, flying back along the
+        -- rocket's heading (the blast's spark burst rides the boom)
+        Particles.scorch(ctx.ents, r.x, r.y, r.hx, r.hy)
         Rockets.explode(ctx, r.x, r.y)  -- just short of the wall, not in it
         r.active = false
         return

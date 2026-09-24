@@ -46,14 +46,17 @@ local Config = {
     { file = "maps/winchyard.json",   name = "winchyard",    gold = 150, par = 280 },
     { file = "maps/vault.json",       name = "the vault",    gold = 170, par = 300 },
     { file = "maps/keep.json",        name = "the keep",     gold = 200, par = 340 },
-    -- workshop levels (hidden from the select)
+    -- workshop levels: level 1 is a visible debug row (always unlocked,
+    -- outside the ladder's progression chain) — the sandboxes for testing
+    -- gameplay changes; the rest stay fully hidden
+    { file = "maps/level1.json",      name = "level 1",      gold = 90,  par = 180, debug = true },
     { file = "maps/farmhouse.json",   name = "farmhouse",    gold = 60,  par = 120, hidden = true },
-    { file = "maps/level1.json",      name = "level 1",      gold = 90,  par = 180, hidden = true },
     { file = "maps/level2.json",      name = "level 2",      gold = 90,  par = 180, hidden = true },
   },
 
   camera = {
     follow = 0.15, -- fraction of the remaining distance per step
+    shake_steps = 8, -- steps a detonation's shake decays over
   },
 
   -- Rooms: camera-framed regions authored as "room" rectangles in the
@@ -68,8 +71,8 @@ local Config = {
   },
 
   physics = {
-    gravity = 0.56,
-    fall_gravity_scale = 1.7, -- extra gravity while falling (vy > 0):
+    gravity = 0.72,
+    fall_gravity_scale = 2.0, -- extra gravity while falling (vy > 0):
                               -- heavier descent, snappier end of jump
     max_fall_speed = 6,
   },
@@ -88,9 +91,13 @@ local Config = {
     slippery_friction = 0.2,
     coyote_frames = 8,
     jump_buffer_frames = 8,
-    jump_velocity = -6.4,
-    jump_accel_initial = 3.6,
-    jump_accel = 1.8,
+    -- snappy jump: faster rise and a much heavier pull back down, with
+    -- the apex kept at the same height (v^2/2g unchanged) so platform
+    -- spacing survives; rise time drops from ~0.38s to ~0.33s and the
+    -- descent falls ~50% harder
+    jump_velocity = -7.25,
+    jump_accel_initial = 4.1,
+    jump_accel = 2.0,
     jump_hold_frames = 6,
     corner_nudge_px = 4,      -- head-corner clip: max slide around a ledge
     landing_frames = 6,
@@ -102,6 +109,24 @@ local Config = {
     shield_tint_colour = 8,   -- PICO-8 palette index (red)
     shield_tint_alpha = 0.55, -- peak overlay strength
     shield_tint_fade_steps = 15,
+  },
+
+  -- The wall-run: lines of "runnable" tiles (the checkered boxes; marked
+  -- with the tileset's runnable property, pass-through to everything) are
+  -- lanes the player traverses while airborne. Holding jump and pushing
+  -- toward the line from one of its end tiles catches the player and
+  -- carries them through the band at a constant speed; releasing the
+  -- direction drops them straight down, and reaching the far end either
+  -- jumps (jump still held) or keeps the momentum and falls. The ride y
+  -- settles onto the band's centre line over settle_steps (the smooth
+  -- transition in/out). The animation loop mirrors the ground run cycle;
+  -- sprite_base points at the ground-run frames until wall-run art lands.
+  wallrun = {
+    speed = 3,          -- px/step along the wall (walk-speed feel)
+    settle_steps = 4,   -- steps easing the body onto the band's centre
+    cycle_steps = 6,    -- animation cadence, in world-time steps
+    cycle_frames = 4,   -- animation frames
+    sprite_base = 100,  -- first sprite index of the animation
   },
 
   world = {
@@ -385,6 +410,30 @@ local Config = {
     boom_count = 12,         -- explosion spark flecks (alternates red/orange)
     boom_colour = 8,
     boom_life = { 6, 14 },
+    -- chunky debris for a heavy player hit (laser beam, rocket or
+    -- grenade blast): slabs of the player's kit tearing off, chunkier
+    -- and longer-lived than the blood spray, in a metal-and-cloth mix
+    shard_count = 9,
+    shard_colours = { 5, 6, 7, 9 },
+    shard_life = { 12, 24 },
+    -- scorched chunks knocked off LEVEL GEOMETRY when an enemy
+    -- projectile (arrow, rocket, grenade) or a laser beam slams into
+    -- terrain: dark grit with a few embers riding along. The player's
+    -- own arrows deliberately stay quiet when they hit surfaces --
+    -- their hits are gentle, not set pieces
+    scorch_count = 10,
+    scorch_colours = { 5, 5, 6, 9, 2 },
+    scorch_life = { 14, 28 },
+    -- impact aftermath: a laser's wall end or a blast close to terrain
+    -- anchors a short-lived burning spot that keeps spitting sparks off
+    -- the burnt surface for a second or so -- and, for blasts, black
+    -- smoke drifting up. Stand-ins for the burnt-wall art to come.
+    aftermath_steps = 40,      -- steps a burning spot lives (~1.3s)
+    after_spark_every = 5,     -- steps between spark flecks (plus 0-3)
+    after_spark_life = { 5, 11 },
+    after_smoke_every = 7,     -- steps between smoke puffs (plus 0-4)
+    after_smoke_life = { 24, 42 },
+    after_smoke_g = 0.02,      -- smoke rises: near-zero gravity
   },
 
   -- PICO-8 cart fallbacks for special tiles; a Tiled tileset that defines

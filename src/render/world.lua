@@ -94,7 +94,10 @@ end
 local function draw_particles(ctx)
   for _, pt in ipairs(ctx.ents.particles) do
     love.graphics.setColor(pcol(pt.col or 8))
-    dot(pt.x, pt.y)
+    -- particles default to the 2x2 dot; shards carry their own chunk
+    -- size so the debris reads bigger than the spray around it
+    local s = pt.s or 2
+    love.graphics.rectangle("fill", math.floor(pt.x), math.floor(pt.y), s, s)
   end
 end
 

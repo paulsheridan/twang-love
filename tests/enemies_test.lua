@@ -685,6 +685,10 @@ do
   for _ = 1, 40 do
     env.love.update(1/30)
     env.love.draw()
+    -- keep the player pinned across the gap: with the heavy fall gravity
+    -- a free-falling player drops out of sight range long before the
+    -- chase has walked its advance
+    place_player(g, 2020, 228)
   end
   assert_true(e.x > 1950, "the chase advanced toward the gap")
   assert_true(e.x + e.w < 1990,

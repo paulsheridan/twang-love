@@ -311,14 +311,14 @@
           "name": "switch_02",
           "properties": [
             {
-              "name": "spr",
-              "type": "int",
-              "value": 93
-            },
-            {
               "name": "phase",
               "type": "bool",
               "value": true
+            },
+            {
+              "name": "spr",
+              "type": "int",
+              "value": 93
             }
           ],
           "rotation": 0,

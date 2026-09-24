@@ -34,9 +34,9 @@ for i, entry in ipairs(config.levels) do
 
     local label = entry.name .. " (" .. entry.file .. ")"
     assert_true(level.MAP_W > 0 and level.MAP_H > 0, label .. ": has a grid")
-    if not entry.hidden then
-      -- v1 ladder: full structural checks (hidden workshop maps are the
-      -- user's sandboxes: load-only, their own conventions)
+    if not entry.hidden and not entry.debug then
+      -- v1 ladder: full structural checks (hidden and debug workshop
+      -- maps are the user's sandboxes: load-only, their own conventions)
       assert_true(#ents.spawn_points == 1,
         label .. ": exactly one spawn point (got " .. #ents.spawn_points .. ")")
       assert_true(#ents.exits >= 1, label .. ": has an exit flag")

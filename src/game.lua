@@ -183,6 +183,7 @@ function Game:step()
     Bombs.update(ctx)
   end
   Particles.update(ctx.ents, dt, ctx.world)
+  Particles.update_burns(ctx.ents, dt, ctx.world)
   Interactables.update_springs(ctx.ents, dt, ctx.world)
 
   -- rooms: a hysteresis-checked border crossing starts the fade wipe;
@@ -211,6 +212,15 @@ function Game:step()
   -- alpha the player left it at until they return
   if not self.room_fade then
     ctx.world:foreground_step(ctx.player, dt)
+  end
+  -- explosions shake the camera: any detonation this step (rockets,
+  -- grenades, the bow's bomb arrows all append to the booms list) kicks
+  -- a decaying shake scaled to its blast radius
+  for _, b in ipairs(ctx.ents.booms) do
+    if not b.shaken then
+      b.shaken = true
+      Camera.shake(ctx.cam, b.r or config.enemies.rocket_blast_radius)
+    end
   end
   Camera.update(ctx.cam, ctx.player, ctx.world, dt)
 
@@ -268,7 +278,9 @@ function Game:complete_level()
   self.mode = "complete"
 end
 
--- The next visible level after the current one (nil = the run is over).
+-- The next ladder level after the current one (nil = the run is over).
+-- Hidden entries are skipped, and debug rows (workshop levels) are
+-- outside the chain: finishing the last ladder level ends the run.
 function Game:next_entry()
   local idx
   for i, entry in ipairs(config.levels) do
@@ -276,7 +288,7 @@ function Game:next_entry()
   end
   for i = (idx or 0) + 1, #config.levels do
     local entry = config.levels[i]
-    if not entry.hidden then return entry end
+    if not entry.hidden and not entry.debug then return entry end
   end
   return nil
 end
@@ -365,9 +377,11 @@ end
 
 -- May this level-select entry be started? The first visible level is
 -- always open; the rest need the previous one cleared, unless the test
--- menu's unlock-all toggle is on.
+-- menu's unlock-all toggle is on. Debug rows (workshop levels) are
+-- always open.
 function Game:level_unlocked(entry)
   if self.unlocked_all then return true end
+  if entry.debug then return true end
   local idx
   for i, visible in ipairs(self.select_levels) do
     if visible == entry then idx = i break end

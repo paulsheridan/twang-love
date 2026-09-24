@@ -44,7 +44,10 @@ through), **winchyard** (rope arrows into winches zip you across the
 voids), **the vault** (multi-group keys; a bomb ride up to a floating
 key) and **the keep** (rocketeers, bombers, everything at once). All
 levels play against a plain sky-blue backdrop — no level carries
-backdrop sprites. Levels are gated on progress — a level opens once
+backdrop sprites. The select also ends with **level 1 (debug)** — the
+original workshop map, always unlocked and outside the ladder, kept as
+the sandbox for testing gameplay changes (every enemy type, winches,
+the full puzzle kit). Levels are gated on progress — a level opens once
 the previous one is cleared (best time/grade recorded in the save
 directory), with the test menu's *unlock all* row lifting the gate for
 testing. Touching a level's **exit flag** clears it: the results panel
@@ -102,6 +105,23 @@ a monitor with a different resolution, so it stays crisp everywhere.
   so falls and deaths don't cost the whole level.
 - Walk, jump (coyote time + jump buffering, and head-corner forgiveness
   that slides you around ledges you jumped beneath), and shoot arrows.
+  The jump is deliberately snappy: a quick rise and a heavy pull back
+  down (same apex, ~14% less airtime than the cart's floaty arc).
+- **Wall-run** across lanes of checkered boxes: jump into either end of
+  a line of them while holding jump and pushing toward the line, and
+  you're carried through the band at a constant clip. Release the stick
+  and you stop and drop straight down; reach the far end holding jump
+  and you leap off it, or keep your momentum and fall if you let go.
+- **Impacts read as set pieces**: enemy arrows, rockets and grenades
+  slamming into terrain throw scorched chunks off platforms, walls,
+  ceilings and floors, a laser beam blasts grit off whatever stops it,
+  and every detonation shakes the camera (harder for bigger booms).
+  The carnage lingers, too: a laser's wall end keeps throwing sparks
+  for a second or so, and blasts near terrain leave a burnt face
+  crackling with embers under a column of rising black smoke — simple
+  dots standing in for the burnt-wall art. Your own arrows stay
+  deliberately small and quiet when they hit surfaces — no chunks, no
+  shake: you're the calm one in the fight.
 - Arrows stick into walls, bounce off sticky surfaces and closed doors
   (nothing is left embedded in a doorway once a switch opens it), and
   can be stood on when embedded in vertical walls.
@@ -229,6 +249,8 @@ luajit tests/levels_test.lua
 luajit tests/levels_flow_test.lua
 luajit tests/winch_test.lua
 luajit tests/bomb_arrow_test.lua
+luajit tests/aftermath_test.lua
+luajit tests/wallrun_test.lua
 ```
 
 The trace diff must be empty. After an *intentional* gameplay change,

@@ -98,6 +98,9 @@ function Arrows.detonate_bomb(ctx, x, y)
     t = ctx.config.enemies.boom_frames, r = cfg.blast_radius })
   Particles.boom(ents, x, y)
   Particles.poof(ents, x, y)
+  -- the burnt remains: the bomb arrow always detonates against a
+  -- surface, so the struck face keeps sparking and smoking for a beat
+  Particles.aftermath(ents, ctx.world, x, y, true)
 
   -- unit radial from the blast toward (bx, by) plus the proximity-scaled
   -- shove strength, or nil when the point lies beyond the blast radius
@@ -602,6 +605,10 @@ function Arrows.update_enemy_arrows(ctx)
         local nx = a.x + sx
         local ny = a.y + sy
         if world:solid_for_arrow(nx, ny) or world:in_slope_solid(nx, ny) then
+          -- an enemy dart burying itself in terrain throws scorched
+          -- chunks off the surface (the player's own arrows hit quietly
+          -- by design; the enemies' impacts are set pieces)
+          Particles.scorch(ents, a.x, a.y, a.vx, a.vy)
           a.active = false
           break
         end

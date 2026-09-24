@@ -331,7 +331,7 @@
  </tile>
  <tile id="81">
   <properties>
-   <property name="solid" type="bool" value="true"/>
+   <property name="runnable" type="bool" value="true"/>
   </properties>
  </tile>
  <tile id="82">

@@ -46,14 +46,18 @@ do
   assert_true(g.mode == "play", "the harness boots into play, no select")
   assert_true(g.map_file == config.map_file,
     "the booted level is config.map_file")
-  -- level1 is a hidden workshop level: not a select row; the cursor
-  -- falls to the first row (the intro level of the v1 ladder)
-  local boot_in_rows = false
-  for _, entry in ipairs(g.select_levels) do
-    if entry.file == g.map_file then boot_in_rows = true end
+  -- the booted level is level1, a visible DEBUG row (always unlocked,
+  -- outside the ladder's chain): the cursor starts on it
+  local boot_index
+  for i, entry in ipairs(g.select_levels) do
+    if entry.file == g.map_file then boot_index = i end
   end
-  assert_true(not boot_in_rows, "the booted workshop level is hidden")
-  assert_true(g.level_sel == 1, "the cursor falls to the first row")
+  assert_true(boot_index ~= nil,
+    "the booted debug level is a select row")
+  assert_true(g.level_sel == boot_index,
+    "the cursor starts on the booted level")
+  assert_true(g.select_levels[boot_index].debug,
+    "the booted row is flagged debug")
   assert_true(g.select_levels[1].file == "maps/meadow.json",
     "row 1 is the meadow (the ladder's intro)")
 end
@@ -66,7 +70,14 @@ do
   g.mode = "select"
   step(env)
   local n = #g.select_levels
-  assert_true(n == 8, "the v1 ladder shows eight rows")
+    assert_true(n == 9, "the select shows 8 ladder rows + 1 debug row")
+  local ladder_rows, debug_rows = 0, 0
+  for _, entry in ipairs(g.select_levels) do
+    if entry.debug then debug_rows = debug_rows + 1
+    else ladder_rows = ladder_rows + 1 end
+  end
+  assert_true(ladder_rows == 8 and debug_rows == 1,
+    "eight ladder rows plus one debug row")
   for _, entry in ipairs(config.levels) do
     if entry.hidden then
       local shown = false
@@ -93,6 +104,11 @@ do
     "up wraps from the first row to the last")
   nudge("up")
   assert_true(g.level_sel == ((wrapped - 2) % n) + 1, "up moves the cursor")
+  -- the debug row (last) is always unlocked with an empty save
+  local debug_row = g.select_levels[n]
+  assert_true(debug_row.debug, "the last row is the debug level")
+  assert_true(g:level_unlocked(debug_row),
+    "the debug row opens without any progression")
 end
 
 -- ==== 3. locked levels refuse to start ====
@@ -102,8 +118,9 @@ do
   local keys = env.TWANG_TEST.keys_down
   assert_true(#g.select_levels >= 2, "there is a second row to test")
   g.mode = "select"
-  step(env)
-  -- the cursor is on row 1 (the meadow, unlocked); nudge to row 2
+  g.level_sel = 1  -- a real launch opens on row 1 (the harness boots
+  step(env)        -- level1, a debug row, so the cursor is placed there)
+  -- nudge to row 2
   keys.down = true; step(env); keys.down = nil; step(env)
   assert_true(not g:level_unlocked(g.select_levels[2]),
     "with an empty save the second level is locked")

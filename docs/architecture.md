@@ -16,8 +16,9 @@ src/
   input.lua              input state with pico-8 button semantics (btn/btnp)
   world.lua              tile grid, tile flags, solidity queries, slope collision
   level.lua              level assembly: scans Tiled objects into entity lists
-  player.lua             player physics, bow aiming/firing, key carrying,
-                         rope pendulum (attach/detach/winch)
+   player.lua             player physics, bow aiming/firing, key carrying,
+                          rope pendulum (attach/detach/winch), the
+                          wall-run over runnable tile lines
    arrows.lua             player + enemy arrows (flight, bounce, stick, hits);
                           rope arrows (range, anchoring); the bomb arrow's
                           contact detonation + blast (detonate_bomb); also
@@ -38,8 +39,11 @@ src/
    interactables.lua      key/lock/door/switch/spring puzzle logic
    save.lua               per-level best time/grade, persisted to the
                           LÖVE save directory (no-op headless)
-   particles.lua          poofs, blood, sparks, smoke and explosion bursts
-  camera.lua             smooth follow, clamped to the world
+   particles.lua          poofs, blood, sparks, smoke, explosion bursts,
+                          heavy-hit debris shards, scorch chunks and the
+                          burning aftermath anchored at impact sites
+   camera.lua             smooth follow, clamped to the world, with a
+                          decaying random shake for explosions
    sprites.lua            spritesheet quads + draw helper (flip/rot) -- 16x16
                           tiles, 2x2 upscales of the cart's 8x8 art
   palette.lua            the 16-colour pico-8 palette
@@ -111,7 +115,9 @@ resizable — the blit re-fits every frame.
 **Boot mode.** The game boots into the default level (`config.map_file`)
 but opens on the **launch level select** over the paused world
 (`Game:select_step`; rows from `config.levels` minus `hidden` entries,
-held on `Game.select_levels`). Confirming always performs a fresh
+held on `Game.select_levels`; rows flagged `debug` are workshop
+sandboxes — always unlocked and outside the ladder's progression chain,
+which `Game:next_entry` also skips). Confirming always performs a fresh
 `Game:load_level` and resumes. The test menu's last row returns to the
 select. The headless harness passes `skip_select` to `Game.new`
 (main.lua, when `TWANG_TEST` is set) and boots straight into play, so
@@ -234,13 +240,41 @@ which is what keeps the trace baseline stable.
   opposite the impact, and a translucent red silhouette overlay fades
   out over the shield's last `shield_tint_fade_steps` — the old blink
   hid the player during slow motion; further hits are ignored while the
-  shield lasts). An enemy arrow that lands rests at its impact point
+  shield lasts). **Heavy hits read as set pieces**: a laser beam hit or
+  a rocket/grenade blast catching the player also throws chunky debris
+  (`Particles.shards`, `particles.shard_count` random-sized grey/white/
+  orange chunks, longer-lived than the blood) off the impact point.
+  An enemy arrow that lands rests at its impact point
   for `arrows.player_stick_frames` before vanishing. The HUD draws
   the heart slots with the sheet's three frames: full, half-drained and
   fully gray. The last half-heart lost is fatal: the ordinary death
   flow runs (key drops, arrows cleared) and the respawn refills
   health. Falling into the void is an instant death regardless of
   health.
+- **Impacts are asymmetric on purpose.** Enemy projectiles landing on
+  terrain are set pieces: an enemy arrow burying itself, a rocket
+  detonating against a wall, a grenade cracking a surface on each
+  bounce and a laser beam slamming into whatever stops it all throw
+  scorched chunks off the struck surface (`Particles.scorch`, dark grit
+  with embers, sprayed back off the impact). The player's own arrows
+  deliberately spawn nothing when they hit terrain — their hits stay
+  small and quiet against the enemies' carnage (the game never damages
+  level geometry either; the chunks are pure dressing). Every
+  detonation (rockets, grenades, the bow's bomb arrows — anything that
+  appends to `ents.booms`) also kicks a **decaying camera shake**
+  (`Camera.shake`, strength scaled to the blast's radius, decaying over
+  `camera.shake_steps`; the jitter rides the clamped follow so the
+  shake self-corrects, and a room-wipe snap clears it).
+- **Burning aftermath.** A laser's wall end — or any blast anchored
+  close to terrain (the `ents.burns` probe checks the eight surrounding
+  directions for the nearest surface within 24px) — leaves a short-lived
+  **burning spot** pinned to that face: for `particles.aftermath_steps`
+  (~1.3s) it keeps spitting spark flecks off the burnt surface on a
+  jittered cadence (`Particles.update_burns`), and near-wall blasts add
+  black smoke drifting up (near-zero-gravity particles, `after_smoke_g`,
+  dark grey with near-black mix). These are stand-ins for the impact
+  art to come, like the boom flash; a blast in open air leaves no
+  remains, and laser spots spark without smoking.
 - **Stuck arrows are platforms** (embedded in vertical walls only), and
   arrows substep their flight so fast shots never skip a tile. Rope
   arrows are exempt (they anchor instead).
@@ -283,6 +317,35 @@ which is what keeps the trace baseline stable.
   `config.winch.debug` enables `src/winchlog.lua` to append a per-event
   trace (capture/reel/release/grace, including the entry-vs-throw dot)
   to `winch_debug.txt` in the LÖVE save directory.
+- **The wall-run.** A tile flagged `runnable` (the checkered box; the
+  tileset's property, packed as flag bit 4) marks a wall-run lane: a
+  maximal horizontal line of consecutive runnable tiles in one row, at
+  least two tiles long (`World:runnable_line` scans it). Runnable tiles
+  block nothing — players, enemies and arrows all pass through — so a
+  body can only ride the lane via the run. The trigger (`Player.wallrun_check`,
+  at the top of `Player.physics` each step) fires when the player's body
+  centre sits inside one of the line's END tiles while holding jump and
+  pushing toward the line (right at the left end, left at the right end;
+  right wins if both are held, like the walk motor) — and while no rope or
+  winch owns the body. The run (`Player.wallrun_step`) replaces the whole
+  movement pass: no gravity, no collision, `vy` pinned to zero, `x`
+  advancing at `config.wallrun.speed` and the ride y easing onto the
+  band's centre line over `settle_steps` (the smooth transition in and
+  out; entry also clears the jump buffer/hold so a leftover jump can't
+  fire mid-run). Releasing the pushed direction ends the run in a straight
+  drop (`vx`/`vy` zeroed); solid terrain at the leading edge's next step
+  (a closed door mid-band) does the same. Reaching the line's far end
+  (the leading edge crossing into the last tile) ends the run with a
+  standard, holdable jump when jump is still held — momentum rides in
+  `vx` either way. Jump is never required to SUSTAIN the run: only the
+  direction is, and re-holding jump + direction while still inside an end
+  tile re-engages. Rope attaching/detaching is suspended during the run
+  (a winch capture mid-run hands the body over immediately), the aim
+  system keeps working through it (the run scales with world time, so it
+  slows with aiming), and the animation is a dedicated cycle
+  (`Player.wallrun_state`, `config.wallrun.cycle_*`) mirroring the ground
+  run's cadence — `sprite_base` points at the ground-run frames until
+  wall-run art lands. New tests live in `tests/wallrun_test.lua`.
 - **The shockwave pulse.** The swap cycle's third arrow kind
   (`normal -> rope -> shockwave`), fired through `Arrows.fire` but
   spawned by `src/shockwaves.lua` into `ents.shockwaves` — it is a
@@ -650,6 +713,7 @@ luajit tests/laser_test.lua
 luajit tests/rocketeer_test.lua
 luajit tests/bomber_test.lua
 luajit tests/bomb_arrow_test.lua
+luajit tests/aftermath_test.lua
 luajit tests/player_test.lua
 luajit tests/rope_test.lua
 luajit tests/menu_test.lua

@@ -18,6 +18,7 @@ tileset — no flags are hardcoded in level data.
 | `friction`  | bool   | slippery ground (low friction, like pico-8 flag 2)             |
 | `arrow_pass`| bool   | arrows (player and enemy) fly through, but it still blocks the player and enemies — arrow slits |
 | `phase`     | bool   | switch-flipped platform: every instance of a `phase` tile in the level toggles solid<->non-solid together on strikes of `phase`-flagged switches (see below) |
+| `runnable`  | bool   | wall-run lane marker: a line of these tiles is traversed by the player's wall-run (see below). Runnable tiles block nothing (players, enemies, arrows) — don't place them where a floor is needed. |
 | `kind`      | string | entity role, one of the kinds below (classifies tile objects placed on Object Layers) |
 | `slope`     | string | slope collision shape: `/floor`, `\floor`, `\ceil` or `/ceil`. Slope tiles must NOT have the `solid` property; slope collision is handled by the game. |
 
@@ -32,6 +33,29 @@ switches never touch the blocks. Non-solid phase tiles block nothing
 (players, enemies, player and enemy arrows) and are drawn translucent
 (`config.phase.alpha`). Phase tiles start solid on level load; only
 arrow strikes flip them (a spring switch popping back does not).
+
+### Wall-run lanes (`runnable`)
+
+A tile flagged `runnable` (the checkered box) marks a wall-run lane: a
+maximal horizontal line of consecutive runnable tiles in one row, at
+least two tiles long. The tiles themselves are pass-through — nothing
+collides with them; they are pure markers.
+
+- **Trigger**: the player's body centre enters one of the line's END
+  tiles while holding jump and pushing the stick toward the line (right
+  at the left end, left at the right end). The run engages: the body is
+  pinned into the band (easing onto the row's centre line over
+  `config.wallrun.settle_steps`) and carried along it at
+  `config.wallrun.speed`.
+- **Mid-run**: releasing the pushed direction stops the player and drops
+  them straight down. Rope/winch modes own the body instead — the trigger
+  is blocked while either is active.
+- **Far end**: reaching the last tile ends the run. With jump still held
+  the player jumps off the end (a standard, holdable jump that keeps the
+  run's momentum); without it they keep the momentum and begin to fall.
+- Middle tiles never engage the run (ends only), and a held jump is not
+  required to sustain it — only the direction is. Tuning lives in
+  `config.wallrun`.
 
 ### `kind` values
 
@@ -173,3 +197,4 @@ If the tileset defines no kind/slope properties at all, the pico-8 cart
 defaults in `src/tiled.lua` apply, so a migrated level needs no manual
 setup. The per-kind tile ids used for sprite fallbacks are in
 `src/config.lua` (`config.tiles`).
+

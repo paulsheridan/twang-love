@@ -16,6 +16,8 @@ local Player = {}
 -- Run cycle state (advances at the 30hz sim rate; twang.p8 advanced it in
 -- _draw at 30fps). Deliberately not reset on respawn, like the original.
 local run_frame, run_tick = 0, 0
+-- The wall-run's animation cycle (same scheme, while the wall-run lasts).
+local wallrun_frame, wallrun_tick = 0, 0
 
 --- Builds a fresh player at `spawn` ({x=, y=} or nil for the cart default).
 function Player.new(spawn)
@@ -40,6 +42,7 @@ function Player.new(spawn)
     rope_cd = 0, -- steps before another rope can attach (post-detach grace)
     winch = nil, -- winch reel in progress: { ent = <winch entity> }
     winch_grace = nil, -- steps after a winch release with movement input ignored
+    wallrun = nil, -- active wall-run: { dir=, r=, c_end=, y0=, t= } (nil = none)
   }
   return p
 end
@@ -77,6 +80,7 @@ function Player.reset(p, spawn_points, cam, world)
   p.rope_cd = 0
   p.winch = nil
   p.winch_grace = nil
+  p.wallrun = nil
   -- the respawn point picks the active room (no wipe on respawn); the
   -- camera then snaps under that room's clamp
   world:sync_room(p.x, p.y)
@@ -153,6 +157,9 @@ function Player.rope_step(ctx)
   -- no rope attach, no jump detach, no manual winching
   if p.winch then return end
 
+  -- the wall-run owns the body while it lasts: no rope attach or detach
+  if p.wallrun then return end
+
   if not p.rope then
     -- attach to the first anchored rope arrow not yet claimed
     if p.rope_cd == 0 then
@@ -207,6 +214,123 @@ function Player.rope_step(ctx)
   end
 end
 
+-- The wall-run trigger: when the player's centre sits inside an END tile
+-- of a runnable line (the tile is runnable, the neighbour behind the
+-- pushed direction is not, and the neighbour ahead is -- so the line is
+-- at least two tiles long) while holding jump and pushing toward the
+-- line, the run engages: the body is pinned into the band and carried
+-- along it at a constant speed (see Player.wallrun_step). Blocked while
+-- roped or winch-owned: those modes own the body.
+function Player.wallrun_check(ctx)
+  local p = ctx.player
+  if p.rope or p.winch
+  or (p.winch_grace and p.winch_grace > 0) then return end
+  local world = ctx.world
+  local tw = config.tile_size
+  local cx = math.floor((p.x + p.w/2) / tw)
+  local r  = math.floor((p.y + p.h/2) / tw)
+  local dir
+  -- right pushes into a line extending rightward (the player sits in its
+  -- left end); left is the mirror. Right wins when both are held, like
+  -- the walk motor's ax.
+  if ctx.input:down("right")
+  and world:runnable(world:tile(cx, r))
+  and not world:runnable(world:tile(cx - 1, r))
+  and world:runnable(world:tile(cx + 1, r)) then
+    dir = 1
+  elseif ctx.input:down("left")
+  and world:runnable(world:tile(cx, r))
+  and not world:runnable(world:tile(cx + 1, r))
+  and world:runnable(world:tile(cx - 1, r)) then
+    dir = -1
+  end
+  if not dir or not ctx.input:down("jump") then return end
+  -- the line's far end in the run direction
+  local c_end = cx
+  while world:runnable(world:tile(c_end + dir, r)) do c_end = c_end + dir end
+  p.wallrun = { dir = dir, r = r, c_end = c_end, y0 = p.y, t = 0 }
+  p.vx = dir * config.wallrun.speed
+  p.vy = 0
+  p.facing = dir
+  -- a leftover jump (buffer or hold) must not fire during or after the run
+  p.jbuf, p.j_frames, p.coy = 0, 0, 0
+end
+
+-- One sim tick of the wall-run: carries the player through the band at a
+-- constant speed while the run direction is held, and hands off at the
+-- line's far end (a jump when jump is still held; momentum plus a fall
+-- when not). Replaces the normal movement pass entirely: no gravity, no
+-- collision (the band's tiles are pass-through), no jump buffering.
+function Player.wallrun_step(ctx)
+  local p = ctx.player
+  local wr = p.wallrun
+  local cfg = config.wallrun
+  local world = ctx.world
+  local dt = ctx.dt
+  local tw = config.tile_size
+  local dir = wr.dir
+
+  p.gr, p.fr = false, 1.0
+
+  -- a winch capture owns the body from here on: hand control over (the
+  -- reel takes over on the next step's normal pass)
+  if p.winch then
+    p.wallrun = nil
+    return
+  end
+
+  -- the ride y eases onto the band's centre line over settle_steps (the
+  -- smooth transition); no gravity while pinned
+  wr.t = wr.t + dt
+  local pin_y = wr.r * tw + (tw - p.h) / 2
+  p.y = wr.y0 + (pin_y - wr.y0) * math.min(1, wr.t / cfg.settle_steps)
+  p.vy = 0
+
+  -- releasing the run direction: stop and drop straight down
+  if not ctx.input:down(dir > 0 and "right" or "left") then
+    p.wallrun = nil
+    p.vx, p.vy = 0, 0
+    return
+  end
+
+  -- solid terrain at the leading edge's next step (a closed door placed
+  -- mid-band) ends the run the same way
+  local lead_x
+  if dir > 0 then lead_x = p.x + p.w + p.vx * dt
+  else lead_x = p.x + p.vx * dt end
+  if world:solid_at(lead_x, pin_y + p.h/2) then
+    p.wallrun = nil
+    p.vx, p.vy = 0, 0
+    return
+  end
+
+  p.x = p.x + p.vx * dt
+
+  -- the wall-run's own animation cycle (advances in world time, like the
+  -- ground run cycle)
+  wallrun_tick = wallrun_tick + dt
+  if wallrun_tick >= cfg.cycle_steps then
+    wallrun_tick = wallrun_tick - cfg.cycle_steps
+    wallrun_frame = (wallrun_frame + 1) % cfg.cycle_frames
+  end
+
+  -- reaching the line's far end: a jump while jump is held, otherwise the
+  -- forward momentum carries and gravity resumes
+  local reached
+  if dir > 0 then
+    reached = p.x + p.w >= wr.c_end * tw
+  else
+    reached = p.x <= (wr.c_end + 1) * tw
+  end
+  if reached then
+    p.wallrun = nil
+    if ctx.input:down("jump") then
+      p.vy = config.player.jump_velocity
+      p.j_frames = config.player.jump_hold_frames
+    end
+  end
+end
+
 -- One sim tick of player physics (movement, jump, terrain collision,
 -- arrow platforms, key pickup/lock delivery, run cycle, void fall).
 -- Advances world time by ctx.dt steps: positions, velocities and the
@@ -237,182 +361,190 @@ function Player.physics(ctx)
       })
     end
   end
-  local motor = p.winch or (p.winch_grace ~= nil and p.winch_grace > 0)
-  if motor then
-    -- (velocity comes from the reel below, or from the throw itself)
-  elseif not ctx.input:down("aim") then
-    local ax = 0
-    if ctx.input:down("left") then ax = -1 end
-    if ctx.input:down("right") then ax =  1 end
-    if ax ~= 0 then
-      p.facing = ax
-      local a = p.gr and cfg.acceleration or (cfg.acceleration * cfg.air_acceleration_scale)
-      p.vx = p.vx + ax * a * dt
+  -- the wall-run owns the movement pass while it lasts (no walk motor,
+  -- no gravity, no collision: the band's tiles are pass-through);
+  -- otherwise the trigger may engage it here, before any movement runs
+  if not p.wallrun then Player.wallrun_check(ctx) end
+  if p.wallrun then
+    Player.wallrun_step(ctx)
+  else
+    local motor = p.winch or (p.winch_grace ~= nil and p.winch_grace > 0)
+    if motor then
+      -- (velocity comes from the reel below, or from the throw itself)
+    elseif not ctx.input:down("aim") then
+      local ax = 0
+      if ctx.input:down("left") then ax = -1 end
+      if ctx.input:down("right") then ax =  1 end
+      if ax ~= 0 then
+        p.facing = ax
+        local a = p.gr and cfg.acceleration or (cfg.acceleration * cfg.air_acceleration_scale)
+        p.vx = p.vx + ax * a * dt
+      else
+        local d = p.gr and (cfg.deceleration * p.fr)
+                       or (cfg.deceleration * cfg.air_deceleration_scale)
+        if p.vx > 0 then p.vx = math.max(0, p.vx - d * dt)
+        elseif p.vx < 0 then p.vx = math.min(0, p.vx + d * dt) end
+      end
+      -- while swinging, the pendulum constraint governs speed instead of
+      -- the walk cap (the swing's tangential momentum must survive)
+      if not p.rope then
+        p.vx = math.max(-cfg.walk_speed, math.min(cfg.walk_speed, p.vx))
+      end
     else
       local d = p.gr and (cfg.deceleration * p.fr)
                      or (cfg.deceleration * cfg.air_deceleration_scale)
       if p.vx > 0 then p.vx = math.max(0, p.vx - d * dt)
       elseif p.vx < 0 then p.vx = math.min(0, p.vx + d * dt) end
     end
-    -- while swinging, the pendulum constraint governs speed instead of
-    -- the walk cap (the swing's tangential momentum must survive)
-    if not p.rope then
-      p.vx = math.max(-cfg.walk_speed, math.min(cfg.walk_speed, p.vx))
+    if p.jbuf > 0 and p.coy > 0 then
+      p.vy = Util.move_toward(p.vy, cfg.jump_velocity, cfg.jump_accel_initial * dt)
+      p.coy, p.jbuf = 0, 0
+      p.j_frames = cfg.jump_hold_frames
     end
-  else
-    local d = p.gr and (cfg.deceleration * p.fr)
-                   or (cfg.deceleration * cfg.air_deceleration_scale)
-    if p.vx > 0 then p.vx = math.max(0, p.vx - d * dt)
-    elseif p.vx < 0 then p.vx = math.min(0, p.vx + d * dt) end
-  end
-  if p.jbuf > 0 and p.coy > 0 then
-    p.vy = Util.move_toward(p.vy, cfg.jump_velocity, cfg.jump_accel_initial * dt)
-    p.coy, p.jbuf = 0, 0
-    p.j_frames = cfg.jump_hold_frames
-  end
 
-  if p.j_frames > 0 then
-    if ctx.input:down("jump") and p.vy < 0 then
-      p.vy = Util.move_toward(p.vy, cfg.jump_velocity, cfg.jump_accel * dt)
-      p.j_frames = math.max(0, p.j_frames - dt)
-    else
-      if p.vy < 0 then p.vy = p.vy / 2 end
-      p.j_frames = 0
-    end
-  end
-
-  -- heavier gravity on descent (vy > 0): the tail end of each jump
-  -- drops fast, which reads as a snappier arc
-  local g = config.physics.gravity
-  if p.vy > 0 then g = g * config.physics.fall_gravity_scale end
-  p.vy = p.vy + g * dt
-  p.vy = math.min(p.vy, config.physics.max_fall_speed)
-
-  -- rope pendulum: when the rope is taut, remove the outward radial
-  -- component of the velocity so the player swings tangentially (gravity
-  -- keeps feeding the swing); left/right input acts as tangential pumping
-  if p.rope then
-    local a = p.rope.arrow
-    local cx, cy = p.x + p.w/2, p.y + p.h/2
-    local rx, ry = cx - a.x, cy - a.y
-    local dist = math.sqrt(rx*rx + ry*ry)
-    if dist > p.rope.length and dist > 0 then
-      local nx, ny = rx / dist, ry / dist
-      local radial = p.vx * nx + p.vy * ny
-      if radial > 0 then
-        p.vx = p.vx - radial * nx
-        p.vy = p.vy - radial * ny
-      end
-    end
-  end
-
-  -- winch reel: override the velocity with a pull straight toward the
-  -- winch centre (after gravity and the walk logic, so nothing fights
-  -- the motor; the pull accelerates like a spooling-up high-torque
-  -- motor). The rope pendulum above is inert - p.rope is nil here.
-  -- The throw direction carried from the entry side is refreshed each
-  -- step the pull is active (still outside the pass radius), so the
-  -- release can never invert it if the last step overshoots the centre.
-  if p.winch then
-    local w = p.winch.ent
-    local wcx, wcy = w.x + tw/2, w.y + tw/2
-    local px, py = p.x + p.w/2, p.y + p.h/2
-    local rx, ry = wcx - px, wcy - py
-    local dist = math.sqrt(rx*rx + ry*ry)
-    p.winch.speed = math.min(config.winch.max_reel_speed,
-      (p.winch.speed or 0) + config.winch.reel_accel * dt)
-    if dist > config.winch.pass_radius and dist > 0 then
-      local nx, ny = rx / dist, ry / dist
-      p.vx = nx * p.winch.speed
-      p.vy = ny * p.winch.speed
-      p.winch.dir_x, p.winch.dir_y = nx, ny
-    end
-    if WinchLog.on() then
-      WinchLog.log("reel", {
-        step = ctx.menu and ctx.menu.step_count or 0,
-        dist = dist, speed = p.winch.speed,
-        dir_x = p.winch.dir_x or 0, dir_y = p.winch.dir_y or 0,
-        vx = p.vx, vy = p.vy,
-      })
-    end
-  end
-
-  p.x = p.x + p.vx * dt
-  world:resolve_x(p)
-  world:check_walls(p)
-
-  p.gr = false
-  p.fr = 1.0
-  p.y = p.y + p.vy * dt
-  world:resolve_y(p)
-  world:resolve_slopes(p)
-  Arrows.check_platforms(ctx)
-
-  -- rope position clamp: after collision, never let the player drift
-  -- beyond the rope length; pull back onto the circle (velocity that
-  -- pointed outward was already removed above, so this only corrects
-  -- positional drift and collision snags)
-  if p.rope then
-    local a = p.rope.arrow
-    local cx, cy = p.x + p.w/2, p.y + p.h/2
-    local rx, ry = cx - a.x, cy - a.y
-    local dist = math.sqrt(rx*rx + ry*ry)
-    if dist > p.rope.length then
-      if dist > 0 then
-        local scale = p.rope.length / dist
-        p.x = a.x + rx * scale - p.w/2
-        p.y = a.y + ry * scale - p.h/2
+    if p.j_frames > 0 then
+      if ctx.input:down("jump") and p.vy < 0 then
+        p.vy = Util.move_toward(p.vy, cfg.jump_velocity, cfg.jump_accel * dt)
+        p.j_frames = math.max(0, p.j_frames - dt)
       else
-        p.x, p.y = a.x - p.w/2, a.y - p.h/2
+        if p.vy < 0 then p.vy = p.vy / 2 end
+        p.j_frames = 0
       end
-      -- keep the resolved position out of solid tiles
-      world:resolve_x(p)
-      world:resolve_y(p)
-      world:resolve_slopes(p)
     end
-  end
 
-  -- winch release: once the player's centre is inside the pass radius
-  -- the motor cuts the line; the built-up reel momentum (topped up to a
-  -- guaranteed minimum) throws them through the centre and out the
-  -- opposite side from the one they hit it from. The direction is the
-  -- one carried from the entry side (refreshed every reel step while
-  -- outside the pass radius), never recomputed from the current radial -
-  -- overshooting the centre must not invert the throw.
-  if p.winch then
-    local w = p.winch.ent
-    local wcx, wcy = w.x + tw/2, w.y + tw/2
-    local px, py = p.x + p.w/2, p.y + p.h/2
-    local rx, ry = wcx - px, wcy - py
-    local dist = math.sqrt(rx*rx + ry*ry)
-    if dist <= config.winch.pass_radius then
-      local spd = math.max(p.winch.speed or 0, config.winch.min_throw_speed)
-      local dx, dy = p.winch.dir_x or 0, p.winch.dir_y or 0
-      if dx == 0 and dy == 0 and dist > 0 then
-        -- no stored direction (should not happen): radial as fallback
-        dx, dy = rx / dist, ry / dist
+    -- heavier gravity on descent (vy > 0): the tail end of each jump
+    -- drops fast, which reads as a snappier arc
+    local g = config.physics.gravity
+    if p.vy > 0 then g = g * config.physics.fall_gravity_scale end
+    p.vy = p.vy + g * dt
+    p.vy = math.min(p.vy, config.physics.max_fall_speed)
+
+    -- rope pendulum: when the rope is taut, remove the outward radial
+    -- component of the velocity so the player swings tangentially (gravity
+    -- keeps feeding the swing); left/right input acts as tangential pumping
+    if p.rope then
+      local a = p.rope.arrow
+      local cx, cy = p.x + p.w/2, p.y + p.h/2
+      local rx, ry = cx - a.x, cy - a.y
+      local dist = math.sqrt(rx*rx + ry*ry)
+      if dist > p.rope.length and dist > 0 then
+        local nx, ny = rx / dist, ry / dist
+        local radial = p.vx * nx + p.vy * ny
+        if radial > 0 then
+          p.vx = p.vx - radial * nx
+          p.vy = p.vy - radial * ny
+        end
       end
-      p.vx = dx * spd
-      p.vy = dy * spd
-      p.winch = nil
-      p.gr = false
-      -- the throw plays out untouched for stick_grace steps; the same
-      -- window also keeps a leftover stuck rope arrow from snapping the
-      -- pendulum back on and eating the momentum
-      p.winch_grace = config.winch.stick_grace
-      p.rope_cd = config.winch.stick_grace
+    end
+
+    -- winch reel: override the velocity with a pull straight toward the
+    -- winch centre (after gravity and the walk logic, so nothing fights
+    -- the motor; the pull accelerates like a spooling-up high-torque
+    -- motor). The rope pendulum above is inert - p.rope is nil here.
+    -- The throw direction carried from the entry side is refreshed each
+    -- step the pull is active (still outside the pass radius), so the
+    -- release can never invert it if the last step overshoots the centre.
+    if p.winch then
+      local w = p.winch.ent
+      local wcx, wcy = w.x + tw/2, w.y + tw/2
+      local px, py = p.x + p.w/2, p.y + p.h/2
+      local rx, ry = wcx - px, wcy - py
+      local dist = math.sqrt(rx*rx + ry*ry)
+      p.winch.speed = math.min(config.winch.max_reel_speed,
+        (p.winch.speed or 0) + config.winch.reel_accel * dt)
+      if dist > config.winch.pass_radius and dist > 0 then
+        local nx, ny = rx / dist, ry / dist
+        p.vx = nx * p.winch.speed
+        p.vy = ny * p.winch.speed
+        p.winch.dir_x, p.winch.dir_y = nx, ny
+      end
       if WinchLog.on() then
-        WinchLog.log("release", {
+        WinchLog.log("reel", {
           step = ctx.menu and ctx.menu.step_count or 0,
-          dist = dist, spd = spd,
-          throw_dx = dx, throw_dy = dy,
+          dist = dist, speed = p.winch.speed,
+          dir_x = p.winch.dir_x or 0, dir_y = p.winch.dir_y or 0,
           vx = p.vx, vy = p.vy,
-          -- dot of the throw against the player->winch vector: negative
-          -- would mean the throw points back the way they came
-          dot = dx * rx + dy * ry,
         })
       end
-      Particles.poof(ctx.ents, wcx, wcy)
+    end
+
+    p.x = p.x + p.vx * dt
+    world:resolve_x(p)
+    world:check_walls(p)
+
+    p.gr = false
+    p.fr = 1.0
+    p.y = p.y + p.vy * dt
+    world:resolve_y(p)
+    world:resolve_slopes(p)
+    Arrows.check_platforms(ctx)
+
+    -- rope position clamp: after collision, never let the player drift
+    -- beyond the rope length; pull back onto the circle (velocity that
+    -- pointed outward was already removed above, so this only corrects
+    -- positional drift and collision snags)
+    if p.rope then
+      local a = p.rope.arrow
+      local cx, cy = p.x + p.w/2, p.y + p.h/2
+      local rx, ry = cx - a.x, cy - a.y
+      local dist = math.sqrt(rx*rx + ry*ry)
+      if dist > p.rope.length then
+        if dist > 0 then
+          local scale = p.rope.length / dist
+          p.x = a.x + rx * scale - p.w/2
+          p.y = a.y + ry * scale - p.h/2
+        else
+          p.x, p.y = a.x - p.w/2, a.y - p.h/2
+        end
+        -- keep the resolved position out of solid tiles
+        world:resolve_x(p)
+        world:resolve_y(p)
+        world:resolve_slopes(p)
+      end
+    end
+
+    -- winch release: once the player's centre is inside the pass radius
+    -- the motor cuts the line; the built-up reel momentum (topped up to a
+    -- guaranteed minimum) throws them through the centre and out the
+    -- opposite side from the one they hit it from. The direction is the
+    -- one carried from the entry side (refreshed every reel step while
+    -- outside the pass radius), never recomputed from the current radial -
+    -- overshooting the centre must not invert the throw.
+    if p.winch then
+      local w = p.winch.ent
+      local wcx, wcy = w.x + tw/2, w.y + tw/2
+      local px, py = p.x + p.w/2, p.y + p.h/2
+      local rx, ry = wcx - px, wcy - py
+      local dist = math.sqrt(rx*rx + ry*ry)
+      if dist <= config.winch.pass_radius then
+        local spd = math.max(p.winch.speed or 0, config.winch.min_throw_speed)
+        local dx, dy = p.winch.dir_x or 0, p.winch.dir_y or 0
+        if dx == 0 and dy == 0 and dist > 0 then
+          -- no stored direction (should not happen): radial as fallback
+          dx, dy = rx / dist, ry / dist
+        end
+        p.vx = dx * spd
+        p.vy = dy * spd
+        p.winch = nil
+        p.gr = false
+        -- the throw plays out untouched for stick_grace steps; the same
+        -- window also keeps a leftover stuck rope arrow from snapping the
+        -- pendulum back on and eating the momentum
+        p.winch_grace = config.winch.stick_grace
+        p.rope_cd = config.winch.stick_grace
+        if WinchLog.on() then
+          WinchLog.log("release", {
+            step = ctx.menu and ctx.menu.step_count or 0,
+            dist = dist, spd = spd,
+            throw_dx = dx, throw_dy = dy,
+            vx = p.vx, vy = p.vy,
+            -- dot of the throw against the player->winch vector: negative
+            -- would mean the throw points back the way they came
+            dot = dx * rx + dy * ry,
+          })
+        end
+        Particles.poof(ctx.ents, wcx, wcy)
+      end
     end
   end
 
@@ -491,8 +623,11 @@ function Player.physics(ctx)
   end
 
   -- run cycle: advances in world time (scales with the step's dt, so
-  -- slow motion slows the animation with the body)
-  if p.gr and p.vx ~= 0 and not ctx.input:down("aim") then
+  -- slow motion slows the animation with the body). While wall-running
+  -- the ground cycle holds reset and the wall-run advances its own.
+  if p.wallrun then
+    run_frame, run_tick = 0, 0
+  elseif p.gr and p.vx ~= 0 and not ctx.input:down("aim") then
     run_tick = run_tick + dt
     if run_tick >= cfg.run_cycle_steps then
       run_tick = run_tick - cfg.run_cycle_steps
@@ -500,6 +635,7 @@ function Player.physics(ctx)
     end
   else
     run_frame, run_tick = 0, 0
+    wallrun_frame, wallrun_tick = 0, 0
   end
 
   -- fell off the bottom of the world -> respawn
@@ -578,8 +714,9 @@ function Player.aim_step(ctx)
     end
     -- jumping while attached releases the rope (handled in rope_step);
     -- only buffer a normal jump when free. A winch reel is unstoppable,
-    -- so no jump buffer there either.
-    if ctx.input:pressed("jump") and not p.rope and not p.winch then
+    -- so no jump buffer there either; a wall-run owns the jump state too.
+    if ctx.input:pressed("jump") and not p.rope and not p.winch
+    and not p.wallrun then
       p.jbuf = config.player.jump_buffer_frames
     end
   end
@@ -589,6 +726,11 @@ end
 -- Exposes the run cycle state for rendering and tests.
 function Player.run_state()
   return run_frame, run_tick
+end
+
+-- Exposes the wall-run cycle state for rendering and tests.
+function Player.wallrun_state()
+  return wallrun_frame, wallrun_tick
 end
 
 return Player

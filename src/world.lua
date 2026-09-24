@@ -5,6 +5,9 @@
 -- mget format, produced by src/tiled.lua). Tile flags come from the Tiled
 -- tileset's custom properties, packed into per-tile flag bytes:
 --   bit 0 solid  bit 1 sticky  bit 2 friction (slippery)  bit 3 arrow_pass
+--   bit 4 runnable (wall-run lanes: pass-through tiles marked with the
+--   "runnable" property; lines of them are traversed by the player's
+--   wall-run)
 --
 -- Doors, springs and switches own tile solidity in special ways (see
 -- solid_at / solid_for_arrow); they are referenced from the level's
@@ -89,6 +92,19 @@ end
 function World:solid(t)        return t ~= 0 and self:flag(t, 0) end
 function World:sticky(t)       return t ~= 0 and self:flag(t, 1) end
 function World:arrow_pass(t)   return t ~= 0 and self:flag(t, 3) end
+function World:runnable(t)     return t ~= 0 and self:flag(t, 4) end
+
+-- The runnable line through tile (c, r): the maximal horizontal run of
+-- consecutive runnable tiles containing it, as (c0, c1). nil when the
+-- tile itself is not runnable. Used by the player's wall-run trigger to
+-- find the end tile and the line's far end.
+function World:runnable_line(c, r)
+  if not self:runnable(self:tile(c, r)) then return nil end
+  local c0, c1 = c, c
+  while self:runnable(self:tile(c0 - 1, r)) do c0 = c0 - 1 end
+  while self:runnable(self:tile(c1 + 1, r)) do c1 = c1 + 1 end
+  return c0, c1
+end
 
 -- Is this tile id one of the switch-flipped phase tiles?
 function World:is_phase(t)
