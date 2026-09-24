@@ -66,7 +66,7 @@ do
   g.mode = "select"
   step(env)
   local n = #g.select_levels
-  assert_true(n == 4, "the v1 ladder shows four rows")
+  assert_true(n == 8, "the v1 ladder shows eight rows")
   for _, entry in ipairs(config.levels) do
     if entry.hidden then
       local shown = false

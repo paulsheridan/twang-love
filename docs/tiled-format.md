@@ -118,10 +118,11 @@ they place a nonzero tile (higher layer wins, like Tiled's draw order).
 Layer names give two of them a special, purely visual role
 (case-insensitive):
 
-- **`background`** — backdrop scenery, drawn behind everything (player,
-  items, entities, terrain). It never takes part in collision, so
-  terrain-wall art can be reused as scenery there even when the tile is
-  flagged `solid`.
+- **`background`** — backdrop scenery. Parsed and kept per level but
+  **never rendered** any more: levels carry no backdrop sprites, and
+  the void behind everything is the flat sky blue of
+  `config.world.sky`. (The layer's data survives in the map so Tiled
+  authors keep their backdrop work; the game just doesn't draw it.)
 - **`foreground`** — overlay scenery (buildings, hidden spaces), drawn on
   top of everything, the player included. It never collides either.
   Whenever the player walks behind any of it, the whole layer fades out

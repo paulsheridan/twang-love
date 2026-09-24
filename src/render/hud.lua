@@ -36,14 +36,21 @@ return function(ctx, blit)
       vw / 2 - 16, 2)
     love.graphics.setColor(1, 1, 1, 1)
   end
-  -- equipped arrow type: always shown top-right (rope colour when rope)
+  -- equipped arrow type: always shown top-right (rope colour when rope,
+  -- wave colour when shockwave, red when the bomb is out; labels are
+  -- shortened so they fit the slot)
   local p = ctx.player
+  local label = p.arrow_kind == "shockwave" and "shock" or p.arrow_kind
   if p.arrow_kind == "rope" then
     love.graphics.setColor(pcol(config.rope.colour))
+  elseif p.arrow_kind == "shockwave" then
+    love.graphics.setColor(pcol(config.shockwave.colour))
+  elseif p.arrow_kind == "bomb" then
+    love.graphics.setColor(pcol(8))
   else
     love.graphics.setColor(pcol(7))
   end
-  love.graphics.print(p.arrow_kind, vw - 40, 2)
+  love.graphics.print(label, vw - 40, 2)
   if ctx.input:down("aim") then
     love.graphics.setColor(pcol(POWER_COLOURS[p.aim_power]))
     love.graphics.print("pwr:" .. POWER_LABELS[p.aim_power], vw - 40, 10)

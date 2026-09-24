@@ -61,6 +61,8 @@ end
 -- The global airborne cap (rocket_max_alive) drops excess launches.
 -- A rocket carries a unit heading (hx, hy) instead of a free velocity:
 -- the flight phases steer the heading and the speed comes from config.
+-- `kx`/`ky` is a knock vector (a shockwave hit sets it) that drifts the
+-- rocket on top of its steered cruise, damped out each step.
 function Rockets.spawn(ctx, x, y)
   local cfg = ctx.config.enemies
   if #ctx.ents.rockets >= cfg.rocket_max_alive then return nil end
@@ -74,6 +76,7 @@ function Rockets.spawn(ctx, x, y)
     active = true,
     lt = cfg.rocket_lifetime,
     trail_t = cfg.rocket_trail_every,
+    kx = 0, ky = 0,
   }
   table.insert(ctx.ents.rockets, r)
   return r
@@ -151,9 +154,14 @@ local function step_rocket(ctx, r)
     move = speed * ctx.dt
   end
 
-  if move > 0 then
-    local mvx, mvy = r.hx * move, r.hy * move
-    local nsub = math.max(1, math.ceil(move / cfg.rocket_substep))
+  -- flight motion: the steered cruise (heading * speed) plus any
+  -- shockwave knock (a wave-hit rocket drifts along the knock vector,
+  -- damped each step, until it fades out)
+  local kx, ky = r.kx or 0, r.ky or 0
+  local mvx, mvy = r.hx * move + kx * ctx.dt, r.hy * move + ky * ctx.dt
+  local mlen = math.sqrt(mvx*mvx + mvy*mvy)
+  if mlen > 0 then
+    local nsub = math.max(1, math.ceil(mlen / cfg.rocket_substep))
     local sx, sy = mvx / nsub, mvy / nsub
     for _ = 1, nsub do
       local nx, ny = r.x + sx, r.y + sy
@@ -170,6 +178,14 @@ local function step_rocket(ctx, r)
         return
       end
     end
+  end
+
+  -- knock decay: the shove is a momentary impulse, not a new heading
+  if kx ~= 0 or ky ~= 0 then
+    local damp = math.max(0, 1 - 0.3 * ctx.dt)
+    r.kx, r.ky = kx * damp, ky * damp
+    if math.abs(r.kx) < 0.05 then r.kx = 0 end
+    if math.abs(r.ky) < 0.05 then r.ky = 0 end
   end
 
   -- smoke trail a little behind the tail (a hovering rocket idles too)

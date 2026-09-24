@@ -33,8 +33,10 @@ end
 function Blit.render(ctx, menu_open, level_select, complete)
   local vw, vh = config.view.width, config.view.height
   love.graphics.setCanvas(canvas)
-  -- background: neutral gray, slightly darker than 50%
-  love.graphics.clear(112/255, 112/255, 112/255, 1)
+  -- background: sky blue (levels carry no backdrop sprites; pits and
+  -- open air read as sky)
+  love.graphics.clear(config.world.sky[1], config.world.sky[2],
+    config.world.sky[3], 1)
   -- world-pass vector lines (arrow shafts, rope, aim lines) draw 2px thick
   -- to match the 2x2-upscaled sheet; the controls panel resets its own 1px
   love.graphics.setLineWidth(2)

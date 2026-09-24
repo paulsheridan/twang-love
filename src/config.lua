@@ -42,6 +42,10 @@ local Config = {
     { file = "maps/battlements.json", name = "battlements",  gold = 80,  par = 180 },
     { file = "maps/crossing.json",    name = "the crossing", gold = 90,  par = 210 },
     { file = "maps/springside.json",  name = "springside",   gold = 110, par = 240 },
+    { file = "maps/arrowslit.json",   name = "arrowslit",    gold = 130, par = 260 },
+    { file = "maps/winchyard.json",   name = "winchyard",    gold = 150, par = 280 },
+    { file = "maps/vault.json",       name = "the vault",    gold = 170, par = 300 },
+    { file = "maps/keep.json",        name = "the keep",     gold = 200, par = 340 },
     -- workshop levels (hidden from the select)
     { file = "maps/farmhouse.json",   name = "farmhouse",    gold = 60,  par = 120, hidden = true },
     { file = "maps/level1.json",      name = "level 1",      gold = 90,  par = 180, hidden = true },
@@ -102,6 +106,10 @@ local Config = {
 
   world = {
     void_margin = 64, -- pixels below the world bottom at which the player dies
+    -- the void behind everything: no level draws backdrop sprites any
+    -- more (the Background tile layer is parsed but never rendered), so
+    -- pits and open sky show this colour
+    sky = { 0.529, 0.808, 0.922 },  -- sky blue (CSS skyblue)
   },
 
   aiming = {
@@ -140,6 +148,60 @@ local Config = {
     preview_steps = 14,          -- aim trajectory preview dots (each spans
                                  -- 2x the pixels at the doubled speeds, so the
                                  -- count stays put to keep the same arc)
+  },
+
+  -- The bomb arrow (the swap cycle's fourth kind): a gravity-arced
+  -- arrow that detonates on ANY contact -- terrain, sticky surfaces,
+  -- closed doors, enemies. A direct enemy hit kills the touched enemy
+  -- (blood, instant) and then blasts; the blast itself is a point
+  -- explosion that SHOVES everything in its radius -- the player
+  -- (harmlessly, never damaged), other enemies, and enemy projectiles
+  -- -- along the radial from the blast centre, with proximity falloff.
+  -- The player's knock is additive (it stacks with jump and swing
+  -- momentum, the point of the tool) and plays out untouched for
+  -- shove_grace, like a winch throw, so the walk cap cannot eat it.
+  bomb_arrow = {
+    blast_radius   = 48,  -- px catch radius of the blast
+    push           = 14,  -- shove impulse added at the blast's centre
+                          -- (px/step); rises ~7 tiles, spring-tier
+    min_push_scale = 0.5, -- push floor at the blast's rim: sticking the
+                          -- arrow close is rewarded with bigger launches
+    shove_grace    = 12,  -- steps the blast fling plays out untouched;
+                          -- ends early once the player lands
+  },
+
+  -- The bow's shockwave pulse (the swap cycle's third arrow kind): a
+  -- short-lived wave fired out from the bow as a SEMICIRCLE. The front
+  -- is a 180-degree cone of force opening along the aim direction, its
+  -- flat back edge riding through the wave centre, so only what lies
+  -- ahead of the wave gets swept (the shooter, behind that edge, is
+  -- untouched by their own shot). It flies straight (no gravity),
+  -- bounces off any surface (the reflection re-aims the cone for free),
+  -- grows with the distance flown -- a wider front is easier to connect
+  -- with -- and fizzles out after only a mild distance. It is harmless
+  -- but shoves hard: whatever the front sweeps gets an impulse along
+  -- the radial from the wave centre (enemies, the player on a
+  -- bounce-back, and enemy projectiles: darts and bombs knocked off
+  -- course, rockets knocked away). Waves never occupy the arrow quiver.
+  --
+  -- The speeds outrun the player's fall (max_fall_speed is 6) so a
+  -- straight-down shot separates from the shooter, reaches the ground
+  -- and races back before the fizzle clock runs out: max_range is the
+  -- TOTAL flight budget, and the round trip (down to a surface and
+  -- back up to the falling player) must fit inside it.
+  shockwave = {
+    speeds = { 9, 12, 15 },  -- wave travel speed per power level
+    max_range = 160,         -- px of total flight before the fizzle
+    radius_start = 3,        -- wave front radius at the bow (px)
+    radius_max = 22,         -- full-grown front radius at max range (px)
+    push = 16,               -- shove impulse added on contact (px/step)
+    max_active = 2,          -- airborne waves at once (own cap, no quiver)
+    substep_pixels = 4,      -- collision sample spacing along the path
+    colour = 9,              -- PICO-8 palette index of the wave ring
+    preview_dot_px = 8,      -- px of flight between aim-preview dots
+    -- analog force floor: a light tilt slows the wave, but a wave is a
+    -- pulse, not a lob -- it never crawls below this share of its speed
+    min_force_scale = 0.6,
   },
 
   keys = {

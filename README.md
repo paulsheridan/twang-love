@@ -35,14 +35,20 @@ love .
 | quit | escape | back |
 
 The game opens on a **level select**: the v1 ladder (see
-`config.levels`) — four handcrafted levels, one new idea each:
+`config.levels`) — eight handcrafted levels, one new idea each:
 **meadow** (walk/jump/keys), **battlements** (archers + the first
-switch-shot gate), **the crossing** (the rope swing), and **springside**
-(spring vaults + phase tiles). Levels are gated on progress — a level
-opens once the previous one is cleared (best time/grade recorded in the
-save directory), with the test menu's *unlock all* row lifting the gate
-for testing. Touching a level's **exit flag** clears it: the results
-panel shows the run's time, deaths and grade (gold ≤ the level's `gold`
+switch-shot gate), **the crossing** (the rope swing), **springside**
+(spring vaults + phase tiles), **arrowslit** (laser snipers behind
+arrow slits — they can't see you through them, your arrows fly
+through), **winchyard** (rope arrows into winches zip you across the
+voids), **the vault** (multi-group keys; a bomb ride up to a floating
+key) and **the keep** (rocketeers, bombers, everything at once). All
+levels play against a plain sky-blue backdrop — no level carries
+backdrop sprites. Levels are gated on progress — a level opens once
+the previous one is cleared (best time/grade recorded in the save
+directory), with the test menu's *unlock all* row lifting the gate for
+testing. Touching a level's **exit flag** clears it: the results panel
+shows the run's time, deaths and grade (gold ≤ the level's `gold`
 time, silver ≤ `par`, bronze for the rest), then continues to the next
 level — the level select after the last one. Swap replays.
 
@@ -104,12 +110,30 @@ a monitor with a different resolution, so it stays crisp everywhere.
   speed carries into and out of the swing, left/right pumps it, and
   up/down reels the rope in/out. Press jump to let go and keep your
   momentum. Miss the wall and the arrow poofs at max range.
-- **Propel arrows** (press `c` twice): harmless shove arrows. Whatever
-  the arrow hits (an enemy, or you on a bounce-back) is flung along the
-  arrow's flight direction — fire down at a sticky surface and the
-  arrow bounces back into you for an upward boost. Firing also cuts any
-  attached rope. The arrow itself still flies, sticks, and can be stood
-  on.
+- **Shockwave pulses** (press `c` twice): harmless concussive waves.
+  The pulse leaves your bow as a semicircular front — a cone of force
+  opening along your aim, sweeping only what lies ahead of it. It
+  bounces off any surface (the ricochet re-aims the cone), grows as it
+  travels — the wider front is easier to connect with — and fizzles out
+  after only a short distance. Whatever the front sweeps gets shoved
+  hard away from it: enemies (never killed), thrown bombs and enemy
+  darts knocked off course, homing rockets knocked away from their
+  heading, and you on a bounce-back — fire down at the ground under
+  your feet (or at any nearby wall) and the reflected front launches
+  you. Firing also cuts any attached rope. Waves don't occupy the
+  arrow quiver; two can be airborne at once.
+- **Bomb arrows** (press `c` three times): gravity-arced arrows that
+  detonate on ANY contact — terrain, sticky surfaces, closed doors,
+  enemies. A direct enemy hit kills it, then the blast shoves
+  everything in its radius along the radial, with proximity falloff —
+  closest sticks give the biggest launches — and it never hurts you:
+  fire at a nearby wall behind you to fling yourself forward, or at the
+  ground under your feet for a bomb jump harder than a spring. The
+  shove is additive (it stacks with jumps and swings) and plays out
+  untouched for a moment (no walk-speed clamp), and the blast also
+  shoves enemies and knocks rockets, bombs and darts off course. Firing
+  cuts any attached rope. Bombs occupy the arrow quiver like normal
+  arrows, never carry keys, and a miss poofs silently.
 - Carry keys to locks (personally, or by shooting them from an arrow)
   to open doors. Every arrow strike toggles a switch: its doors open
   while every switch of its group is on, and close otherwise; a strike
@@ -203,6 +227,8 @@ luajit tests/results_test.lua
 luajit tests/checkpoints_test.lua
 luajit tests/levels_test.lua
 luajit tests/levels_flow_test.lua
+luajit tests/winch_test.lua
+luajit tests/bomb_arrow_test.lua
 ```
 
 The trace diff must be empty. After an *intentional* gameplay change,

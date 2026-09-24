@@ -194,5 +194,108 @@ do
     "the phase wall's corridor cell is passable")
 end
 
+-- ==== 5. arrowslit: the slit hides from sight, passes arrows ====
+do
+  local env = Harness.boot()
+  local g = load(env, "maps/arrowslit.json")
+  local p, ents, world = g.ctx.player, g.ctx.ents, g.ctx.world
+  -- stand just left of the first slit wall (x=42, slit at row 15)
+  p.x, p.y, p.vx, p.vy = 40 * tw, 14 * tw, 0, 0
+  for _ = 1, 10 do step(env) end
+  local laser
+  for _, e in ipairs(ents.enemies) do
+    if e.type == "laser" and e.x > 42 * tw then laser = e break end
+  end
+  assert_true(laser ~= nil, "a laser patrols beyond the slit wall")
+  -- the laser cannot see the player behind the slit wall
+  assert_true(not env.require("src.enemies").sees(g.ctx, laser),
+    "the slit wall blocks the laser's sight")
+  -- an arrow through the slit reaches the ground beyond
+  local a = {
+    x = 40 * tw + 8, y = 15 * tw + 6, vx = 13, vy = -2,
+    active = true, stuck = false, bounced = 0,
+    sdx = 1, sdy = 0, spin = 0, lt = 300, kind = "normal", traveled = 4,
+  }
+  table.insert(ents.arrows, a)
+  local killed = false
+  for _ = 1, 30 do
+    step(env)
+    if not a.active then killed = true break end
+  end
+  assert_true(killed, "the arrow flies through the slit")
+  assert_true(laser.hp == nil, true)  -- lasers die by removal; check via list
+  local laser_alive = false
+  for _, e in ipairs(ents.enemies) do
+    if e == laser then laser_alive = true end
+  end
+  assert_true(not laser_alive,
+    "the shot through the slit kills the laser beyond")
+end
+
+-- ==== 6. winchyard: a rope arrow into the winch zips the player ====
+do
+  local env = Harness.boot()
+  local g = load(env, "maps/winchyard.json")
+  local p, ents = g.ctx.player, g.ctx.ents
+  assert_true(#ents.winches == 3, "the winchyard carries three winches")
+  -- stand at the first void's left edge (the void spans cols 12..19)
+  p.x, p.y, p.vx, p.vy = 11 * tw, 17 * tw, 0, 0
+  for _ = 1, 10 do step(env) end
+  local edge_x = p.x
+  -- rig a rope arrow flying into the first winch's box (as the player's
+  -- up-shot would); the capture reels and throws them across the void
+  local winch = ents.winches[1]
+  local a = {
+    x = winch.x - 10, y = winch.y + tw/2, vx = 8, vy = -3,
+    active = true, stuck = false, bounced = 0,
+    sdx = 1, sdy = -1, spin = 0, lt = 300, kind = "rope", traveled = 4,
+  }
+  table.insert(ents.arrows, a)
+  local captured = false
+  for _ = 1, 20 do
+    step(env)
+    if p.winch then captured = true break end
+  end
+  assert_true(captured, "the rope arrow is captured by the winch")
+  -- ride the reel and the throw: the player must land past the void
+  -- (the void spans x=192..320; the far ledge starts at col 20)
+  local landed = false
+  for _ = 1, 160 do
+    step(env)
+    if p.gr then landed = true break end
+  end
+  assert_true(landed, "the thrown player lands")
+  assert_true(p.x >= 18 * tw,
+    "the winch throw carries the player across the void")
+end
+
+-- ==== 7. the vault: the bomb ride grabs the floating key ====
+do
+  local env = Harness.boot()
+  local g = load(env, "maps/vault.json")
+  local p, ents = g.ctx.player, g.ctx.ents
+  local shelf_key
+  for _, k in ipairs(ents.keys) do
+    if k.g == "02" then shelf_key = k end
+  end
+  assert_true(shelf_key ~= nil, "the floating key exists")
+  -- stand under it, fire a bomb at the floor, ride up through the key
+  p.x, p.y, p.vx, p.vy = 26 * tw, 15 * tw, 0, 0
+  for _ = 1, 10 do step(env) end
+  p.arrow_kind = "bomb"
+  local Arrows = env.require("src.arrows")
+  Arrows.fire(g.ctx, 0.25, "bomb", 1.0)  -- straight down (p8 0.25 = down)
+  local a = ents.arrows[1]
+  assert_true(a ~= nil and a.kind == "bomb", "the bomb arrow fires")
+  local grabbed = false
+  for _ = 1, 60 do
+    step(env)
+    if p.key == shelf_key then grabbed = true break end
+  end
+  assert_true(grabbed, "the blast ride carries the player through the key")
+  assert_true(p.hp == config.player.hearts * 2,
+    "the ride costs no health")
+end
+
 print(("levels flow tests: %d passed, %d failed"):format(PASS, FAIL))
 if FAIL > 0 then os.exit(1) end

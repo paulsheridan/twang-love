@@ -3,9 +3,15 @@
 --
 -- Player arrows act as one-tile-wide platforms when embedded in vertical
 -- walls (see check_platforms), can carry keys to locks, and bounce off
--- sticky surfaces a limited number of times before spinning out. Propel
--- arrows are harmless: they shove whatever they hit (enemies and the
--- player, bounce-backs included) along the arrow's impact vector.
+-- sticky surfaces a limited number of times before spinning out. The
+-- bow's third arrow kind, the shockwave, is not an arrow at all: fire()
+-- hands it to src/shockwaves.lua, a concussive arc that shoves whatever
+-- it touches instead of sticking or killing. The fourth kind, the bomb
+-- arrow, flies like a normal arrow but detonates on any contact
+-- (Arrows.detonate_bomb): a direct enemy hit kills the touched enemy,
+-- then the blast shoves the player, nearby enemies and enemy
+-- projectiles radially away from the blast centre with proximity
+-- falloff -- the bow's movement bomb.
 
 local config = require("src.config")
 local Util   = require("src.util")
@@ -14,6 +20,7 @@ local Interactables = require("src.interactables")
 local WinchLog = require("src.winchlog")
 local Rockets = require("src.rockets")
 local Bombs = require("src.bombs")
+local Shockwaves = require("src.shockwaves")
 
 local Arrows = {}
 
@@ -68,12 +75,98 @@ function Arrows.release(ctx, arrow)
   arrow.key = nil
 end
 
+-- The bomb arrow's detonation: a flash ring and spark burst, then a
+-- hard radial shove on everything caught in the blast --
+--
+--   * the player, harmlessly (never damaged, no i-frames spent): the
+--     knock is ADDED to their velocity -- it stacks with jump and swing
+--     momentum, the point of the tool -- with linear proximity falloff
+--     from `push` at the blast's centre down to its `min_push_scale`
+--     share at the rim, and rides the winch-throw grace window so the
+--     walk cap cannot clamp it (a horizontal blast would otherwise be
+--     clamped to walk speed the step after the boom)
+--   * enemies, shoved along the radial and never killed by the blast
+--     itself (the direct arrow hit is what kills -- see step_one)
+--   * enemy projectiles: rockets knocked off their heading (the homing
+--     re-curves them later), thrown bombs and darts knocked off course
+--
+-- A blast at a target's exact centre shoves straight up.
+function Arrows.detonate_bomb(ctx, x, y)
+  local ents = ctx.ents
+  local cfg = ctx.config.bomb_arrow
+  table.insert(ents.booms, { x = x, y = y,
+    t = ctx.config.enemies.boom_frames, r = cfg.blast_radius })
+  Particles.boom(ents, x, y)
+  Particles.poof(ents, x, y)
+
+  -- unit radial from the blast toward (bx, by) plus the proximity-scaled
+  -- shove strength, or nil when the point lies beyond the blast radius
+  local function radial(bx, by)
+    local dx, dy = bx - x, by - y
+    local d = math.sqrt(dx*dx + dy*dy)
+    if d > cfg.blast_radius then return nil end
+    if d == 0 then return 0, -1, cfg.push end
+    return dx / d, dy / d,
+      cfg.push * math.max(cfg.min_push_scale, 1 - d / cfg.blast_radius)
+  end
+
+  for _, e in ipairs(ents.enemies) do
+    local kx, ky, s = radial(e.x + e.w/2, e.y + e.h/2)
+    if kx then
+      e.vx, e.vy = e.vx + kx * s, e.vy + ky * s
+      if e.vy < 0 then e.gr = false end
+    end
+  end
+
+  local p = ctx.player
+  local kx, ky, s = radial(p.x + p.w/2, p.y + p.h/2)
+  if kx then
+    -- the shove ADDS to the body's motion, so a running start carries
+    -- through the launch (and the grace keeps the walk cap off it)
+    p.vx, p.vy = p.vx + kx * s, p.vy + ky * s
+    if p.vy < 0 then
+      p.gr = false
+      p.j_frames = 0
+    end
+    -- the shock knocks the rope line off and the reel loose; the knock
+    -- itself plays out untouched (movement input ignored, no walk cap)
+    -- until it lapses or the player lands
+    p.rope = nil
+    p.winch_grace = cfg.shove_grace
+    p.rope_cd = cfg.shove_grace
+  end
+
+  for _, r in ipairs(ents.rockets) do
+    if r.active then
+      local kx, ky, s = radial(r.x, r.y)
+      if kx then r.kx, r.ky = kx * s, ky * s end
+    end
+  end
+  for _, b in ipairs(ents.bombs) do
+    if b.active then
+      local kx, ky, s = radial(b.x, b.y)
+      if kx then
+        b.vx, b.vy = b.vx + kx * s, b.vy + ky * s
+      end
+    end
+  end
+  for _, a in ipairs(ents.e_arrows) do
+    if a.active and not a.hit_stick then
+      local kx, ky, s = radial(a.x, a.y)
+      if kx then
+        a.vx, a.vy = a.vx + kx * s, a.vy + ky * s
+      end
+    end
+  end
+end
+
 -- Fires an arrow from the player along `angle` (a pico-8 turn, 0..1) at
 -- the player's current power level, scaled by `force` (analog stick
 -- tilt: 1 = the power level's full launch speed, so full tilt keeps the
--- maximum). `kind` selects the arrow type ("normal" or "rope"). Evicts
--- a stuck arrow to make room when the quiver is full (releasing its key
--- first, if any).
+-- maximum). `kind` selects the arrow type ("normal", "rope" or
+-- "shockwave"; the shockwave is spawned as a pulse instead of an
+-- arrow). Evicts a stuck arrow to make room when the quiver is full
+-- (releasing its key first, if any).
 function Arrows.fire(ctx, angle, kind, force)
   local ents, p = ctx.ents, ctx.player
   local cfg = ctx.config.arrows
@@ -89,6 +182,17 @@ function Arrows.fire(ctx, angle, kind, force)
   -- firing a new rope arrow detaches any rope already attached, so the
   -- fresh anchor becomes the active one
   if kind == "rope" and p.rope then p.rope = nil end
+  -- the bomb arrow is a mobility tool like the shockwave: firing it
+  -- cuts an attached rope (its blast also knocks a line loose on impact)
+  if kind == "bomb" and p.rope then p.rope = nil end
+  -- a shockwave is a wave, not an arrow: no quiver, no keys, no stick.
+  -- Like the propel arrow it replaces, firing it cuts an attached rope
+  -- (a mobility tool; the shove itself happens on impact)
+  if kind == "shockwave" then
+    if p.rope then p.rope = nil end
+    Shockwaves.spawn(ctx, angle, force)
+    return
+  end
   if #ents.arrows >= cfg.max_active then
     for i, a in ipairs(ents.arrows) do
       if a.stuck then
@@ -114,17 +218,14 @@ function Arrows.fire(ctx, angle, kind, force)
   -- a fired arrow takes the player's carried key along; the player can
   -- grab it back on contact once the short cooldown lapses (the arrow
   -- spawns inside the player, so without it the handoff would undo
-  -- itself the same step). Rope arrows never carry keys.
-  if p.key and kind ~= "rope" then
+  -- itself the same step). Rope and bomb arrows never carry keys: a
+  -- blast or a missed anchor must not eat a puzzle key.
+  if p.key and kind ~= "rope" and kind ~= "bomb" then
     arrow.key     = p.key
     arrow.grab_cd = cfg.grab_cooldown
     p.key = nil
   end
   table.insert(ents.arrows, arrow)
-
-  -- firing a propel arrow cuts an attached rope (it is a mobility tool;
-  -- the shove itself happens on impact, not on fire)
-  if kind == "propel" and p.rope then p.rope = nil end
 end
 
 -- One sim step of a player arrow's flight (world time = ctx.dt steps).
@@ -168,6 +269,12 @@ function Arrows.step_one(ctx, a)
     local ny = a.y + sy
 
     if world:in_slope_solid(nx, ny) then
+      -- bomb arrows detonate on anything they touch, slopes included
+      if a.kind == "bomb" then
+        Arrows.detonate_bomb(ctx, nx, ny)
+        a.active = false
+        return
+      end
       local spd = math.sqrt(a.vx*a.vx + a.vy*a.vy)
       a.sdx = spd > 0 and (a.vx/spd) or a.sdx
       a.sdy = spd > 0 and (a.vy/spd) or a.sdy
@@ -179,6 +286,13 @@ function Arrows.step_one(ctx, a)
     end
 
     if world:solid_for_arrow(nx, ny) then
+      -- bomb arrows detonate on any surface: sticky walls (which would
+      -- bounce other arrows) and solid terrain alike
+      if a.kind == "bomb" then
+        Arrows.detonate_bomb(ctx, nx, ny)
+        a.active = false
+        return
+      end
       local hx = world:solid_for_arrow(nx, a.y)
       local hy = world:solid_for_arrow(a.x, ny)
       local is_sticky = (hx and world:sticky_at(nx, a.y))
@@ -244,9 +358,10 @@ function Arrows.step_one(ctx, a)
 
     a.x, a.y = nx, ny
 
-    -- key pickup by arrow tip (rope arrows never carry keys); the pad
-    -- grows the key's tile so a near-miss still snags it
-    if not a.key and a.kind ~= "rope" then
+    -- key pickup by arrow tip (rope and bomb arrows never carry keys:
+    -- a blast must not eat a puzzle key); the pad grows the key's tile
+    -- so a near-miss still snags it
+    if not a.key and a.kind ~= "rope" and a.kind ~= "bomb" then
       local pad = config.keys.pickup_pad
       for _, k in ipairs(ents.keys) do
         if not k.taken
@@ -341,45 +456,26 @@ function Arrows.step_one(ctx, a)
       end
     end
 
-    -- propel arrows shove whatever they hit along the arrow's impact
-    -- vector (an added impulse), player included: the tip must first
-    -- have left the player's box, so a bounced-back arrow can fling the
-    -- shooter while a freshly fired one cannot hit at spawn
-    if a.kind == "propel" then
-      local p = ctx.player
-      if nx >= p.x and nx < p.x+p.w and ny >= p.y and ny < p.y+p.h then
-        if a.player_clear then
-          p.vx, p.vy = p.vx + a.vx, p.vy + a.vy
-          if p.vy < 0 then
-            p.gr = false
-            p.j_frames = 0
-          end
-          Particles.poof(ents, a.x, a.y)
+    -- enemy hit: any arrow tip kills the enemy (blood, instant removal);
+    -- a bomb arrow kills the touched one first, then its blast shoves
+    -- everything nearby -- a bomb jump off an enemy
+    for i, e in ipairs(ents.enemies) do
+      if nx >= e.x and nx < e.x+e.w and ny >= e.y and ny < e.y+e.h then
+        if a.kind == "bomb" then
+          Particles.blood(ents, nx, ny, a.vx, a.vy)
+          table.remove(ents.enemies, i)
+          Arrows.detonate_bomb(ctx, nx, ny)
           a.active = false
           return
         end
-      else
-        a.player_clear = true
-      end
-    end
-
-    -- enemy hit: propel arrows shove the enemy instead of killing it
-    for i, e in ipairs(ents.enemies) do
-      if nx >= e.x and nx < e.x+e.w and ny >= e.y and ny < e.y+e.h then
-        if a.kind == "propel" then
-          e.vx, e.vy = e.vx + a.vx, e.vy + a.vy
-          if e.vy < 0 then e.gr = false end
-          Particles.poof(ents, a.x, a.y)
-        else
-          Particles.blood(ents, nx, ny, a.vx, a.vy)
-          table.remove(ents.enemies, i)
-        end
+        Particles.blood(ents, nx, ny, a.vx, a.vy)
+        table.remove(ents.enemies, i)
         a.active = false
         return
       end
     end
 
-    -- rocket hit: any arrow tip (propel included) detonates the rocket
+    -- rocket hit: any arrow tip detonates the rocket
     -- where it hangs -- the arrow is consumed by the blast, like an
     -- enemy hit consumes it. The hitbox is generous (config-sized box
     -- around the centre) so a near miss still counts.
@@ -396,7 +492,7 @@ function Arrows.step_one(ctx, a)
       end
     end
 
-    -- bomb hit: any arrow tip (propel included) detonates the thrown
+    -- bomb hit: any arrow tip detonates the thrown
     -- bomb in flight too, through the same generous hitbox and shared
     -- blast (the arrow is consumed either way)
     local bw = ctx.config.enemies.bomb_hit_w

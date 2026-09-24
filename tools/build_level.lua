@@ -162,16 +162,10 @@ end
 
 -- ==== output ====
 
--- Writes the map: full backdrop, terrain grid, object layer.
+-- Writes the map: terrain grid plus the object layer. Levels carry no
+-- backdrop sprites: the sky shows through (config.world.sky).
 function Builder:save(path)
   local layers = {}
-  local bg = {}
-  for _ = 1, self.w * self.h do bg[#bg + 1] = gid(T.BACKDROP) end
-  layers[#layers + 1] = {
-    type = "tilelayer", name = "Background", visible = true,
-    width = self.w, height = self.h, x = 0, y = 0, opacity = 1,
-    data = bg,
-  }
   layers[#layers + 1] = {
     type = "tilelayer", name = "Ground", visible = true,
     width = self.w, height = self.h, x = 0, y = 0, opacity = 1,
@@ -337,8 +331,152 @@ local function springside()
   L:save("maps/springside.json")
 end
 
+-- 5 · arrowslit: laser snipers; arrow slits (they block sight, not
+-- your arrows) are the counterplay -- snipe flat through them and let
+-- the patrol walk into the line, or hop the low wall and fight.
+local function arrowslit()
+  local L = Builder.new(120, 20)
+  L:ground(0, 119, 16)
+  L:fill(0, 10, 0, 15, T.BLOCK)      -- left edge wall
+  L:spawn(3, 15)
+  L:checkpoint(5, 15)
+  -- laser 1 in the open (the fair intro: read the telegraph, break LOS)
+  L:fill(18, 14, 18, 15, T.BLOCK)    -- cover block
+  L:enemy("laser", 24, 15)
+  -- first pit
+  L:carve(30, 0, 33, 19)
+  L:ground(34, 119, 16)
+  -- slit wall 1: a 2-tall wall whose bottom cell is an arrow slit -- the
+  -- laser beyond can't see through it, your arrows fly through it
+  L:fill(42, 14, 42, 14, T.BLOCK)
+  L:fill(42, 15, 42, 15, T.SLIT)
+  L:enemy("laser", 48, 15)
+  -- second pit
+  L:carve(58, 0, 61, 19)
+  L:ground(62, 119, 16)
+  L:checkpoint(64, 15)
+  -- slit wall 2
+  L:fill(76, 14, 76, 14, T.BLOCK)
+  L:fill(76, 15, 76, 15, T.SLIT)
+  L:enemy("laser", 82, 15)
+  -- an archer guards the exit
+  L:enemy("archer", 100, 15)
+  L:exit(110, 15)
+  L:fill(119, 10, 119, 15, T.BLOCK)  -- right edge wall
+  L:save("maps/arrowslit.json")
+end
+
+-- 6 · winchyard: rope arrows into winches zip the player across the
+-- voids (reeled through, thrown out the far side).
+local function winchyard()
+  local L = Builder.new(110, 20)
+  L:ground(0, 11, 18)
+  L:fill(0, 12, 0, 17, T.BLOCK)      -- left edge wall
+  L:spawn(3, 17)
+  L:checkpoint(5, 17)
+  -- zip 1: the winch hangs over the void; shoot up at it from the ledge
+  L:carve(12, 0, 17, 19)
+  L:fill(15, 11, 15, 11, T.BLOCK)    -- the winch's mount
+  L:winch(15, 12)
+  L:ground(18, 35, 18)
+  L:checkpoint(20, 17)
+  L:enemy("melee", 30, 17)
+  -- zip 2
+  L:carve(36, 0, 41, 19)
+  L:fill(39, 11, 39, 11, T.BLOCK)
+  L:winch(39, 12)
+  L:ground(42, 59, 18)
+  L:checkpoint(44, 17)
+  L:enemy("melee", 52, 17)
+  -- zip 3, then the final stretch
+  L:carve(60, 0, 65, 19)
+  L:fill(63, 11, 63, 11, T.BLOCK)
+  L:winch(63, 12)
+  L:ground(66, 109, 18)
+  L:checkpoint(68, 17)
+  L:enemy("archer", 78, 17)
+  L:enemy("melee", 88, 17)
+  L:exit(102, 17)
+  L:fill(109, 12, 109, 17, T.BLOCK)  -- right edge wall
+  L:save("maps/winchyard.json")
+end
+
+-- 7 · the vault: multi-group keys/doors; a bomb ride reaches the
+-- high shelf's key; a laser and an archer cover the ground.
+local function vault()
+  local L = Builder.new(120, 20)
+  L:ground(0, 119, 16)
+  L:fill(0, 10, 0, 15, T.BLOCK)
+  L:spawn(3, 15)
+  L:checkpoint(5, 15)
+  -- gate 1: a walk-in key opens the first door
+  L:key("key_01", 12, 15)
+  L:lock("lock_01", 16, 15)
+  L:fill(20, 10, 20, 13, T.BLOCK)
+  L:carve(20, 14, 20, 15)
+  L:door("door_01", 20, 14)
+  L:door("door_01", 20, 15)
+  -- a key floating six tiles up: stand under it, bomb your feet, and
+  -- the launch carries you up through it (unjumpable at 4 tiles)
+  L:key("key_02", 26, 11)
+  -- the perch: an archer covers the shelf's ground
+  L:fill(34, 13, 34, 15, T.BLOCK)
+    L:enemy("archer", 34, 12)
+  L:carve(40, 0, 43, 19)
+  L:ground(44, 119, 16)
+  L:checkpoint(46, 15)
+  -- a laser covers the lock's ground
+  L:enemy("laser", 52, 15)
+  L:lock("lock_02", 62, 15)
+  L:fill(66, 10, 66, 13, T.BLOCK)
+  L:carve(66, 14, 66, 15)
+  L:door("door_02", 66, 14)
+  L:door("door_02", 66, 15)
+  -- a melee crowd in the vault's depth
+  L:enemy("melee", 74, 15)
+  L:enemy("melee", 80, 15)
+  L:checkpoint(70, 15)
+  L:exit(106, 15)
+  L:fill(119, 10, 119, 15, T.BLOCK)
+  L:save("maps/vault.json")
+end
+
+-- 8 · the keep: rocketeers and bombers over open sky; every tool counts.
+local function keep()
+  local L = Builder.new(130, 20)
+  L:ground(0, 129, 16)
+  L:fill(0, 10, 0, 15, T.BLOCK)
+  L:spawn(3, 15)
+  L:checkpoint(5, 15)
+  -- zone A: a rocketeer with open sky (shoot its hanging rocket down)
+  L:enemy("rocketeer", 24, 15)
+  -- zone B: the trench (a dug pit; bomber grenades bounce in it)
+  L:carve(38, 0, 45, 19)
+  L:ground(38, 45, 18)               -- the trench floor (2 below ground)
+  L:enemy("melee", 41, 17)
+  L:enemy("melee", 44, 17)
+  -- zone C: a laser and an archer at the keep's gate
+  L:ground(46, 129, 16)
+  L:checkpoint(52, 15)
+  L:enemy("laser", 60, 15)
+  L:enemy("archer", 68, 15)
+  -- zone D: the second rocketeer and a bomber before the throne
+  L:enemy("rocketeer", 84, 15)
+  L:enemy("bomber", 94, 15)
+  L:checkpoint(78, 15)
+  L:enemy("melee", 104, 15)
+  L:exit(120, 15)
+  L:fill(129, 10, 129, 15, T.BLOCK)
+  L:save("maps/keep.json")
+end
+
 meadow()
 battlements()
 crossing()
 springside()
-print("levels built: meadow, battlements, crossing, springside")
+arrowslit()
+winchyard()
+vault()
+keep()
+print("levels built: meadow, battlements, crossing, springside, "
+  .. "arrowslit, winchyard, vault, keep")

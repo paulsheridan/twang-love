@@ -30,25 +30,6 @@ local function cam_tiles(cam)
     config.view.width / tw, config.view.height / tw
 end
 
--- The visual-only "background" layer (docs/tiled-format.md): pure
--- backdrop, drawn before everything so it always renders behind the
--- player, items and entities.
-local function draw_background(ctx)
-  local world = ctx.world
-  if not world.bg_map then return end
-  local mx, my, vw_t, vh_t = cam_tiles(ctx.cam)
-  local tw = config.tile_size
-  love.graphics.setColor(1, 1, 1, 1)
-  for r = my, my + vh_t do
-    for c = mx, mx + vw_t + 1 do
-      local t = world:bg_tile(c, r)
-      if t ~= 0 then
-        love.graphics.draw(Sprites.sheet(), Sprites.quad(t), c*tw, r*tw)
-      end
-    end
-  end
-end
-
 local function draw_map(ctx)
   local cam, world = ctx.cam, ctx.world
   local tw = config.tile_size
@@ -309,6 +290,36 @@ local function draw_bombs(ctx)
   end
 end
 
+-- ==== shockwaves ====
+
+-- A shockwave draws as its front: a semicircular arc of dots opening
+-- along the travel direction (the 180-degree cone the sim collides
+-- with). The nose of the front is hot white, the flanks the wave's
+-- colour, and the arc grows with the wave (the radius is simulated
+-- state). Parametrized trig-free: a point on the arc is
+-- centre + r * (heading * sqrt(1-t^2) + perpendicular * t) for t in
+-- -1..1.
+local function draw_shockwaves(ctx)
+  local cfg = config.shockwave
+  for _, w in ipairs(ctx.ents.shockwaves) do
+    if w.active then
+      local len = math.sqrt(w.vx*w.vx + w.vy*w.vy)
+      if len > 0 then
+        local fx, fy = w.vx/len, w.vy/len
+        local px, py = -fy, fx
+        local steps = math.max(6, math.floor(w.r * 2))
+        for i = 0, steps do
+          local t = (i / steps) * 2 - 1
+          local s = math.sqrt(1 - t*t)
+          love.graphics.setColor(pcol(math.abs(t) < 0.5 and 7 or cfg.colour))
+          dot(w.x + (fx * s + px * t) * w.r,
+              w.y + (fy * s + py * t) * w.r)
+        end
+      end
+    end
+  end
+end
+
 -- ==== explosions ====
 
 -- A detonation flash: an orange ring of dots expanding out to the
@@ -365,12 +376,25 @@ local function draw_arrows(ctx)
       else
         local len = math.sqrt(a.vx*a.vx + a.vy*a.vy)
         if len > 0 then
+          local hx, hy = a.vx/len, a.vy/len
           love.graphics.setColor(pcol(config.arrows.colour))
           love.graphics.line(x, y,
             x - math.floor((a.vx/len)*ARROW_SHAFT),
             y - math.floor((a.vy/len)*ARROW_SHAFT))
-          love.graphics.setColor(pcol(7))
-          arrow_tip(x, y)
+          if a.kind == "bomb" then
+            -- bomb arrows trade the white tip for a red bulb with a
+            -- blinking fuse spark riding just behind it
+            love.graphics.setColor(pcol(8))
+            love.graphics.circle("fill",
+              x + math.floor(hx*2), y + math.floor(hy*2), 3)
+            if math.floor(a.traveled / 2) % 2 == 0 then
+              love.graphics.setColor(pcol(7))
+              dot(x + math.floor(hx*6), y + math.floor(hy*6))
+            end
+          else
+            love.graphics.setColor(pcol(7))
+            arrow_tip(x, y)
+          end
         end
       end
       if a.key then Sprites.draw(ctx.tiles.key, x - 8, y - 8) end
@@ -405,7 +429,6 @@ end
 -- The full world pass, in draw order (player drawn separately on top;
 -- the foreground overlay renders after them, see render/blit.lua).
 function Render.world(ctx)
-  draw_background(ctx)
   draw_map(ctx)
   draw_interactables(ctx)
   draw_particles(ctx)
@@ -417,6 +440,7 @@ function Render.world(ctx)
   draw_e_arrows(ctx)
   draw_rockets(ctx)
   draw_bombs(ctx)
+  draw_shockwaves(ctx)
   draw_arrows(ctx)
   draw_booms(ctx)
   draw_ropes(ctx)

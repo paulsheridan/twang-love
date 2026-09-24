@@ -34,7 +34,8 @@ function Player.new(spawn)
     key = nil,  -- carried key object (taken from the world or an arrow)
     hp = config.player.hearts * 2,   -- health in half-hearts (drawn top-left)
     invuln = 0,  -- post-hit invulnerability steps remaining
-    arrow_kind = "normal",  -- currently selected arrow type ("normal"/"rope"/"propel")
+    arrow_kind = "normal",  -- currently selected arrow type
+                            -- ("normal"/"rope"/"shockwave"/"bomb")
     rope = nil,  -- attached rope: { arrow = <anchored rope arrow>, length = px }
     rope_cd = 0, -- steps before another rope can attach (post-detach grace)
     winch = nil, -- winch reel in progress: { ent = <winch entity> }
@@ -108,6 +109,7 @@ function Player.die(ctx)
   ctx.ents.e_arrows = {}
   ctx.ents.rockets = {}
   ctx.ents.bombs = {}
+  ctx.ents.shockwaves = {}
 end
 
 -- Taking a hit: half a heart lost by default (unless still invulnerable
@@ -505,14 +507,15 @@ function Player.physics(ctx)
 end
 
 -- Arrow selection: cycles the equipped arrow type (normal -> rope ->
--- propel -> normal) on the dedicated button. Runs every step, entirely
--- outside of aim mode, so the player can cycle arrow types whenever
--- they like.
+-- shockwave -> bomb -> normal) on the dedicated button. Runs every step,
+-- entirely outside of aim mode, so the player can cycle arrow types
+-- whenever they like.
 function Player.arrow_step(ctx)
   local p = ctx.player
   if ctx.input:pressed("swap") then
     p.arrow_kind = p.arrow_kind == "normal" and "rope"
-                 or p.arrow_kind == "rope" and "propel" or "normal"
+                 or p.arrow_kind == "rope" and "shockwave"
+                 or p.arrow_kind == "shockwave" and "bomb" or "normal"
   end
 end
 

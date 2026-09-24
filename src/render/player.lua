@@ -62,6 +62,7 @@ return function(ctx)
     local tw = config.tile_size
     local vw, vh = config.view.width, config.view.height
     local cfg = config.arrows
+    local scfg = config.shockwave
     local cx, cy = math.floor(p.x + p.w/2), math.floor(p.y + p.h/2)
     -- the preview launches at the same speed as the real shot: the
     -- analog stick force scales it just like Arrows.fire does
@@ -72,35 +73,87 @@ return function(ctx)
       love.graphics.setColor(pcol(10))
       love.graphics.line(cx, cy, ex, ey)
     end
-    local tvx  = Util.p8cos(p.aim_angle) * spd
-    local tvy  = Util.p8sin(p.aim_angle) * spd
-    local tx, ty = cx, cy
-    love.graphics.setColor(pcol(cfg.colour))
-    -- bounce-aware preview: reflects off sticky surfaces exactly like a
-    -- flying arrow, and stops where the arrow would stick. dots every
-    -- step, preview_steps total: a shorter, tighter line now that arrows
-    -- fly faster
     local world = ctx.world
-    for _ = 1, cfg.preview_steps do
-      tvy = tvy + cfg.gravity
-      local nx, ny = tx + tvx, ty + tvy
-      if world:solid_for_arrow(nx, ny) then
-        local hx = world:solid_for_arrow(nx, ty)
-        local hy = world:solid_for_arrow(tx, ny)
-        local sticky = (hx and world:sticky_at(nx, ty))
-                    or (hy and world:sticky_at(tx, ny))
-                    or (not hx and not hy and world:sticky_at(nx, ny))
-        if sticky then
+    love.graphics.setColor(pcol(cfg.colour))
+    if p.arrow_kind == "shockwave" then
+      -- wave preview: straight flight that bounces off anything (the
+      -- wave never sticks), dots every preview_dot_px of flight,
+      -- stopping at the fizzle range; the front's full-grown arc
+      -- (opening along the final heading) shows the swept size
+      local w_spd = scfg.speeds[p.aim_power]
+        * math.max(p.aim_force or 1, scfg.min_force_scale)
+      local tvx = Util.p8cos(p.aim_angle) * w_spd
+      local tvy = Util.p8sin(p.aim_angle) * w_spd
+      local tx, ty = cx, cy
+      local traveled, next_dot, guard = 0, 0, 0
+      while traveled < scfg.max_range and guard < 96 do
+        guard = guard + 1
+        local nx, ny = tx + tvx, ty + tvy
+        if world:solid_for_arrow(nx, ny) or world:in_slope_solid(nx, ny) then
+          local hx = world:solid_for_arrow(nx, ty) or world:in_slope_solid(nx, ty)
+          local hy = world:solid_for_arrow(tx, ny) or world:in_slope_solid(tx, ny)
           if hx then tvx = -tvx end
           if hy then tvy = -tvy end
           if not hx and not hy then tvx, tvy = -tvx, -tvy end
-        else
-          dot(nx, ny)  -- sticks here
-          break
+        end
+        local step_len = math.sqrt((nx-tx)^2 + (ny-ty)^2)
+        tx, ty = nx, ny
+        traveled = traveled + step_len
+        if traveled >= next_dot then
+          dot(tx, ty)
+          next_dot = next_dot + scfg.preview_dot_px
         end
       end
-      tx, ty = nx, ny
-      dot(tx, ty)
+      love.graphics.setColor(pcol(scfg.colour))
+      local wlen = math.sqrt(tvx*tvx + tvy*tvy)
+      if wlen > 0 then
+        local fx, fy = tvx/wlen, tvy/wlen
+        local qx, qy = -fy, fx
+        local arc_steps = math.max(6, math.floor(scfg.radius_max))
+        for i = 0, arc_steps do
+          local t = (i / arc_steps) * 2 - 1
+          local s = math.sqrt(1 - t*t)
+          dot(tx + (fx * s + qx * t) * scfg.radius_max,
+              ty + (fy * s + qy * t) * scfg.radius_max)
+        end
+      end
+    else
+      local tvx  = Util.p8cos(p.aim_angle) * spd
+      local tvy  = Util.p8sin(p.aim_angle) * spd
+      local tx, ty = cx, cy
+      -- bounce-aware preview: reflects off sticky surfaces exactly like a
+      -- flying arrow, and stops where the arrow would stick. dots every
+      -- step, preview_steps total: a shorter, tighter line now that arrows
+      -- fly faster. A bomb arrow detonates at that contact instead of
+      -- sticking: its trail stops one dot short and the blast's catch
+      -- radius is ringed there, so the player can read their own fling
+      local bomb = p.arrow_kind == "bomb"
+      for _ = 1, cfg.preview_steps do
+        tvy = tvy + cfg.gravity
+        local nx, ny = tx + tvx, ty + tvy
+        if world:solid_for_arrow(nx, ny) then
+          local hx = world:solid_for_arrow(nx, ty)
+          local hy = world:solid_for_arrow(tx, ny)
+          local sticky = (hx and world:sticky_at(nx, ty))
+                      or (hy and world:sticky_at(tx, ny))
+                      or (not hx and not hy and world:sticky_at(nx, ny))
+          if sticky then
+            if hx then tvx = -tvx end
+            if hy then tvy = -tvy end
+            if not hx and not hy then tvx, tvy = -tvx, -tvy end
+          else
+            if not bomb then dot(nx, ny) end  -- sticks here
+            break
+          end
+        end
+        tx, ty = nx, ny
+        dot(tx, ty)
+      end
+      if bomb then
+        love.graphics.setColor(pcol(9))
+        love.graphics.circle("line", math.floor(tx), math.floor(ty),
+          config.bomb_arrow.blast_radius)
+      end
     end
   end
 end

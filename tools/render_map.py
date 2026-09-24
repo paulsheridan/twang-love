@@ -46,22 +46,8 @@ def render(map_path, out_path, scale=2):
         parse_tsx(tsx_path)
     sheet = Image.open(SHEET).convert('RGBA')
 
-    out = Image.new('RGBA', (W*TW, H*TW), (25, 25, 30, 255))
-    for layer in m['layers']:
-        if layer['type'] != 'tilelayer' or not layer.get('visible', True):
-            continue
-        name = (layer.get('name') or '').lower()
-        data = layer['data']
-        for i, gid in enumerate(data):
-            if not gid:
-                continue
-            t = gid - 1
-            r, c = divmod(t, 16)
-            tile = sheet.crop((c*TW, r*TW, (c+1)*TW, (r+1)*TW))
-            x, y = i % W, i // W
-            if name == 'background':
-                out.alpha_composite(tile, (x*TW, y*TW))
-    # terrain after background
+    out = Image.new('RGBA', (W*TW, H*TW), (135, 206, 235, 255))  # sky blue
+    # terrain layers (levels carry no backdrop sprites: sky shows through)
     for layer in m['layers']:
         if layer['type'] != 'tilelayer' or not layer.get('visible', True):
             continue

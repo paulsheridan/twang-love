@@ -19,17 +19,22 @@ src/
   player.lua             player physics, bow aiming/firing, key carrying,
                          rope pendulum (attach/detach/winch)
    arrows.lua             player + enemy arrows (flight, bounce, stick, hits);
-                          rope arrows (range, anchoring); also exposes
-                          simulate_path (shared trajectory solver)
+                          rope arrows (range, anchoring); the bomb arrow's
+                          contact detonation + blast (detonate_bomb); also
+                          exposes simulate_path (shared trajectory solver)
    enemies.lua            melee patrol; archers with a sense -> aim -> volley ->
                           investigate brain; patrols bounded by roam_tiles
    rockets.lua            the rocketeer's homing rockets: spawn, pursuit
-                          steering, proximity/terrain/lifetime fuse, blasts
-                          (plus the explosion flashes they leave behind)
+                           steering, proximity/terrain/lifetime fuse, blasts
+                           (plus the explosion flashes they leave behind)
    bombs.lua              the bomber's thrown explosives: straight-line
-                          flight, the thrower's crude timed fuse, flak
-                          proximity bursts over an airborne player,
-                          grenade bounces over one on the ground
+                           flight, the thrower's crude timed fuse, flak
+                           proximity bursts over an airborne player,
+                           grenade bounces over one on the ground
+   shockwaves.lua         the bow's shockwave pulse: short-range arc that
+                           bounces off any surface, grows in flight and
+                           shoves what it touches (enemies, the player on
+                           bounce-backs, enemy projectiles)
    interactables.lua      key/lock/door/switch/spring puzzle logic
    save.lua               per-level best time/grade, persisted to the
                           LÖVE save directory (no-op headless)
@@ -73,8 +78,8 @@ ctx = { config, input, world, ents, tiles, cam, player, die }
 - `world` — the tile grid + flags + slope shapes (from `src/world.lua`),
   created from the loaded Tiled map and the interactable entity lists
 - `ents` — live entity lists from `src/level.lua`: spawn_points, arrows,
-  e_arrows, enemies, rockets, bombs, particles, keys, locks, doors,
-  switches, springs, winches
+  e_arrows, enemies, rockets, bombs, shockwaves, particles, keys, locks,
+  doors, switches, springs, winches
 - `player` — the player body
 - `die` — routes player deaths to `Player.die`; `hurt` routes damage to
   `Player.hurt` (systems never require `src/player.lua` for those;
@@ -132,11 +137,14 @@ respawns there until another flag is touched. Without a touched flag,
 deaths respawn at a random spawn point — the legacy behaviour, so
 checkpointless maps are unchanged.
 
-**The generated levels.** The v1 ladder's maps are emitted by
+**The generated levels.** The v1 ladder's eight maps are emitted by
 `tools/build_level.lua` (a level DSL over the Tiled JSON format —
 terrain vocabulary: orange grass surface 36 over dark fill 2, orange
-blocks, sticky pebbles, the phase tile); `tools/render_map.py` renders
-any map to a sprite-accurate PNG for authoring QA.
+blocks, sticky pebbles, the phase tile, arrow slits); the maps carry no
+Background layer, so the void behind everything is the flat sky blue of
+`config.world.sky` (the renderer skips `World.bg_map` entirely);
+`tools/render_map.py` renders any map to a sprite-accurate PNG for
+authoring QA.
 
 **Rooms.** Levels can be split into camera-framed rooms (`room`
 rectangles in the Tiled map — `docs/tiled-format.md`). The world stays
@@ -180,9 +188,10 @@ which is what keeps the trace baseline stable.
   key/gamepad press events additionally latch so a tap shorter than one
   rendered frame still fires. `btnp` repeats pico-8 style (every 4 steps
   after 15 held).
-- **Mid-loop resets.** Player death clears the arrow lists; the arrow
-  update loops read the list fresh each iteration and bail out when it
-  is reset mid-loop. Player respawn reuses the same player table.
+- **Mid-loop resets.** Player death clears the arrow/shockwave lists
+  (and rockets, bombs, enemy arrows); the update loops read the list
+  fresh each iteration and bail out when it is reset mid-loop. Player
+  respawn reuses the same player table.
 - **Jump corner forgiveness.** When a rising body clips a ledge with
   exactly one head corner, `resolve_y` slides it horizontally around
   the corner (up to `player.corner_nudge_px`, destination head corners
@@ -274,6 +283,77 @@ which is what keeps the trace baseline stable.
   `config.winch.debug` enables `src/winchlog.lua` to append a per-event
   trace (capture/reel/release/grace, including the entry-vs-throw dot)
   to `winch_debug.txt` in the LÖVE save directory.
+- **The shockwave pulse.** The swap cycle's third arrow kind
+  (`normal -> rope -> shockwave`), fired through `Arrows.fire` but
+  spawned by `src/shockwaves.lua` into `ents.shockwaves` — it is a
+  wave, not an arrow: no quiver cost (own `shockwave.max_active` cap),
+  no keys, no sticking, no platforms. The pulse flies straight (no
+  gravity) along the aim direction as a **semicircular front** — a
+  180-degree cone of force opening along travel, its flat back edge
+  riding through the wave centre perpendicular to it, so only what
+  lies *ahead* of the wave gets swept and the shooter, behind that
+  edge, is untouched by their own shot. It **bounces off any surface**
+  (the arrow's axis-separated reflection — and since the heading *is*
+  the velocity, the reflection re-aims the cone for free, no trig in
+  the sim; spark flecks mark each impact), **grows** with the distance
+  flown (`radius_start` -> `radius_max` at the fizzle range — the
+  wider front is easier to connect with) and **fizzles** (a poof) at
+  `shockwave.max_range`. The speeds (`shockwave.speeds`) outrun the
+  player's fall (`max_fall_speed` is 6) so a straight-down shot
+  separates from the shooter and the range is a TOTAL flight budget:
+  the round trip (down to a surface and back up to the falling player)
+  must fit inside it. It shoves with a strong fixed impulse
+  (`shockwave.push`) along the radial from the wave centre — enemies
+  (never killed), thrown bombs and enemy darts (knocked off course) and
+  rockets (a damped `kx`/`ky` knock vector the rocket drifts along on
+  top of its steered cruise). The wave is not consumed by a hit: it
+  passes through, shoving each thing once per leg (`pushed` flags,
+  cleared on every bounce so pinballing repeats). Collision is the
+  cheap half-disc test: a target's closest point to the wave centre
+  must lie within the radius *and* in front of the flat back edge (a
+  swallowed target's closest point is the centre itself, whose forward
+  dot is zero — still counts).
+  **The player is only shoved by a turned-around front**: the wave is
+  born at the bow with its back edge running through the shooter, and a
+  substep may shove them only once the wave has bounced at least once
+  (`w.bounced > 0`) — the first leg can never fling the shooter,
+  however their own fall repositions them past the centre, while any
+  bounce that reverses the wave (a wall ahead, the floor under their
+  feet, a ceiling overhead) opens the cone back onto them. A down-shot
+  bounces off the ground and launches them, anywhere, no sticky surface
+  needed. Firing one cuts an attached rope (mobility tool, like the
+  propel arrow it replaced); the aim preview simulates the bounced path
+  and draws the front's full-grown arc at the fizzle point.
+
+- **The bomb arrow.** The swap cycle's fourth kind
+  (`normal -> rope -> shockwave -> bomb`), a real arrow in every way
+  (quiver slot, gravity arc, the aim preview — which rings the blast's
+  catch radius at the predicted contact point) except keys (rope and
+  bomb arrows never carry or pick up them: a blast must not eat a
+  puzzle key) and sticking: terrain, slopes, sticky surfaces (which
+  would bounce other arrows), enemies and closed doors all **detonate**
+  it at the contact. A direct enemy hit kills the touched enemy (blood,
+  instant) and then blasts — a bomb jump off an enemy.
+  `Arrows.detonate_bomb` runs the blast: the shared boom flash
+  (`ents.booms`, sized to `bomb_arrow.blast_radius`), the spark/poof
+  burst, and a hard radial shove with **linear proximity falloff** from
+  `bomb_arrow.push` at the centre down to its `min_push_scale` share at
+  the rim — sticking the arrow close is rewarded with bigger launches:
+  - the player is **never damaged by their own bomb**; the knock is
+    ADDED to their velocity (it stacks with jump and swing momentum —
+    the point of the tool) and rides the winch-throw grace window
+    (`bomb_arrow.shove_grace`): movement input and the walk cap are
+    ignored so the fling plays out untouched, ending early on landing.
+    A dead-centre blast shoves straight up.
+  - enemies are shoved along the radial, never killed by the blast
+    itself (the direct hit is what kills).
+  - enemy projectiles: rockets knocked off their heading (the homing
+    re-curves them later), thrown bombs and darts knocked off course.
+  Firing a bomb cuts an attached rope (mobility tool, like the
+  shockwave); the blast knocks a line loose too, with `rope_cd` blocking
+  an instant re-grab. Rocket or thrown-bomb tip hits go through the
+  enemy blast as with other arrows, the arrow consumed either way. A
+  bomb arrow that touches nothing poofs silently — no blast.
 
 ## The archer brain
 
@@ -548,9 +628,18 @@ luajit tests/trace_diff.lua tests/trace_baseline.txt /tmp/trace.txt
    with the blast's enemy kill, the 2-bomb burst cadence, the airborne
    cap and the toggle disarm); `tests/player_test.lua` covers
    the hearts system (i-frame-gated melee drain, arrow hits, fatal
-   refill, void death); `tests/rope_test.lua` covers the rope arrow
+   refill, void death);    `tests/rope_test.lua` covers the rope arrow
    (attach + hang, pendulum swing bounds, detach-preserving-velocity,
-   winching, max-range expiry, platform exemption, swap, anchor loss);
+   winching, max-range expiry, platform exemption, swap, anchor loss)
+   and the shockwave pulse (bounce-back launches — airborne and
+   flush-with-the-feet, enemy shoves that leave the wave alive, bomb
+   and dart knocks, the rocket knock, the rope cut, the airborne cap
+   past a full quiver); `tests/bomb_arrow_test.lua` covers the bomb
+   arrow (the swap cycle, contact detonation on terrain and sticky
+   surfaces, the blast's enemy shove with out-of-radius sparing, the
+   direct-hit kill plus blast, the additive proximity-falloff shove,
+   the harmless self-blast, the grace window and rope cuts at fire and
+   blast, rocket/bomb/dart knocks, and the key-carry exclusion);
    `tests/results_test.lua` covers the completion flow (exit touch ->
    results, grade thresholds, best time/grade recording, results-panel
    inputs, next-level/replay flow, death counting):
@@ -560,6 +649,7 @@ luajit tests/enemies_test.lua
 luajit tests/laser_test.lua
 luajit tests/rocketeer_test.lua
 luajit tests/bomber_test.lua
+luajit tests/bomb_arrow_test.lua
 luajit tests/player_test.lua
 luajit tests/rope_test.lua
 luajit tests/menu_test.lua
