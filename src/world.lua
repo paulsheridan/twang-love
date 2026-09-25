@@ -37,6 +37,7 @@ function World.new(level, ents, tile_size)
   self.doors     = ents.doors
   self.springs   = ents.springs
   self.switches  = ents.switches
+  self.pushers   = ents.pushers
   self.phase_tiles = level.phase_tiles or {}
   self.phase_solid = true  -- phase tiles start solid; phase-switch strikes flip this
   -- visual-only named Tiled layers (see docs/tiled-format.md): the
@@ -239,6 +240,10 @@ function World:solid_at(x, y)
   for _, d in ipairs(self.doors) do
     if d.tc == c and d.tr == r then return not d.open end
   end
+  -- pushers are permanent solid blocks: a struck device you hop over
+  for _, pu in ipairs(self.pushers) do
+    if pu.tc == c and pu.tr == r then return true end
+  end
   -- springs are standable pads: only the pad's bottom band is solid (the
   -- inactive spring sprite occupies the tile's lower half, so a full-tile
   -- hitbox makes bodies hover), and they stand even in gaps in the floor
@@ -270,6 +275,11 @@ function World:solid_for_arrow(x, y)
     if math.floor(s.x/self.tw) == c and math.floor(s.y/self.tw) == r then
       return false
     end
+  end
+  -- pusher tiles are recessed the same way: a player arrow flies in and
+  -- strikes the device (consumed), while bodies stay blocked
+  for _, pu in ipairs(self.pushers) do
+    if pu.tc == c and pu.tr == r then return false end
   end
   local t = self:tile(c, r)
   if t ~= 0 and self:arrow_pass(t) then return false end

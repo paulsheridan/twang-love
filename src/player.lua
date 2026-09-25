@@ -214,13 +214,12 @@ function Player.rope_step(ctx)
   end
 end
 
--- The wall-run trigger: when the player's centre sits inside an END tile
--- of a runnable line (the tile is runnable, the neighbour behind the
--- pushed direction is not, and the neighbour ahead is -- so the line is
--- at least two tiles long) while holding jump and pushing toward the
--- line, the run engages: the body is pinned into the band and carried
--- along it at a constant speed (see Player.wallrun_step). Blocked while
--- roped or winch-owned: those modes own the body.
+-- The wall-run trigger: when the player's centre sits inside one of the
+-- line's first two tiles from a pushed end (the outermost tile, or one in
+-- from it) while holding jump and pushing toward the line, the run
+-- engages: the body is pinned into the band and carried along it at a
+-- constant speed (see Player.wallrun_step). Blocked while roped or
+-- winch-owned: those modes own the body.
 function Player.wallrun_check(ctx)
   local p = ctx.player
   if p.rope or p.winch
@@ -229,26 +228,21 @@ function Player.wallrun_check(ctx)
   local tw = config.tile_size
   local cx = math.floor((p.x + p.w/2) / tw)
   local r  = math.floor((p.y + p.h/2) / tw)
+  local c0, c1 = world:runnable_line(cx, r)
+  if not c0 then return end
   local dir
-  -- right pushes into a line extending rightward (the player sits in its
-  -- left end); left is the mirror. Right wins when both are held, like
+  -- the centre tile must sit within the line's first two tiles from the
+  -- pushed end (the outermost, or one in from it), and the line must
+  -- extend in the pushed direction. Right wins when both are held, like
   -- the walk motor's ax.
-  if ctx.input:down("right")
-  and world:runnable(world:tile(cx, r))
-  and not world:runnable(world:tile(cx - 1, r))
-  and world:runnable(world:tile(cx + 1, r)) then
+  if ctx.input:down("right") and cx < c1 and cx - c0 <= 1 then
     dir = 1
-  elseif ctx.input:down("left")
-  and world:runnable(world:tile(cx, r))
-  and not world:runnable(world:tile(cx + 1, r))
-  and world:runnable(world:tile(cx - 1, r)) then
+  elseif ctx.input:down("left") and cx > c0 and c1 - cx <= 1 then
     dir = -1
   end
   if not dir or not ctx.input:down("jump") then return end
-  -- the line's far end in the run direction
-  local c_end = cx
-  while world:runnable(world:tile(c_end + dir, r)) do c_end = c_end + dir end
-  p.wallrun = { dir = dir, r = r, c_end = c_end, y0 = p.y, t = 0 }
+  p.wallrun = { dir = dir, r = r, c_end = dir > 0 and c1 or c0,
+                y0 = p.y, t = 0 }
   p.vx = dir * config.wallrun.speed
   p.vy = 0
   p.facing = dir

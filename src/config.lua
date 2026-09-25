@@ -262,6 +262,26 @@ local Config = {
     debug = false,             -- write winch_debug.txt trace lines (src/winchlog.lua)
   },
 
+  -- The pusher (a puzzle device placed as a "pusher" object): a solid
+  -- one-tile block you hop over. A player arrow striking it is consumed
+  -- (a poof, like the winch capture) and the device shoves everything
+  -- within its radius directly away from its centre of mass (its tile
+  -- centre) with a constant great-force impulse: the player's knock is
+  -- ADDED to their velocity (it stacks with jump and swing momentum --
+  -- the point of the tool) and rides the grace window so the walk cap
+  -- cannot clamp it; enemies are shoved along the radial, never killed;
+  -- rockets, thrown bombs and darts are knocked off course. Repeatable:
+  -- every strike fires it again. A bomb arrow striking it detonates its
+  -- own blast and the pusher's push together (stacking).
+  pusher = {
+    radius = 64,       -- px catch radius (4 tiles: fairly close, by design)
+    push = 18,         -- shove impulse everywhere in the radius (px/step;
+                       -- stronger than the bomb arrow's 14: rises ~14
+                       -- tiles at full)
+    shove_grace = 12,  -- steps the player's launch plays out untouched;
+                       -- ends early once the player lands
+  },
+
   enemies = {
     enabled = true,           -- global on/off toggle (controller Y / key e)
     width = 12,
@@ -454,6 +474,7 @@ local Config = {
     rocketeer = 138,  -- rocket launcher (placeholder: shares the laser cell art)
     bomber = 138,  -- explosive thrower (placeholder: shares the laser cell art)
     winch = 133,  -- small blue star
+    pusher = 86,  -- arrow-struck push pad: shoves everything nearby away
     exit = 172,   -- the level's exit flag (touching it clears the level)
     checkpoint = 173,  -- green checkpoint flag (touch sets the respawn)
   },

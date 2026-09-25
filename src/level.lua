@@ -40,6 +40,7 @@ function Level.build(level, config)
     spring     = level.special.spring     or config.tiles.spring,
     spring_ext = level.special.spring_ext or config.tiles.spring_ext,
     winch      = level.special.winch      or config.tiles.winch,
+    pusher     = level.special.pusher     or config.tiles.pusher,
     exit       = level.special.exit       or config.tiles.exit,
     checkpoint = level.special.checkpoint or config.tiles.checkpoint,
     archer     = level.special.archer     or config.tiles.archer,
@@ -66,6 +67,7 @@ function Level.build(level, config)
     switches     = {},
     springs      = {},
     winches      = {},
+    pushers      = {},
     exits        = {},
     checkpoints  = {},
   }
@@ -151,6 +153,18 @@ function Level.build(level, config)
       local wx, wy = snap_tile(o.x, tw), snap_tile(o.y, tw)
       table.insert(ents.winches, {x = wx, y = wy, g = o.g,
         spr = o.spr or tiles.winch, rot = o.rot})
+    elseif k == "pusher" then
+      -- the pusher owns its tile (a solid block, like a door): the tile
+      -- column/row come from the snapped position
+      local wx, wy = snap_tile(o.x, tw), snap_tile(o.y, tw)
+      local e = {x = wx, y = wy, g = o.g,
+        tc = math.floor(wx/tw), tr = math.floor(wy/tw),
+        spr = o.spr or tiles.pusher, rot = o.rot}
+      -- per-instance overrides (push, radius) ride the object props
+      for _, prop in ipairs({"push", "radius", "shove_grace"}) do
+        if o[prop] ~= nil then e[prop] = o[prop] end
+      end
+      table.insert(ents.pushers, e)
     elseif k == "exit" then
       local wx, wy = snap_tile(o.x, tw), snap_tile(o.y, tw)
       table.insert(ents.exits, {x = wx, y = wy,

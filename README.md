@@ -107,11 +107,12 @@ a monitor with a different resolution, so it stays crisp everywhere.
   that slides you around ledges you jumped beneath), and shoot arrows.
   The jump is deliberately snappy: a quick rise and a heavy pull back
   down (same apex, ~14% less airtime than the cart's floaty arc).
-- **Wall-run** across lanes of checkered boxes: jump into either end of
-  a line of them while holding jump and pushing toward the line, and
-  you're carried through the band at a constant clip. Release the stick
-  and you stop and drop straight down; reach the far end holding jump
-  and you leap off it, or keep your momentum and fall if you let go.
+- **Wall-run** across lanes of checkered boxes: jump into either of the
+  two end-most squares of a line of them while holding jump and pushing
+  toward the line, and you're carried through the band at a constant
+  clip. Release the stick and you stop and drop straight down; reach the
+  far end holding jump and you leap off it, or keep your momentum and
+  fall if you let go.
 - **Impacts read as set pieces**: enemy arrows, rockets and grenades
   slamming into terrain throw scorched chunks off platforms, walls,
   ceilings and floors, a laser beam blasts grit off whatever stops it,
@@ -154,6 +155,12 @@ a monitor with a different resolution, so it stays crisp everywhere.
   shoves enemies and knocks rockets, bombs and darts off course. Firing
   cuts any attached rope. Bombs occupy the arrow quiver like normal
   arrows, never carry keys, and a miss poofs silently.
+- **Pushers** are the launcher trick in device form: a solid one-tile
+  block you hop over. Shoot it with any arrow and it shoves everything
+  within 4 tiles directly away from its centre at full force — stand
+  above it (or jump over it) and fire down into it to be thrown straight
+  up. Every strike fires it again; a bomb arrow stacks its blast with
+  the push.
 - Carry keys to locks (personally, or by shooting them from an arrow)
   to open doors. Every arrow strike toggles a switch: its doors open
   while every switch of its group is on, and close otherwise; a strike
@@ -251,6 +258,7 @@ luajit tests/winch_test.lua
 luajit tests/bomb_arrow_test.lua
 luajit tests/aftermath_test.lua
 luajit tests/wallrun_test.lua
+luajit tests/pusher_test.lua
 ```
 
 The trace diff must be empty. After an *intentional* gameplay change,

@@ -25,7 +25,8 @@ local json = require("lib.json")
 local DEFAULT_KINDS = {
   spawn = 63, key = 70, lock = 71, door = 72, archer = 112, melee = 116,
   laser = 138, rocketeer = 138, bomber = 138, switch = 171, spring = 16,
-  spring_ext = 33, winch = 133, exit = 172, checkpoint = 173,
+  spring_ext = 33,   winch = 133, exit = 172, checkpoint = 173,
+  pusher = 86,
 }
 local DEFAULT_SLOPES = {
   [6] = "/floor",  [13] = "/floor", -- / floor

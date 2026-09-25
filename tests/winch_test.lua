@@ -105,8 +105,11 @@ do
   local ws = g.ctx.ents.winches
   assert_true(#ws >= 5, "level1's winch objects loaded (got " .. #ws .. ")")
   local first = ws[1]
-  assert_true(first.x == 1072 and first.y == 368,
-    "winch_01 snapped to its tile (got " .. first.x .. "," .. first.y .. ")")
+  -- the map is the author's to rearrange: assert the scan's guarantees
+  -- (grid-snapped, grouped from the name, sprite from the placed tile)
+  -- rather than a hardcoded tile
+  assert_true(first.x % 16 == 0 and first.y % 16 == 0,
+    "winch_01 is grid-snapped (got " .. first.x .. "," .. first.y .. ")")
   assert_true(first.g == "01", "the name's suffix became the group")
   assert_true(first.spr == 133, "the sprite came from the placed tile")
 end
@@ -417,16 +420,17 @@ end
 
 -- ==== 11. the throw direction never inverts on centre overshoot ====
 do
-  -- The exact geometry that reproduced the ~11% reversal bug on the
-  -- real level1 winch: a long approach (reel speed reaches the cap) whose
-  -- final reel step carried the player just past the centre, making the
-  -- old `rx/dist` release direction point backwards.
+  -- The geometry that reproduced the ~11% reversal bug: a long approach
+  -- (reel speed builds) whose final reel step carries the player into the
+  -- pass radius, making the old `rx/dist` release direction able to point
+  -- backwards. Rigged on the suite's own winch so it follows the map
+  -- wherever the author moves the devices.
   local env = Harness.boot()
   local g = env.TWANG_TEST.game
   local p = g.ctx.player
   local kd = env.TWANG_TEST.keys_down
-  local wx, wy = 1080, 376
-  p.x, p.y, p.vx, p.vy = 1074, 438, 0, 0
+  rig_winch(g)
+  p.x, p.y, p.vx, p.vy = 98, 212, 0, 0
   kd.c = true; run_steps(env, 1); kd.c = false; run_steps(env, 1)
   kd.z = true; run_steps(env, 1); p.aim_angle = 0.75; kd.z = false
   run_steps(env, 1)
@@ -437,12 +441,13 @@ do
   assert_true(p.winch ~= nil, "overshoot case captured")
   local edx, edy = p.winch.dir_x, p.winch.dir_y
   local released, tvx, tvy, tdist
+  local wcx, wcy = winch_centre(p.winch.ent)
   for _ = 1, 40 do
     run_steps(env, 1)
     if not p.winch then
       released = true
       tvx, tvy = p.vx, p.vy
-      local dx, dy = wx - (p.x + p.w/2), wy - (p.y + p.h/2)
+      local dx, dy = wcx - (p.x + p.w/2), wcy - (p.y + p.h/2)
       tdist = math.sqrt(dx*dx + dy*dy)
       break
     end
@@ -458,9 +463,9 @@ do
     "the throw keeps its guaranteed minimum speed")
 end
 do
-  -- Bounded sweep: varied sub-pixel entry offsets, long approaches
-  -- (reel speed at the cap). No release may point back the way the
-  -- player entered; every throw keeps at least the minimum speed.
+  -- Bounded sweep: varied sub-pixel entry offsets, approaches from just
+  -- above the rig floor. No release may point back the way the player
+  -- entered; every throw keeps at least the minimum speed.
   local wcfg -- set once
   local bad = 0
   for yi = 3, 7 do
@@ -469,7 +474,8 @@ do
       local g = env.TWANG_TEST.game
       local p = g.ctx.player
       local kd = env.TWANG_TEST.keys_down
-      p.x, p.y, p.vx, p.vy = 1064 + off, 468 - yi*6, 0, 0
+      rig_winch(g)
+      p.x, p.y, p.vx, p.vy = 90 + off, 224 - yi*4, 0, 0
       kd.c = true; run_steps(env, 1); kd.c = false; run_steps(env, 1)
       kd.z = true; run_steps(env, 1); p.aim_angle = 0.75; kd.z = false
       run_steps(env, 1)

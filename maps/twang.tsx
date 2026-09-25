@@ -329,6 +329,11 @@
    <property name="sticky" type="bool" value="true"/>
   </properties>
  </tile>
+ <tile id="86">
+  <properties>
+   <property name="kind" value="pusher"/>
+  </properties>
+ </tile>
  <tile id="81">
   <properties>
    <property name="runnable" type="bool" value="true"/>

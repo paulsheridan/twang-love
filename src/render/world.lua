@@ -81,6 +81,9 @@ local function draw_interactables(ctx)
   for _, w in ipairs(ents.winches) do
     Sprites.draw(w.spr or tiles.winch, w.x, w.y, false, w.rot)
   end
+  for _, pu in ipairs(ents.pushers) do
+    Sprites.draw(pu.spr or tiles.pusher, pu.x, pu.y, false, pu.rot)
+  end
   for _, e in ipairs(ents.exits) do
     Sprites.draw(e.spr or tiles.exit, e.x, e.y, false, e.rot)
   end

@@ -75,42 +75,33 @@ function Arrows.release(ctx, arrow)
   arrow.key = nil
 end
 
--- The bomb arrow's detonation: a flash ring and spark burst, then a
--- hard radial shove on everything caught in the blast --
+-- The shared radial shove: everything caught within `radius` of (x, y)
+-- is shoved along the unit radial away from the centre --
 --
 --   * the player, harmlessly (never damaged, no i-frames spent): the
 --     knock is ADDED to their velocity -- it stacks with jump and swing
---     momentum, the point of the tool -- with linear proximity falloff
---     from `push` at the blast's centre down to its `min_push_scale`
---     share at the rim, and rides the winch-throw grace window so the
---     walk cap cannot clamp it (a horizontal blast would otherwise be
---     clamped to walk speed the step after the boom)
---   * enemies, shoved along the radial and never killed by the blast
---     itself (the direct arrow hit is what kills -- see step_one)
+--     momentum, the point of the tool -- and rides the `grace` window so
+--     the walk cap cannot clamp it (a horizontal blast would otherwise
+--     be clamped to walk speed the step after the boom); a launch caught
+--     mid-wall-run hands the body over so the shove plays out through
+--     the grace too
+--   * enemies, shoved along the radial and never killed by the shove
+--     itself
 --   * enemy projectiles: rockets knocked off their heading (the homing
 --     re-curves them later), thrown bombs and darts knocked off course
 --
--- A blast at a target's exact centre shoves straight up.
-function Arrows.detonate_bomb(ctx, x, y)
+-- `falloff(d)` maps the distance from the centre to the shove strength
+-- (the bomb's linear proximity falloff; the pusher passes a constant).
+function Arrows.radial_shove(ctx, x, y, radius, push, falloff, grace)
   local ents = ctx.ents
-  local cfg = ctx.config.bomb_arrow
-  table.insert(ents.booms, { x = x, y = y,
-    t = ctx.config.enemies.boom_frames, r = cfg.blast_radius })
-  Particles.boom(ents, x, y)
-  Particles.poof(ents, x, y)
-  -- the burnt remains: the bomb arrow always detonates against a
-  -- surface, so the struck face keeps sparking and smoking for a beat
-  Particles.aftermath(ents, ctx.world, x, y, true)
-
-  -- unit radial from the blast toward (bx, by) plus the proximity-scaled
-  -- shove strength, or nil when the point lies beyond the blast radius
+  -- unit radial from the centre toward (bx, by) plus the shove strength,
+  -- or nil when the point lies beyond the radius
   local function radial(bx, by)
     local dx, dy = bx - x, by - y
     local d = math.sqrt(dx*dx + dy*dy)
-    if d > cfg.blast_radius then return nil end
-    if d == 0 then return 0, -1, cfg.push end
-    return dx / d, dy / d,
-      cfg.push * math.max(cfg.min_push_scale, 1 - d / cfg.blast_radius)
+    if d > radius then return nil end
+    if d == 0 then return 0, -1, push end
+    return dx / d, dy / d, falloff(d)
   end
 
   for _, e in ipairs(ents.enemies) do
@@ -130,13 +121,14 @@ function Arrows.detonate_bomb(ctx, x, y)
     if p.vy < 0 then
       p.gr = false
       p.j_frames = 0
+      p.wallrun = nil
     end
     -- the shock knocks the rope line off and the reel loose; the knock
     -- itself plays out untouched (movement input ignored, no walk cap)
     -- until it lapses or the player lands
     p.rope = nil
-    p.winch_grace = cfg.shove_grace
-    p.rope_cd = cfg.shove_grace
+    p.winch_grace = grace
+    p.rope_cd = grace
   end
 
   for _, r in ipairs(ents.rockets) do
@@ -161,6 +153,50 @@ function Arrows.detonate_bomb(ctx, x, y)
       end
     end
   end
+end
+
+-- The bomb arrow's detonation: a flash ring and spark burst, then the
+-- shared radial shove with linear proximity falloff from `push` at the
+-- blast's centre down to its `min_push_scale` share at the rim (see
+-- Arrows.radial_shove for the per-target effects).
+--
+-- A blast at a target's exact centre shoves straight up.
+function Arrows.detonate_bomb(ctx, x, y)
+  local ents = ctx.ents
+  local cfg = ctx.config.bomb_arrow
+  table.insert(ents.booms, { x = x, y = y,
+    t = ctx.config.enemies.boom_frames, r = cfg.blast_radius })
+  Particles.boom(ents, x, y)
+  Particles.poof(ents, x, y)
+  -- the burnt remains: the bomb arrow always detonates against a
+  -- surface, so the struck face keeps sparking and smoking for a beat
+  Particles.aftermath(ents, ctx.world, x, y, true)
+  Arrows.radial_shove(ctx, x, y, cfg.blast_radius, cfg.push,
+    function(d)
+      return cfg.push * math.max(cfg.min_push_scale, 1 - d / cfg.blast_radius)
+    end,
+    cfg.shove_grace)
+end
+
+-- The pusher's strike (a player arrow's tip entered the device's tile;
+-- the arrow is consumed by the strike site): the shared flash ring --
+-- sized to the device's radius, so the camera shake rides ents.booms --
+-- and a spark burst, then the shared radial shove at CONSTANT strength
+-- everywhere in the radius: a predictable launcher, the same great-force
+-- push however deep in the catch radius you stand.
+function Arrows.trigger_pusher(ctx, pu)
+  local ents = ctx.ents
+  local cfg = ctx.config.pusher
+  local tw = ctx.config.tile_size
+  local radius = pu.radius or cfg.radius
+  local push = pu.push or cfg.push
+  local cx, cy = pu.x + tw/2, pu.y + tw/2
+  table.insert(ents.booms, { x = cx, y = cy,
+    t = ctx.config.enemies.boom_frames, r = radius })
+  Particles.boom(ents, cx, cy)
+  Particles.poof(ents, cx, cy)
+  Arrows.radial_shove(ctx, cx, cy, radius, push,
+    function() return push end, cfg.shove_grace)
 end
 
 -- Fires an arrow from the player along `angle` (a pico-8 turn, 0..1) at
@@ -414,6 +450,23 @@ function Arrows.step_one(ctx, a)
           a.active = false
           return
         end
+      end
+    end
+
+    -- arrow strikes a pusher: the arrow is consumed (poof into the
+    -- device, like the winch capture) and the device shoves everything
+    -- within its radius directly away from its centre of mass. Bomb
+    -- arrows detonate their own blast at the strike point first, so the
+    -- two shoves stack.
+    for _, pu in ipairs(ents.pushers) do
+      if nx >= pu.x and nx < pu.x+tw and ny >= pu.y and ny < pu.y+tw then
+        Particles.poof(ents, nx, ny)
+        a.active = false
+        if a.kind == "bomb" then
+          Arrows.detonate_bomb(ctx, nx, ny)
+        end
+        Arrows.trigger_pusher(ctx, pu)
+        return
       end
     end
 

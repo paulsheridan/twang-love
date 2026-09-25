@@ -44,11 +44,16 @@ end
 local function setup()
   local env = Harness.boot()
   local g = env.TWANG_TEST.game
-  local spring, switch
-  for _, s in ipairs(g.ctx.ents.springs) do spring = s end
-  for _, s in ipairs(g.ctx.ents.switches) do
-    if s.g == spring.g then switch = s end
-  end
+  -- level1's spring/switch pair has been removed from the map; rig a
+  -- synthetic pair (entity-owned solidity and strikes need no terrain):
+  -- the spring pad standing on the spawn area's floor (row 14 top),
+  -- with its group's switch mounted in the sky tile above it
+  local spring = { x = 10*16, y = 13*16, g = "springtest", ext = nil,
+    spr = g.ctx.tiles.spring, rot = nil }
+  local switch = { x = 10*16, y = 12*16, g = "springtest", on = false,
+    spr = g.ctx.tiles.switch, rot = nil }
+  table.insert(g.ctx.ents.springs, spring)
+  table.insert(g.ctx.ents.switches, switch)
   return env, g, spring, switch
 end
 

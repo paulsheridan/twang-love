@@ -41,9 +41,10 @@ maximal horizontal line of consecutive runnable tiles in one row, at
 least two tiles long. The tiles themselves are pass-through — nothing
 collides with them; they are pure markers.
 
-- **Trigger**: the player's body centre enters one of the line's END
-  tiles while holding jump and pushing the stick toward the line (right
-  at the left end, left at the right end). The run engages: the body is
+- **Trigger**: the player's body centre enters one of the line's first
+  two tiles from a pushed end — the outermost tile, or one in from it —
+  while holding jump and pushing the stick toward the line (right at the
+  left end, left at the right end). The run engages: the body is
   pinned into the band (easing onto the row's centre line over
   `config.wallrun.settle_steps`) and carried along it at
   `config.wallrun.speed`.
@@ -53,7 +54,8 @@ collides with them; they are pure markers.
 - **Far end**: reaching the last tile ends the run. With jump still held
   the player jumps off the end (a standard, holdable jump that keeps the
   run's momentum); without it they keep the momentum and begin to fall.
-- Middle tiles never engage the run (ends only), and a held jump is not
+- Middle tiles never engage the run (the catch zone is the first two
+  tiles from a pushed end), and a held jump is not
   required to sustain it — only the direction is. Tuning lives in
   `config.wallrun`.
 
@@ -97,6 +99,16 @@ collides with them; they are pure markers.
 - **`checkpoint`** — a green checkpoint flag: touching it makes it the
   death respawn point (a small poof marks the handover). Without a
   touched flag, deaths respawn at a spawn point (the legacy behaviour).
+- **`pusher`** — the pusher device: a solid one-tile block you hop over.
+  A player arrow striking it is consumed (a poof into the device, like
+  the winch capture) and the pusher shoves everything within
+  `config.pusher.radius` (4 tiles) directly away from its centre of mass
+  (its tile centre) with a constant great-force impulse — the launcher
+  puzzle element. Repeatable: every strike fires it again. A bomb arrow
+  striking it detonates its own blast and the pusher's push together
+  (stacking). Enemy darts and shockwave pulses never trigger it. Per-
+  instance overrides (`push`, `radius`, `shove_grace` object properties)
+  beat the defaults.
 
 ## Entities on Object Layers
 

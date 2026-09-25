@@ -4,13 +4,14 @@
 -- level1's row sits at ground-layer row 27, cols 6-15: x 96..256,
 -- y 432..448, two tiles above the floor at row 30):
 --   1. trigger: holding jump + pushing toward the line with the body's
---      centre inside one of its end tiles engages the run
+--      centre inside one of the line's end tiles engages the run
 --   2. the ride settles onto the band's centre line; no gravity mid-run
 --   3. holding the direction carries the player the line's full length;
 --      reaching the far end with jump held fires the end-jump
 --   4. reaching the far end without jump keeps the momentum and falls
 --   5. releasing the direction mid-run stops and drops straight down
---   6. the middle tiles of a line never engage the run (ends only)
+--   6. the catch zone: the first two tiles of a line from a pushed end
+--      (the outermost, or one in from it) engage; deeper tiles never do
 --   7. no trigger without the jump button held
 --   8. the line scan (runnable_line) spans the row; empty squares and
 --      other rows answer nil
@@ -161,22 +162,61 @@ do
   assert_true(p.vy > 0, "the player falls from the band")
 end
 
--- ==== 6. the middle tiles of a line never engage the run ====
+-- ==== 6. the catch zone: the line's first two tiles from a pushed end ====
 do
   local env = Harness.boot()
   local g = env.TWANG_TEST.game
   local p = g.ctx.player
-  -- centre inside col 10 (x 160..176), a middle tile of the line
-  place_player(g, 164, 436)
+  -- one in from the left end (col 7: x 112..128), pushing right
+  place_player(g, 116, 436)
+  env.TWANG_TEST.keys_down.right = true
+  env.TWANG_TEST.keys_down.x = true
+  run_steps(env, 1)
+  assert_true(p.wallrun ~= nil, "the run engages one tile in from the left end")
+  assert_true(p.wallrun.c_end == LINE_C1,
+    "the second-tile entry still targets the line's far end (got "
+    .. tostring(p.wallrun and p.wallrun.c_end) .. ")")
+  run_until_done(env, 90)
+  assert_true(p.x + p.w >= LINE_C1 * 16,
+    "the run from the second tile covers the rest of the line")
+end
+
+do
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local p = g.ctx.player
+  -- one in from the right end (col 14: x 224..240), pushing left
+  place_player(g, 228, 436)
+  env.TWANG_TEST.keys_down.left = true
+  env.TWANG_TEST.keys_down.x = true
+  run_steps(env, 1)
+  assert_true(p.wallrun ~= nil, "the run engages one tile in from the right end")
+  assert_true(p.wallrun.dir == -1, "the mirrored entry runs leftward")
+  assert_true(p.wallrun.c_end == LINE_C0,
+    "the mirrored entry targets the line's far left (got "
+    .. tostring(p.wallrun and p.wallrun.c_end) .. ")")
+end
+
+do
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local p = g.ctx.player
+  -- two in from each end (cols 8 and 13) are outside the catch zone
+  place_player(g, 132, 436)
   env.TWANG_TEST.keys_down.right = true
   env.TWANG_TEST.keys_down.x = true
   run_steps(env, 3)
-  assert_true(p.wallrun == nil, "a middle tile does not engage the run")
-  env.TWANG_TEST.keys_down.left = true
+  assert_true(p.wallrun == nil, "two tiles in from the left end does not engage")
+  place_player(g, 212, 436)
   env.TWANG_TEST.keys_down.right = false
+  env.TWANG_TEST.keys_down.left = true
+  run_steps(env, 3)
+  assert_true(p.wallrun == nil, "two tiles in from the right end does not engage")
+  -- deep inside the line: neither direction engages
+  place_player(g, 164, 436)
   run_steps(env, 3)
   assert_true(p.wallrun == nil,
-    "pushing back along a line from a middle tile does not engage either")
+    "pushing back along a line from a deep middle tile does not engage either")
 end
 
 -- ==== 7. no trigger without the jump button held ====

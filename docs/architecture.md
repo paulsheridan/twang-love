@@ -21,8 +21,10 @@ src/
                           wall-run over runnable tile lines
    arrows.lua             player + enemy arrows (flight, bounce, stick, hits);
                           rope arrows (range, anchoring); the bomb arrow's
-                          contact detonation + blast (detonate_bomb); also
-                          exposes simulate_path (shared trajectory solver)
+                          contact detonation + blast (detonate_bomb); the
+                          pusher's strike (trigger_pusher); also exposes
+                          simulate_path and the shared radial shove
+                          (radial_shove)
    enemies.lua            melee patrol; archers with a sense -> aim -> volley ->
                           investigate brain; patrols bounded by roam_tiles
    rockets.lua            the rocketeer's homing rockets: spawn, pursuit
@@ -324,9 +326,10 @@ which is what keeps the trace baseline stable.
   block nothing — players, enemies and arrows all pass through — so a
   body can only ride the lane via the run. The trigger (`Player.wallrun_check`,
   at the top of `Player.physics` each step) fires when the player's body
-  centre sits inside one of the line's END tiles while holding jump and
-  pushing toward the line (right at the left end, left at the right end;
-  right wins if both are held, like the walk motor) — and while no rope or
+  centre sits inside one of the line's first two tiles from a pushed end
+  (the outermost tile, or one in from it) while holding jump and pushing
+  toward the line (right at the left end, left at the right end; right
+  wins if both are held, like the walk motor) — and while no rope or
   winch owns the body. The run (`Player.wallrun_step`) replaces the whole
   movement pass: no gravity, no collision, `vy` pinned to zero, `x`
   advancing at `config.wallrun.speed` and the ride y easing onto the
@@ -338,8 +341,9 @@ which is what keeps the trace baseline stable.
   (the leading edge crossing into the last tile) ends the run with a
   standard, holdable jump when jump is still held — momentum rides in
   `vx` either way. Jump is never required to SUSTAIN the run: only the
-  direction is, and re-holding jump + direction while still inside an end
-  tile re-engages. Rope attaching/detaching is suspended during the run
+  direction is, and re-holding jump + direction while still inside the
+  catch zone (the line's first two tiles from the pushed end) re-engages.
+  Rope attaching/detaching is suspended during the run
   (a winch capture mid-run hands the body over immediately), the aim
   system keeps working through it (the run scales with world time, so it
   slows with aiming), and the animation is a dedicated cycle
@@ -416,7 +420,39 @@ which is what keeps the trace baseline stable.
   shockwave); the blast knocks a line loose too, with `rope_cd` blocking
   an instant re-grab. Rocket or thrown-bomb tip hits go through the
   enemy blast as with other arrows, the arrow consumed either way. A
-  bomb arrow that touches nothing poofs silently — no blast.
+   bomb arrow that touches nothing poofs silently — no blast.
+
+## The pusher
+
+The pusher (`pusher_01`-style objects; kind tile 86 in `twang.tsx`) is a
+launcher puzzle device: a solid one-tile block standing on the ground
+that you hop over — and that flings you skyward when you shoot it.
+
+- **Body** (`src/level.lua` scan, `src/world.lua` solidity): the pusher
+  object owns its tile like a door does — always solid to bodies (you
+  bump it walking, stand on its top, jump over it), and recessed to
+  arrows (`solid_for_arrow` answers false) so a player arrow's tip flies
+  INTO the tile and strikes.
+- **Strike** (`Arrows.step_one`'s per-substep pusher check): the tip
+  entering the device's tile consumes the arrow (a poof at the strike
+  point, like the winch capture) and fires `Arrows.trigger_pusher`. A
+  bomb arrow's tip also detonates its own blast at the strike point
+  first, so the two forces stack. Enemy arrows and shockwave pulses
+  never strike it. Repeatable: every strike fires the push again.
+- **The push** (`Arrows.trigger_pusher` through the shared
+  `Arrows.radial_shove`, also used verbatim by `detonate_bomb`): the
+  flash ring sized to the device's radius (the camera shake rides
+  ents.booms) plus a spark burst, then a shove on everything caught
+  within `config.pusher.radius` (64px — 4 tiles, "fairly close") along
+  the unit radial from the device's tile centre, at CONSTANT strength
+  everywhere in the radius (a predictable launcher). The player's knock
+  is ADDED to their velocity — it stacks with jump and swing momentum,
+  the point of the tool ("jump over it, shoot it, get pushed straight
+  up") — riding the shove-grace window so the walk cap cannot clamp it,
+  knocking an attached rope line (or winch reel) loose and ending a
+  mid-launch wall-run. Enemies are shoved along the radial and never
+  killed by the push; rockets, thrown bombs and darts are knocked off
+  course. Tests: `tests/pusher_test.lua`.
 
 ## The archer brain
 
