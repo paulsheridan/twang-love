@@ -142,37 +142,29 @@ do
     "the swing carries the player onto the far ledge")
 end
 
--- ==== 4. springside: spring vault + phase dissolve ====
+-- ==== 4. springside: landing-spring vault + phase dissolve ====
 do
   local env = Harness.boot()
   local g = load(env, "maps/springside.json")
   local p, ents, world = g.ctx.player, g.ctx.ents, g.ctx.world
   assert_true(world.phase_solid, "phase tiles start solid")
-  -- stand on the intro spring; the switch strike vaults the player
+  -- step onto the intro spring; the landing itself vaults the player
+  -- (the pad fires itself: no switch in the level drives a spring)
   local spring
   for _, s in ipairs(ents.springs) do
     if s.g == "01" then spring = s end
   end
   assert_true(spring ~= nil, "the intro spring exists")
+  assert_true(#ents.switches == 1,
+    "springside carries only its phase switch (springs are landing pads)")
   p.x, p.y, p.vx, p.vy = spring.x, spring.y + tw - 8 - 12, 0, 0
-  for _ = 1, 6 do step(env) end
-  assert_true(p.gr, "the player stands on the spring's pad")
-  local top = p.y
-  -- rig the strike (as the player's arrow shot would)
-  local sw
-  for _, s in ipairs(ents.switches) do if s.g == "01" then sw = s end end
-  local a = {
-    x = sw.x - 4, y = sw.y + 8, vx = 13, vy = -2,
-    active = true, stuck = false, bounced = 0,
-    sdx = 1, sdy = 0, spin = 0, lt = 300, kind = "normal", traveled = 4,
-  }
-  table.insert(ents.arrows, a)
-  local vaulted = false
-  for _ = 1, 30 do
-    step(env)
-    if p.vy < -6 then vaulted = true break end
-  end
-  assert_true(vaulted, "the switch strike vaults the player off the pad")
+  p.prev_gr = false  -- (the load step grounded them at the spawn: a real
+                     -- jump onto the pad always arrives airborne; the
+                     -- teleport needs the air-arrival edge re-armed)
+  -- (the load step above already sat the player there; the next tick's
+  -- landing fires the pad)
+  step(env)
+  assert_true(p.vy < -6, "landing on the pad vaults the player off it")
   -- the phase switch: rig a strike; the phase wall dissolves
   local phase_switch
   for _, s in ipairs(ents.switches) do if s.phase then phase_switch = s end end

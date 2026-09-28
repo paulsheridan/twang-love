@@ -8,10 +8,14 @@
 --   bit 4 runnable (wall-run lanes: pass-through tiles marked with the
 --   "runnable" property; lines of them are traversed by the player's
 --   wall-run)
+--   bit 5 oneway (thin platforms: standable from above, passable from
+--   below — bodies land on them, arrows/enemies/sight pass through)
 --
 -- Doors, springs and switches own tile solidity in special ways (see
 -- solid_at / solid_for_arrow); they are referenced from the level's
--- entity lists, passed in at construction.
+-- entity lists, passed in at construction. Moving blocks (src/movers.lua)
+-- own their CURRENT occupied box the same way: solid ground wherever the
+-- block sits this step.
 --
 -- Phase tiles (tileset property "phase", e.g. platforms struck through
 -- by switch toggles) flip all instances solid<->non-solid together via
@@ -38,6 +42,7 @@ function World.new(level, ents, tile_size)
   self.springs   = ents.springs
   self.switches  = ents.switches
   self.pushers   = ents.pushers
+  self.movers    = ents.movers
   self.phase_tiles = level.phase_tiles or {}
   self.phase_solid = true  -- phase tiles start solid; phase-switch strikes flip this
   -- visual-only named Tiled layers (see docs/tiled-format.md): the
@@ -94,6 +99,7 @@ function World:solid(t)        return t ~= 0 and self:flag(t, 0) end
 function World:sticky(t)       return t ~= 0 and self:flag(t, 1) end
 function World:arrow_pass(t)   return t ~= 0 and self:flag(t, 3) end
 function World:runnable(t)     return t ~= 0 and self:flag(t, 4) end
+function World:oneway(t)       return t ~= 0 and self:flag(t, 5) end
 
 -- The runnable line through tile (c, r): the maximal horizontal run of
 -- consecutive runnable tiles containing it, as (c0, c1). nil when the
@@ -233,8 +239,29 @@ end
 
 -- ==== solidity queries ====
 
-function World:solid_at(x, y)
+-- Is the point (x, y) inside a mover's current box? PIXEL-EXACT, on
+-- purpose: a moving block is an object in the world, not tile-aligned
+-- terrain — its face travels mid-tile, and tile-granular solidity
+-- would claim each half-covered edge tile whole, supporting bodies on
+-- edge pixels that shift with the block's travel (edge-standing that
+-- flickers bind/sever as tile alignment changes, and a stand the ride
+-- could never agree with). skip_mover lets the mover's own stall
+-- checks probe the world without running into themselves.
+function World:mover_at(m, x, y, skip_mover)
+  if m == skip_mover then return false end
+  return x >= m.bx and x < m.bx + m.bw
+     and y >= m.by and y < m.by + m.bh
+end
+
+function World:solid_at(x, y, skip_mover)
   local c, r = math.floor(x/self.tw), math.floor(y/self.tw)
+  -- moving blocks own their CURRENT box: wherever the block sits this
+  -- step is solid ground (src/movers.lua advances them)
+  for _, m in ipairs(self.movers) do
+    if self:mover_at(m, x, y, skip_mover) then
+      return true
+    end
+  end
   -- doors own their tile: a door object placed over terrain (doorway
   -- art and the like) governs that tile's solidity by itself
   for _, d in ipairs(self.doors) do
@@ -266,6 +293,14 @@ end
 -- shots through while walls still block the player and enemies.
 function World:solid_for_arrow(x, y)
   local c, r = math.floor(x/self.tw), math.floor(y/self.tw)
+  -- moving blocks are recessed for arrows (like pushers): arrow tips
+  -- fly INTO the block and strike it (a trigger mover fires on that;
+  -- an auto mover just eats the arrow)
+  for _, m in ipairs(self.movers) do
+    if self:mover_at(m, x, y) then
+      return false
+    end
+  end
   for _, d in ipairs(self.doors) do
     if d.tc == c and d.tr == r then return not d.open end
   end
@@ -288,6 +323,13 @@ end
 
 function World:sticky_at(x, y)
   local c, r = math.floor(x/self.tw), math.floor(y/self.tw)
+  -- moving blocks are bouncy surfaces too (they are temporary solids;
+  -- an arrow embedded in one would hang over the void between pauses)
+  for _, m in ipairs(self.movers) do
+    if self:mover_at(m, x, y) then
+      return true
+    end
+  end
   -- a closed door is a bouncy surface, like a sticky wall: doors are
   -- temporary solids, so an arrow embedded in one would be left hanging
   -- in the doorway the moment a switch opens it
@@ -401,6 +443,52 @@ function World:resolve_slopes(obj)
   end
 end
 
+-- Thin one-way platform catches: when the body falls (vy >= 0) across
+-- a tile flagged oneway (the blue thin platform, tileset property
+-- "oneway"), its feet come to rest on the tile's TOP edge — the tile
+-- never blocks bodies otherwise: not solid_at (so rising bodies, side
+-- walks, arrows, enemy sight and beams all pass through it), only this
+-- downward catch. The catch fires when the feet sit within the tile's
+-- top band: crossed in from above (the previous feet y stamped by the
+-- render pass — a full-step fall of up to max_fall_speed never skips
+-- it) or within a small settle slop of the top edge (sustains standing
+-- against the per-step gravity sag).
+function World:oneway_catch(obj)
+  if obj.vy < 0 then return nil end
+  local tw = self.tw
+  local prev_feet = (obj._py ~= nil) and (obj._py + obj.h)
+                    or (obj.y + obj.h - (obj.vy or 0))
+  local feet = obj.y + obj.h
+  -- the fall's swept span (a max_fall_speed step is 9px, so the body
+  -- can pass a whole 16px tile in two steps: the swept span is what
+  -- cannot tunnel through a thin platform's band)
+  -- scan every column the feet span (toe grace of 1px each side)
+  local c0 = math.floor((obj.x + 1) / tw)
+  local c1 = math.floor((obj.x + obj.w - 2) / tw)
+  if c1 < c0 then c1 = c0 end
+  for c = c0, c1 do
+    -- candidate rows: every row the swept feet span touches
+    local r_lo = math.floor(math.min(prev_feet, feet) / tw)
+    local r_hi = math.floor(feet / tw)
+    for rr = r_lo, r_hi do
+      local t = self:tile(c, rr)
+      if self:oneway(t) then
+        local top = rr * tw
+        -- the feet passed THROUGH the platform's band this step or sit
+        -- within its standing sag window: the swept span implies the
+        -- entry was from above (the feet were lower in another row
+        -- before, or crossing is what brings them here)
+        local crossing = prev_feet <= top + tw and feet >= top
+        local settled = feet >= top and feet <= top + 4
+        if crossing or settled then
+          return top, c
+        end
+      end
+    end
+  end
+  return nil
+end
+
 -- ==== collision passes ====
 
 -- A slope's floor surface near the body's centre masks a false-positive
@@ -431,11 +519,32 @@ function World:spring_stand_y(x, y)
   return nil
 end
 
+-- Standing surface (top y) of a moving block, when the point (x, y)
+-- lies inside the block's box (a landing body's feet a few px in count
+-- via the +4 grace). resolve_y lands bodies on the block's FRACTIONAL
+-- top face (the exact surface they ride), not the tile's top edge --
+-- blocks move sub-tile, so the tile edge would leave riders floating.
+function World:mover_stand_y(x, y)
+  for _, m in ipairs(self.movers) do
+    if x >= m.bx and x < m.bx + m.bw
+    and y >= m.by and y < m.by + m.bh + 4 then
+      return m.by
+    end
+  end
+  return nil
+end
+
 function World:resolve_x(obj)
+  -- a rider never collides with the block they're standing ON
+  -- (obj.ride, src/movers.lua): the platform's top face may sit
+  -- mid-tile while it moves, and solidity is tile-granular, so the
+  -- body's feet-level wall probe would read the half-covered top row
+  -- as a wall and tile-snap the rider sideways off their own platform
+  local skip = obj.ride
   if obj.vx > 0 then
     local rx = obj.x + obj.w - 1
-    local hit_top = self:solid_at(rx, obj.y)
-    local hit_bot = self:solid_at(rx, obj.y+obj.h-1)
+    local hit_top = self:solid_at(rx, obj.y, skip)
+    local hit_bot = self:solid_at(rx, obj.y+obj.h-1, skip)
     if hit_bot and not hit_top and self:shielded_by_slope(obj, obj.y+obj.h-1) then
       hit_bot = false
     end
@@ -444,8 +553,8 @@ function World:resolve_x(obj)
       obj.vx = 0
     end
   elseif obj.vx < 0 then
-    local hit_top = self:solid_at(obj.x, obj.y)
-    local hit_bot = self:solid_at(obj.x, obj.y+obj.h-1)
+    local hit_top = self:solid_at(obj.x, obj.y, skip)
+    local hit_bot = self:solid_at(obj.x, obj.y+obj.h-1, skip)
     if hit_bot and not hit_top and self:shielded_by_slope(obj, obj.y+obj.h-1) then
       hit_bot = false
     end
@@ -460,8 +569,11 @@ function World:resolve_y(obj)
   if obj.vy >= 0 then
     local by = obj.y + obj.h
     if self:solid_at(obj.x, by) or self:solid_at(obj.x+obj.w-1, by) then
-      -- spring pads: land on the pad's surface, not the tile's top edge
-      local stand = self:spring_stand_y(obj.x, by)
+      -- movers and spring pads: land on the standing SURFACE (a block's
+      -- fractional top face / the pad's band), not the tile's top edge
+      local stand = self:mover_stand_y(obj.x, by)
+                 or self:mover_stand_y(obj.x + obj.w - 1, by)
+                 or self:spring_stand_y(obj.x, by)
                  or self:spring_stand_y(obj.x + obj.w - 1, by)
       local tc = self:tile(math.floor(obj.x/self.tw), math.floor(by/self.tw))
       obj.y  = stand and stand - obj.h
@@ -469,6 +581,16 @@ function World:resolve_y(obj)
       obj.vy = 0
       obj.gr = true
       obj.fr = self:friction(tc)
+    else
+      -- one-way platforms: a downward pass across a thin platform's top
+      -- edge lands on it (the tile never blocks anything otherwise)
+      local top = self:oneway_catch(obj)
+      if top then
+        obj.y  = top - obj.h
+        obj.vy = 0
+        obj.gr = true
+        obj.fr = 1.0
+      end
     end
   elseif obj.vy < 0 then
     local hx_left  = self:solid_at(obj.x, obj.y)
@@ -511,10 +633,12 @@ function World:check_walls(obj)
   local tr = math.floor(obj.y/self.tw)
   local br = math.floor((obj.y+obj.h-1)/self.tw)
   for r = tr, br do
-    if self:solid(self:tile(math.floor((obj.x-1)/self.tw), r)) then
+    local lt = self:tile(math.floor((obj.x-1)/self.tw), r)
+    if self:solid(lt) then
       obj.wall_l = true
     end
-    if self:solid(self:tile(math.floor((obj.x+obj.w)/self.tw), r)) then
+    local rt = self:tile(math.floor((obj.x+obj.w)/self.tw), r)
+    if self:solid(rt) then
       obj.wall_r = true
     end
   end

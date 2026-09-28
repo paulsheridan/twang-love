@@ -41,9 +41,9 @@ taught by layout, never by text.
 | 1 | meadow | walk, jump, bow; no enemies; a key->lock->exit |
 | 2 | battlements | archers; sticky-wall arrow platforms; first switch |
 | 3 | the crossing | rope arrows over a chasm; melee chasers below |
-| 4 | springside | spring + switch vaults; phase tiles introduced |
+| 4 | springside | landing-pad spring vaults; phase tiles introduced |
 | 5 | arrowslit | laser riflemen; `arrow_pass` slits as the counter |
-| 6 | winchyard | winch throws + shockwave pulses; vertical level |
+| 6 | winchyard | winch throws + spirit arrows; vertical level |
 | 7 | the vault | keys carried by arrows, multi-group doors, laser + archer mix |
 | 8 | the keep | rocketeers + bombers; everything combined; longest level |
 
@@ -100,9 +100,11 @@ results, and quit the game feeling like you finished it.
   retunes when a level needs a gentler first meet.
 - Par-time tuning against real playthroughs.
 
-### M3 — juice & feel
+### M3 — juice & feel — partially DONE
+- ~~Screen shake on rocket blast~~ (Camera.shake) and the small stuff:
+  landing/jump dust, camera thuds on jump/land/fire, hitstop freezes
+  on hits and arrow kills (config.player.freeze_steps)
 - Exit fanfare (particles exist; add a short jingle if audio comes in)
-- Screen shake on rocket blast (small camera offset in `Camera`)
 - Room-wipe polish, results-panel animation
 - Sound: this is the biggest missing sensory layer. Even a minimal
   pass — bow release, hit, door open, exit, rocket alarm — transforms

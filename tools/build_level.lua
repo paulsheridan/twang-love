@@ -299,7 +299,8 @@ local function crossing()
   L:save("maps/crossing.json")
 end
 
--- 4 · springside: switch-struck spring vaults; a phase wall dissolves.
+-- 4 · springside: LANDING-SPRING vaults (the pad fires the instant
+-- you land on it); a phase wall dissolves via its dedicated switch.
 local function springside()
   local L = Builder.new(120, 30)
   L:ground(0, 37, 24)
@@ -307,11 +308,9 @@ local function springside()
   L:fill(0, 18, 0, 23, T.BLOCK)        -- left edge wall
   L:spawn(3, 23)
   L:checkpoint(5, 23)
-  -- spring intro: stand on the pad, shoot the switch on the mount, and
-  -- the vault carries you onto the wall (too tall to jump)
+  -- spring intro: step onto the pad and the vault carries you onto the
+  -- wall (too tall to jump). The pad fires itself now — no switch mount
   L:spring("spring_01", 10, 23)
-  L:fill(7, 21, 7, 23, T.BLOCK)        -- switch mount column
-  L:switch("switch_01", 7, 20)
   L:fill(12, 19, 13, 23, T.BLOCK)      -- the vault wall (5 tall)
   -- melee chaser mid-level
   L:enemy("melee", 28, 23)
@@ -319,10 +318,8 @@ local function springside()
   L:fill(24, 18, 24, 23, T.PHASE)
   L:fill(20, 21, 20, 23, T.BLOCK)      -- switch mount column
   L:switch("switch_02", 20, 20, { phase = true })
-  -- the cliff vault: spring at the plateau's base, switch on a mount
+  -- the cliff vault: a spring at the plateau's base (fired by landing)
   L:spring("spring_02", 36, 23)
-  L:fill(32, 21, 32, 23, T.BLOCK)      -- switch mount column
-  L:switch("switch_03", 32, 20)
   -- archer guards the plateau approach; a cover block gives shade
   L:fill(46, 16, 46, 18, T.BLOCK)
   L:enemy("archer", 50, 18)
@@ -470,6 +467,51 @@ local function keep()
   L:save("maps/keep.json")
 end
 
+-- 9 Â· rooms demo: the two-room walkthrough the level select's debug row
+-- loads. Rooms are PLAIN RECTANGLE objects (no tile) with Class/kind
+-- "room" on any object layer -- see docs/tiled-format.md "Authoring rooms
+-- in Tiled". The recipe done directly in Tiled:
+--   1. add an Object Layer (name it e.g. "Rooms")
+--   2. draw a Rectangle (R): top-left on a tile corner (16px grid),
+--      sized 480x320 (or a multiple of the 480x320 view)
+--   3. set the rectangle's Class/type field to `room` (case-
+--      insensitive; the demo objects use type "Room")
+--   4. name it for debugging; overlaps warn; uncovered map = wilderness
+-- Crossing a border (hysteresis-checked) wipes the screen and snaps the
+-- camera; only the active room's entities simulate; everything persists.
+local function rooms_demo()
+  local L = Builder.new(60, 20)
+  L:ground(0, 28, 14)
+  L:carve(29, 0, 30, 19)               -- the seam pit (the wipe's trigger)
+  L:ground(31, 59, 14)
+  L:fill(0, 8, 0, 13, T.BLOCK)         -- room A's left wall
+  L:fill(59, 8, 59, 13, T.BLOCK)       -- room B's right wall
+  L:spawn(3, 13)
+  L:checkpoint(26, 13)
+  -- a hop between the room seam's open air (an exit prop in room A)
+  L:platform(24, 26, 12, T.BLOCK)
+  -- room B: a melee guard under cover (a plain rock; the per-room
+  -- foreground-fade demo would go on the Foreground layer -- left off
+  -- here to keep the demo terrain-only)
+  L:enemy("melee", 44, 13)
+  L:fill(38, 10, 41, 13, T.ROCK)
+  L:exit(54, 13)
+  -- the two camera-framed rooms: plain rect objects, Class "Room"
+  for _, room in ipairs({ { "room_a", 0, 0 }, { "room_b", 480, 0 } }) do
+    L:obj(room[1], "Room", room[2] / 16, room[3] / 16, {})
+  end
+  -- the rooms are plain rectangles, not tile objects: give them their
+  -- rect geometry directly (Builder:obj's 16x16 rects are the defaults)
+  for _, o in ipairs(L.objects) do
+    if o.type == "Room" then
+      o.width, o.height = 480, 320
+      o.x = (o.name == "room_a") and 0 or 480
+      o.y = 0
+    end
+  end
+  L:save("maps/rooms_demo.json")
+end
+
 meadow()
 battlements()
 crossing()
@@ -478,5 +520,6 @@ arrowslit()
 winchyard()
 vault()
 keep()
+rooms_demo()
 print("levels built: meadow, battlements, crossing, springside, "
-  .. "arrowslit, winchyard, vault, keep")
+  .. "arrowslit, winchyard, vault, keep, rooms_demo")

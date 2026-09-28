@@ -23,6 +23,12 @@
 -- plus the test menu's invincibility toggle:
 --  12. invincibility blocks arrow and melee damage (no hearts, no
 --      blood, no i-frames), while a void fall still kills
+-- plus the quiver and the post-fire stick window:
+--  13. the quiver holds config.arrows.max_active arrows
+--  14. firing an arrow deafens the analog stick for a few frames (no
+--      movement lurch, no aim reading), then it wakes up again
+--  15. one press, one jump: holding jump never re-jumps on landing
+--  16. one press, one cycle: holding swap never spins the arrow cycle
 --
 -- Usage (from the project root): luajit tests/player_test.lua
 
@@ -40,9 +46,17 @@ end
 
 local function run_steps(env, n)
   for _ = 1, n do
-    env.love.update(1/30)
+    env.love.update(1/30)  -- one call = one 30hz world-step (rate/30 ticks)
     env.love.draw()
   end
+end
+
+-- One raw sim tick (1/60s of real time): for tick-granular physics
+-- assertions (a head bump's same-tick state) a world-step call would
+-- run a second tick past the event.
+local function tick(env)
+  env.love.update(1/60)
+  env.love.draw()
 end
 
 local function place_player(game, x, y)
@@ -122,10 +136,18 @@ do
   assert_true(hit_seen, "the leftward arrow hit the player")
   local parts = g.ctx.ents.particles
   local blood_count = g.ctx.config.particles.blood_count
-  assert_true(#parts >= blood_count,
-    "an arrow hit sprays blood (" .. #parts .. " particles)")
-  local all_rightward = true
+  -- landing dust shares the list now: only blood-coloured particles
+  -- count toward the spray (blood_colour = 8; dust = 6)
+  local blood = {}
   for _, pt in ipairs(parts) do
+    if pt.col == g.ctx.config.particles.blood_colour then
+      blood[#blood + 1] = pt
+    end
+  end
+  assert_true(#blood >= blood_count,
+    "an arrow hit sprays blood (" .. #blood .. " particles)")
+  local all_rightward = true
+  for _, pt in ipairs(blood) do
     if pt.vx <= 0 then all_rightward = false end
   end
   assert_true(all_rightward,
@@ -146,11 +168,18 @@ do
   run_steps(env, 1)
   local parts = g.ctx.ents.particles
   local blood_count = g.ctx.config.particles.blood_count
-  assert_true(p.hp == max_hp() - 1, "the melee touch landed")
-  assert_true(#parts >= blood_count,
-    "a melee hit sprays blood (" .. #parts .. " particles)")
-  local all_leftward = true
+  -- landing dust shares the list: filter to blood-coloured particles
+  local blood = {}
   for _, pt in ipairs(parts) do
+    if pt.col == g.ctx.config.particles.blood_colour then
+      blood[#blood + 1] = pt
+    end
+  end
+  assert_true(p.hp == max_hp() - 1, "the melee touch landed")
+  assert_true(#blood >= blood_count,
+    "a melee hit sprays blood (" .. #blood .. " particles)")
+  local all_leftward = true
+  for _, pt in ipairs(blood) do
     if pt.vx >= 0 then all_leftward = false end
   end
   assert_true(all_leftward,
@@ -287,7 +316,7 @@ do
   place_player(g, 97, 160)  -- box 97..104: both corners under the ledge
   p.gr = false
   p.vy = -4
-  run_steps(env, 1)
+  tick(env)
   assert_true(p.vy == 0, "a covered head bump zeroes the velocity")
   assert_true(p.y == 160, "the bump snaps the player below the ledge")
 end
@@ -301,7 +330,7 @@ do
   place_player(g, 92, 160)  -- box 92..99: right corner clips 4px deep
   p.gr = false
   p.vy = -4
-  run_steps(env, 1)
+  tick(env)
   assert_true(p.vy == 0, "a slide past the nudge cap bumps instead")
   assert_true(p.y == 160, "the refused nudge snapped below the ledge")
 end
@@ -417,21 +446,38 @@ do
   assert_true(p.hp == max_hp(),
     "an arrow hit while invincible costs nothing (hp " .. p.hp .. ")")
   assert_true(p.invuln == 0, "no i-frames are granted while invincible")
-  assert_true(#g.ctx.ents.particles == 0,
+  local blood_tally = 0
+  for _, pt in ipairs(g.ctx.ents.particles) do
+    if pt.col == g.ctx.config.particles.blood_colour then
+      blood_tally = blood_tally + 1
+    end
+  end
+  assert_true(blood_tally == 0,
     "an invincible hit sprays no blood")
   -- a melee touch costs nothing either
   local melee
   for _, e in ipairs(g.ctx.ents.enemies) do
     if e.type == "melee" then melee = e break end
   end
-  local before = #g.ctx.ents.particles
+  local blood_before = 0
+  for _, pt in ipairs(g.ctx.ents.particles) do
+    if pt.col == g.ctx.config.particles.blood_colour then
+      blood_before = blood_before + 1
+    end
+  end
   for _ = 1, 3 do
     p.x, p.y, p.vx, p.vy = 660, 212, 0, 0
     melee.x, melee.y, melee.vx, melee.vy = 652, 208, 0, 0
     run_steps(env, 1)
   end
   assert_true(p.hp == max_hp(), "a melee touch while invincible is free")
-  assert_true(#g.ctx.ents.particles == before,
+  local blood_after = 0
+  for _, pt in ipairs(g.ctx.ents.particles) do
+    if pt.col == g.ctx.config.particles.blood_colour then
+      blood_after = blood_after + 1
+    end
+  end
+  assert_true(blood_after == blood_before,
     "an invincible melee touch sprays no blood")
   -- the void is not damage: falling off the world still kills
   p.hp = 2
@@ -439,6 +485,117 @@ do
   run_steps(env, 3)
   assert_true(p.hp == max_hp(),
     "the void still kills while invincible (respawn refills)")
+end
+
+-- ==== 13. the quiver holds config.arrows.max_active arrows ====
+do
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local Arrows = dofile("src/arrows.lua")
+  local p = g.ctx.player
+  place_player(g, 720, 148)
+  for _ = 1, g.ctx.config.arrows.max_active + 2 do
+    Arrows.fire(g.ctx, 0.02, "normal", 1)  -- near-flat shots that fly
+  end
+  assert_true(#g.ctx.ents.arrows == g.ctx.config.arrows.max_active,
+    "the quiver caps at max_active arrows (" .. #g.ctx.ents.arrows .. ")")
+end
+
+-- ==== 14. firing an arrow deafens the analog stick for a few frames ====
+-- The bow hand's aim deflection must not lurch the body the step the bow
+-- releases: the walk motor reads the same stick. The window deafens the
+-- stick's movement and aim readings; keyboard and physical buttons stay
+-- live, and the stick wakes up when the window lapses.
+do
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local p = g.ctx.player
+  local keys = env.TWANG_TEST.keys_down
+  local stick = { leftx = 0.9, lefty = 0.4 }  -- aim pose: right and down
+  env.love.joystick.getJoysticks = function()
+    return { {
+      isGamepad = function() return true end,
+      isGamepadDown = function() return false end,
+      getGamepadAxis = function(_, axis) return stick[axis] or 0 end,
+    } }
+  end
+  place_player(g, 720, 148)
+  run_steps(env, 6)
+  keys.z = true
+  run_steps(env, 3)
+  keys.z = nil  -- release: fires along the deflected stick
+  run_steps(env, 1)
+  local input = g.ctx.input
+  assert_true(#g.ctx.ents.arrows == 1, "releasing the bow fired an arrow")
+  assert_true(not input.held.right and not input.held.left,
+    "the release step reads no stick movement (right "
+    .. tostring(input.held.right) .. ")")
+  assert_true(input:aim_stick() == nil,
+    "the stick's aim reading is nil during the window")
+  assert_true(input.stick_ignore > 0, "the ignore window is live")
+  -- the window lapses: the stick drives the walk motor again
+  local window = g.ctx.config.aiming.stick_ignore_frames
+  run_steps(env, window)
+  assert_true(input.stick_ignore == 0, "the window lapsed")
+  assert_true(input:aim_stick() ~= nil,
+    "the stick's aim reading returns after the window")
+  local vx0 = p.vx
+  run_steps(env, 4)
+  assert_true(p.vx > vx0, "the walk motor responds to the stick again")
+end
+
+-- ==== 15. one press, one jump: holding jump never re-jumps on landing ====
+-- The btnp-style repeat (every 4 steps after 15 held) must not refill
+-- the jump buffer: a held button jumps once, lands, and stays grounded.
+do
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  g.ctx.config.enemies.enabled = false
+  local p = g.ctx.player
+  place_player(g, 720, 148)
+  run_steps(env, 6)
+  local keys = env.TWANG_TEST.keys_down
+  keys.x = true
+  local airborne, landed, rejumped = false, nil, false
+  for i = 1, 70 do
+    run_steps(env, 1)
+    if p.gr then
+      landed = landed or (i > 2 and i or nil)
+    elseif landed then
+      rejumped = true  -- airborne again after the landing: a held-jump repeat
+    else
+      airborne = true
+    end
+  end
+  keys.x = nil
+  assert_true(airborne, "the held jump left the ground")
+  assert_true(landed, "the held jump landed again (step "
+    .. tostring(landed) .. ")")
+  assert_true(not rejumped,
+    "holding jump after landing never re-jumps (auto-hop seen at step "
+    .. tostring(landed) .. "+)")
+end
+
+-- ==== 16. one press, one cycle: holding swap never spins the arrow cycle ====
+-- The btnp-style repeat must not cycle the quiver: one press, one kind.
+do
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local p = g.ctx.player
+  local keys = env.TWANG_TEST.keys_down
+  keys.c = true
+  local last, changes = p.arrow_kind, 0
+  for _ = 1, 40 do
+    run_steps(env, 1)
+    if p.arrow_kind ~= last then
+      changes = changes + 1
+      last = p.arrow_kind
+    end
+  end
+  keys.c = nil
+  assert_true(changes == 1,
+    "holding swap cycles the arrow kind exactly once (cycled "
+    .. changes .. " times)")
 end
 
 print(("player tests: %d passed, %d failed"):format(PASS, FAIL))

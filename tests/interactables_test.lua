@@ -1,16 +1,11 @@
 -- Spring & switch tests (deterministic, headless; requires LuaJIT).
 --
--- The level's spring (group 05) sits in a shaft at (1424,224) with its
--- strike switch at (1376,160), same group. Covers:
---   1. the spring's hitbox is the pad band at the tile's bottom: bodies
---      land and stand on the pad surface (spring.y + 8), not the tile top
---   2. a switch strike extends the spring and vaults a player standing
---      on the pad (and does not vault a player standing beside it)
---   3. the struck switch pops back to inactive once the spring resets,
---      and can be shot again
+-- Springs are LANDING PADS: they fire themselves when the player
+-- lands on the pad; switch strikes no longer touch them. Covers:
+--   1. landing on the pad fires it (extend + vault), and a switch
+--      strike is inert for springs
 --   4. only switches flagged "phase" flip the level's phase tiles; a
---      spring/door switch strike toggles itself but leaves the blocks
---      alone (no cross-wiring between the puzzle systems)
+--      door switch strike toggles itself but leaves the blocks alone
 --   5. a closed door bounces arrows like a sticky wall, and an arrow
 --      never embeds in a door that later opens
 -- plus the test menu's puzzle toggle:
@@ -68,66 +63,34 @@ local function strike(env, g, switch)
   g.ctx.ents.arrows = {}
 end
 
--- ==== 1. the spring pad: stand on the pad, not the tile top ====
-do
-  local env, g, spring = setup()
-  local p = g.ctx.player
-  local pad_top = spring.y + g.ctx.config.springs.pad_height
-  -- drop onto the spring from above
-  p.x, p.y, p.vx, p.vy = spring.x + 4, spring.y - 48, 0, 0
-  run_steps(env, 20)
-  assert_true(p.gr, "the player lands on the spring pad")
-  assert_true(p.y + p.h == pad_top,
-    "the player stands on the pad surface (feet " .. (p.y + p.h)
-    .. ", expected " .. pad_top .. ")")
-  -- and stays put
-  run_steps(env, 10)
-  assert_true(p.y + p.h == pad_top, "the player rests on the pad steadily")
-end
-
--- ==== 2. a strike vaults a player standing on the pad ====
+-- ==== 1. the spring pad: landing fires it; switch strikes are inert ====
 do
   local env, g, spring, switch = setup()
   local p = g.ctx.player
+  -- drop onto the spring from above; the landing FIRES the pad now,
+  -- so this doubles as the landing-vault check (the switch above is
+  -- never involved)
   p.x, p.y, p.vx, p.vy = spring.x + 4, spring.y - 48, 0, 0
-  run_steps(env, 20)  -- landed on the pad
-  strike(env, g, switch)
-  assert_true(switch.on, "the strike turns the switch on")
-  local ext = g.ctx.config.springs.extension_frames
-  assert_true(spring.ext == ext - 1,
-    "the strike extends the spring (ext " .. tostring(spring.ext) .. ")")
-  assert_true(p.vy == g.ctx.config.springs.launch_velocity,
-    "the player on the pad is vaulted (vy " .. tostring(p.vy) .. ")")
-  assert_true(not p.gr, "the vaulted player is airborne")
-  -- a player standing beside the spring (on the shaft floor, 8px below
-  -- the pad surface) is not vaulted
+  local fired = false
+  for _ = 1, 20 do
+    run_steps(env, 1)
+    if not p.gr and p.vy < -6 then fired = true break end
+  end
+  assert_true(fired,
+    "landing on the pad fires it: the player vaults (no switch involved)")
+  -- and the spring's art rides the extension timer
+  assert_true(spring.ext ~= nil,
+    "the landing extends the spring")
+  -- a player standing beside the spring is not vaulted (no landing on
+  -- the pad, no switch to strike)
   p.x, p.y, p.vx, p.vy = spring.x - 12, spring.y + 16 - p.h, 0, 0
   run_steps(env, 4)
   assert_true(p.gr and p.y + p.h == spring.y + 16,
     "the player beside the spring stands on the shaft floor (feet "
     .. (p.y + p.h) .. ")")
   strike(env, g, switch)
-  assert_true(p.vy == 0, "a player beside the spring is not vaulted")
-end
-
--- ==== 3. the switch pops back out when the spring resets ====
-do
-  local env, g, spring, switch = setup()
-  local p = g.ctx.player
-  p.x, p.y, p.vx, p.vy = spring.x + 4, spring.y - 48, 0, 0
-  run_steps(env, 20)
-  strike(env, g, switch)
-  assert_true(switch.on, "the switch is on right after the strike")
-  local ext = g.ctx.config.springs.extension_frames
-  run_steps(env, ext - 2)
-  assert_true(switch.on, "the switch stays on while the spring is extended")
-  run_steps(env, 3)
-  assert_true(spring.ext == nil, "the spring resets after its extension")
-  assert_true(not switch.on, "the switch pops back to inactive")
-  -- and can be shot again
-  strike(env, g, switch)
-  assert_true(switch.on and spring.ext == ext - 1,
-    "the reset switch strikes again (re-extends the spring)")
+  assert_true(p.vy == 0 and p.gr,
+    "a switch strike is inert: springs no longer answer switches")
 end
 
 -- ==== 4. only "phase" switches flip the phase tiles ====

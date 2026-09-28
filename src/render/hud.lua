@@ -37,14 +37,14 @@ return function(ctx, blit)
     love.graphics.setColor(1, 1, 1, 1)
   end
   -- equipped arrow type: always shown top-right (rope colour when rope,
-  -- wave colour when shockwave, red when the bomb is out; labels are
-  -- shortened so they fit the slot)
+  -- ghostly blue when the spirit is out, red when the bomb is out;
+  -- labels are shortened so they fit the slot)
   local p = ctx.player
-  local label = p.arrow_kind == "shockwave" and "shock" or p.arrow_kind
+  local label = p.arrow_kind
   if p.arrow_kind == "rope" then
     love.graphics.setColor(pcol(config.rope.colour))
-  elseif p.arrow_kind == "shockwave" then
-    love.graphics.setColor(pcol(config.shockwave.colour))
+  elseif p.arrow_kind == "spirit" then
+    love.graphics.setColor(pcol(config.spirit.tint_colour))
   elseif p.arrow_kind == "bomb" then
     love.graphics.setColor(pcol(8))
   else

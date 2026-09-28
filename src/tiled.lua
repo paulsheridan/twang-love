@@ -26,7 +26,9 @@ local DEFAULT_KINDS = {
   spawn = 63, key = 70, lock = 71, door = 72, archer = 112, melee = 116,
   laser = 138, rocketeer = 138, bomber = 138, switch = 171, spring = 16,
   spring_ext = 33,   winch = 133, exit = 172, checkpoint = 173,
-  pusher = 86,
+  pusher = 86, updraft = 86, outdraft = 86,
+  mover = 17, mover_trigger = 17, movertrigger = 17,
+  gun = 138,  -- a placed gun pickup (same cell art as the ranged enemies)
 }
 local DEFAULT_SLOPES = {
   [6] = "/floor",  [13] = "/floor", -- / floor
@@ -84,6 +86,11 @@ local function parse_tsx(xml)
     tsx.imageheight = tonumber(a.height)
   end
   tsx.tiles = {}
+  -- a self-closing tile stub (`<tile id="86"/>`) would otherwise be
+  -- paired with the NEXT record's closer, swallowing that tile's own
+  -- properties (this ate the wall-run lane's runnable flag once); give
+  -- stubs an empty body so they pair with themselves
+  xml = xml:gsub('<tile%s+id="(%d+)"[^>]-/>', '<tile id="%1"></tile>')
   for id, body in xml:gmatch('<tile%s+id="(%d+)"%s*(.-)</tile>') do
     local props = {}
     for pm in body:gmatch("<property%s+(.-)/>") do
@@ -160,6 +167,7 @@ function tiled.load(path)
       if p.friction then gff[t + 1] = gff[t + 1] + 4 end
       if p.arrow_pass then gff[t + 1] = gff[t + 1] + 8 end
       if p.runnable then gff[t + 1] = gff[t + 1] + 16 end
+      if p.oneway   then gff[t + 1] = gff[t + 1] + 32 end
       if p.kind     then kinds_by_tile[t]  = p.kind end
       if p.slope    then slopes_by_tile[t] = p.slope end
       if p.phase    then phase_by_tile[t]  = true end
@@ -303,6 +311,11 @@ function tiled.load(path)
             if #n > #kind
             and n:lower():sub(1, #kind + 1) == kind .. "_" then
               g = n:sub(#kind + 2)      -- "key_01" -> group "01"
+            elseif (kind == "updraft" or kind == "outdraft")
+            and #n > 6 and n:lower():sub(1, 7) == "pusher_" then
+              -- the pusher family shares the legacy "pusher_" name
+              -- prefix, so variant-placed objects keep its grouping
+              g = n:sub(8)              -- "pusher_01" -> group "01"
             else
               g = n
             end
@@ -311,6 +324,10 @@ function tiled.load(path)
             kind = kind, x = wx, y = wy, g = g, name = o.name,
             spr = (t and t >= 0 and t < n_tiles) and t or nil,
             rot = rot ~= 0 and rot or nil,
+            -- the placed object's size rides along (tile objects are
+            -- 16x16 by default; a mover sizes its block footprint
+            -- from the object's w/h, up to 3 tiles a way)
+            ow = o.width, oh = o.height,
           }
           -- pass other custom properties through for per-instance tuning
           -- (they override entity defaults in the game)

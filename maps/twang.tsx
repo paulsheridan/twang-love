@@ -144,6 +144,11 @@
    <property name="solid" type="bool" value="true"/>
   </properties>
  </tile>
+ <tile id="64">
+  <properties>
+   <property name="oneway" type="bool" value="true"/>
+  </properties>
+ </tile>
  <tile id="34">
   <properties>
    <property name="solid" type="bool" value="true"/>
@@ -329,11 +334,7 @@
    <property name="sticky" type="bool" value="true"/>
   </properties>
  </tile>
- <tile id="86">
-  <properties>
-   <property name="kind" value="pusher"/>
-  </properties>
- </tile>
+ <tile id="86"/>
  <tile id="81">
   <properties>
    <property name="runnable" type="bool" value="true"/>
@@ -428,6 +429,11 @@
   <properties>
    <property name="solid" type="bool" value="true"/>
    <property name="phase" type="bool" value="true"/>
+  </properties>
+ </tile>
+ <tile id="32">
+  <properties>
+   <property name="spring_ext" type="int" value="1"/>
   </properties>
  </tile>
 </tileset>

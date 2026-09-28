@@ -1,11 +1,15 @@
 -- Game orchestrator: owns the shared state (world, entities, player,
--- camera, input), runs the fixed-timestep 30hz simulation, the controls
--- panel mode, and renders via src/render/blit.lua.
+-- camera, input), runs the fixed-timestep 60hz simulation (world time
+-- measured in 30hz-steps; see config.sim), the controls panel mode, and
+-- renders via src/render/blit.lua.
 --
--- Simulation is a fixed 1/30s timestep with an accumulator. Each step
--- advances world time by ctx.dt steps (1 normally; reduced while aiming
--- for smooth slow motion). Held input is polled once per rendered frame
--- (src/input.lua); press edges are evaluated once per sim step.
+-- Simulation is a fixed 1/60s timestep with an accumulator. Each tick
+-- advances world time by ctx.dt steps (30/sim.rate normally; divided
+-- further while aiming for smooth slow motion). Held input is polled
+-- once per rendered frame (src/input.lua); press edges are evaluated
+-- once per sim tick. The draw pass eases every movable between the last
+-- two sim states (render interpolation), so the presentation is smooth
+-- on any refresh rate.
 
 local config   = require("src.config")
 local Input    = require("src.input")
@@ -15,12 +19,12 @@ local Level    = require("src.level")
 local Camera   = require("src.camera")
 local Player   = require("src.player")
 local Arrows   = require("src.arrows")
-local Shockwaves = require("src.shockwaves")
 local Enemies  = require("src.enemies")
 local Rockets  = require("src.rockets")
 local Bombs    = require("src.bombs")
 local Particles = require("src.particles")
 local Interactables = require("src.interactables")
+local Movers       = require("src.movers")
 local Save     = require("src.save")
 local Sprites  = require("src.sprites")
 local Blit     = require("src.render.blit")
@@ -45,8 +49,9 @@ function Game.new(skip_select)
   self.level_sel  = 1      -- level-select cursor (1..#select_levels)
   self.unlocked_all = false -- test-menu debug toggle: start any level
   self.menu_open  = false  -- test menu panel (m / tab / start)
-  self.menu_sel   = 1      -- highlighted menu row (1..5)
-  self.settings   = { no_puzzle = false, invincible = false }
+  self.menu_sel   = 1      -- highlighted menu row (1..6)
+  self.settings   = { no_puzzle = false, invincible = false,
+                      no_special = true }
   self.save       = {}     -- best results per level file (Save.load at boot)
   -- per-level run state: sim steps played (the level clock, 30hz), deaths
   -- and the finished-run summary the results panel shows
@@ -118,7 +123,9 @@ function Game:load_level(path)
     menu   = self,             -- menu panels read menu_sel/level_sel/settings
     die    = Player.die,
     hurt   = Player.hurt,
-    dt     = 1,  -- world-time scale of the current step (Game:step sets it)
+    freeze = 0,  -- hitstop counter (Game:step): world-time halts while > 0
+    dt     = 30 / config.sim.rate,  -- world-time scale of the current
+                                    -- step (Game:step keeps it fresh)
   }
   local die = Player.die
   self.ctx.die = function(ctx)
@@ -155,8 +162,10 @@ end
 
 -- ==== simulation ====
 
--- One 30hz tick: aiming/firing first, then a full physics pass every
--- step. The step advances world time by dt steps (1 normally; 1 /
+-- One sim tick: aiming/firing first, then a full physics pass every
+-- step. The step advances world time by dt steps of the 30hz world-time
+-- currency (30/rate normally -- 1 at the 30hz rate, 0.5 at 60hz -- so
+-- per-step constants keep their meaning at any rate; divided further by
 -- aiming.slow_motion_steps while aiming, so slow motion runs every
 -- physics pass at a steady cadence instead of skipping passes).
 -- Everything world-time based (integrators, timers) scales with ctx.dt;
@@ -166,16 +175,41 @@ function Game:step()
   self.step_count = self.step_count + 1
   ctx.input:step()
 
+  -- render interpolation: stamp each movable's previous position; the
+  -- draw pass eases between the last two sim states (alpha = the
+  -- accumulator's unfinished fraction), so 60hz physics presents
+  -- smoothly on any refresh rate
+  local ents = ctx.ents
+  for _, a in ipairs(ents.arrows) do a._px, a._py = a.x, a.y end
+  for _, a in ipairs(ents.e_arrows) do a._px, a._py = a.x, a.y end
+  for _, e in ipairs(ents.enemies) do e._px, e._py = e.x, e.y end
+  for _, r in ipairs(ents.rockets) do r._px, r._py = r.x, r.y end
+  for _, b in ipairs(ents.bombs) do b._px, b._py = b.x, b.y end
+  for _, pt in ipairs(ents.particles) do pt._px, pt._py = pt.x, pt.y end
+  for _, m in ipairs(ents.movers) do m._px, m._py = m.bx, m.by end
+  ctx.player._px, ctx.player._py = ctx.player.x, ctx.player.y
+
+  -- hitstop: while a freeze is pending the world-time scale drops to
+  -- zero (every integrator and timer scales with ctx.dt), so the whole
+  -- simulation hangs for a few steps while the render keeps drawing
+  -- -- the impact reads as a stuck frame. Nothing else changes: input
+  -- cadence and bow turning run in real time and stay responsive.
+  if ctx.freeze and ctx.freeze > 0 then
+    ctx.freeze = ctx.freeze - 1
+    ctx.dt = 0
+    return
+  end
+
   Player.arrow_step(ctx)
   Player.aim_step(ctx)
 
+  local base = 30 / config.sim.rate
   local dt = not ctx.input:down("aim")
-           and 1
-           or (1 / config.aiming.slow_motion_steps)
+           and base
+           or (base / config.aiming.slow_motion_steps)
   ctx.dt = dt
   Player.physics(ctx)
   Arrows.update(ctx)
-  Shockwaves.update(ctx)
   if config.enemies.enabled then
     Enemies.update(ctx)
     Arrows.update_enemy_arrows(ctx)
@@ -185,6 +219,7 @@ function Game:step()
   Particles.update(ctx.ents, dt, ctx.world)
   Particles.update_burns(ctx.ents, dt, ctx.world)
   Interactables.update_springs(ctx.ents, dt, ctx.world)
+  Movers.update(ctx)
 
   -- rooms: a hysteresis-checked border crossing starts the fade wipe;
   -- the room actually switches at full black (Game:room_fade_step)
@@ -391,9 +426,12 @@ function Game:level_unlocked(entry)
 end
 
 -- Starts the chosen level: always a fresh load (switching to another
--- map or restarting the current one), then the game begins.
+-- map or restarting the current one), then the game begins. The frame's
+-- remaining accumulator is dropped, so the new level's clock starts
+-- clean on the next frame instead of ticking a fraction mid-transition.
 function Game:start_level(entry)
   self:load_level(entry.file)
+  self.acc = 0
   self.mode = "play"
 end
 
@@ -402,18 +440,23 @@ end
 function Game:menu_step()
   local ctx = self.ctx
   ctx.input:step()
-  local rows = 5
+  local rows = 6
   if ctx.input:pressed("up") then
     self.menu_sel = ((self.menu_sel - 2) % rows) + 1
   end
   if ctx.input:pressed("down") then
     self.menu_sel = (self.menu_sel % rows) + 1
   end
-  if ctx.input:pressed("swap") then
+  -- the toggle commits on a fresh press only: a held button must not
+  -- flip the highlighted row over and over (up/down keep the repeat --
+  -- that is what it is for)
+  if ctx.input:pressed_fresh("swap") then
     if self.menu_sel == 1 then self:toggle_puzzle()
     elseif self.menu_sel == 2 then self:toggle_invincibility()
     elseif self.menu_sel == 3 then self:toggle_enemies()
-    elseif self.menu_sel == 4 then self.unlocked_all = not self.unlocked_all
+    elseif self.menu_sel == 4 then self.settings.no_special
+                                  = not self.settings.no_special
+    elseif self.menu_sel == 5 then self.unlocked_all = not self.unlocked_all
     else self:open_level_select() end
   end
   if ctx.input:pressed("aim") or ctx.input:pressed("jump") then
@@ -436,7 +479,7 @@ function Game:toggle_invincibility()
   self.settings.invincible = not self.settings.invincible
 end
 
--- Test-menu row 4: leave play for the launch level select.
+-- Test-menu row 5: leave play for the launch level select.
 function Game:open_level_select()
   self.menu_open = false
   self.mode = "select"
@@ -458,8 +501,12 @@ end
 -- ==== rendering ====
 
 function Game:draw()
+  -- the draw pass eases between the last two sim states: alpha is the
+  -- accumulator's unfinished fraction of a step (0 right after a tick
+  -- consumed all pending time, approaching 1 as the next nears)
+  local alpha = math.min(1, math.max(0, self.acc / self.step_dt))
   Blit.render(self.ctx, self.menu_open, self.mode == "select",
-    self.mode == "complete")
+    self.mode == "complete", alpha)
 end
 
 -- ==== input callbacks ====

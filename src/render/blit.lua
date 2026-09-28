@@ -4,6 +4,7 @@
 
 local config = require("src.config")
 local Palette = require("src.palette")
+local Util   = require("src.util")
 
 local render_world  = require("src.render.world")
 local render_player = require("src.render.player")
@@ -29,8 +30,12 @@ function Blit.canvas()
 end
 
 -- One rendered frame: world + (level select / results / menu overlay)
--- into the native canvas, blit to the window, then HUD.
-function Blit.render(ctx, menu_open, level_select, complete)
+-- into the native canvas, blit to the window, then HUD. `alpha` (0..1)
+-- eases every movable between its previous and current sim positions --
+-- the accumulator's unfinished fraction -- so 60hz physics presents
+-- smoothly on any refresh rate.
+function Blit.render(ctx, menu_open, level_select, complete, alpha)
+  alpha = alpha or 1
   local vw, vh = config.view.width, config.view.height
   love.graphics.setCanvas(canvas)
   -- background: sky blue (levels carry no backdrop sprites; pits and
@@ -40,10 +45,13 @@ function Blit.render(ctx, menu_open, level_select, complete)
   -- world-pass vector lines (arrow shafts, rope, aim lines) draw 2px thick
   -- to match the 2x2-upscaled sheet; the controls panel resets its own 1px
   love.graphics.setLineWidth(2)
+  local cam = ctx.cam
+  local cam_x = Util.lerp(cam._rx or cam.x, cam.x, alpha)
+  local cam_y = Util.lerp(cam._ry or cam.y, cam.y, alpha)
   love.graphics.push()
-  love.graphics.translate(-math.floor(ctx.cam.x), -math.floor(ctx.cam.y))
-  render_world.world(ctx)
-  render_player(ctx)
+  love.graphics.translate(-math.floor(cam_x), -math.floor(cam_y))
+  render_world.world(ctx, alpha)
+  render_player(ctx, alpha)
   render_world.foreground(ctx)  -- buildings/hidden spaces, above the player
   love.graphics.pop()
   -- HUD on the canvas: hearts live in screen space (outside the camera

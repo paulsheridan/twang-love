@@ -3,12 +3,17 @@
 -- player's arrows.
 --
 -- All functions read shared state through ctx: {config, world, ents, cam}.
+-- Movable entities draw at their eased position (Util.render_pos): the
+-- sim stamps each one's previous position every tick, and the draw
+-- pass's alpha (0..1) eases between the last two sim states so 60hz
+-- physics presents smoothly on any refresh rate.
 -- Pure read: nothing here mutates game state.
 
 local config = require("src.config")
 local Palette = require("src.palette")
 local Sprites = require("src.sprites")
 local Arrows = require("src.arrows")
+local Util   = require("src.util")
 
 local Render = {}
 
@@ -59,6 +64,50 @@ end
 
 -- ==== interactables ====
 
+-- The pusher variants' direction hints, drawn over the device sprite so
+-- the launch they promise is readable at a glance:
+--
+--   updraft: three short straight-up ticks over the tile (the column
+--   drag above it);
+--   outdraft: a three-tick fan splayed 0/±45 degrees, tracing the cone
+--   the drain covers.
+local function draw_pusher_ticks(pu)
+  local tw = config.tile_size
+  local cx = math.floor(pu.x + tw/2)
+  local top = math.floor(pu.y) - 2
+  love.graphics.setColor(pcol(7))
+  if pu.variant == "outdraft" then
+    -- x offsets land the 2x2 dots on the fan legs (split around centre)
+    local dxy = { {0,-4}, {3,-3}, {-3,-3} }
+    for _, d in ipairs(dxy) do dot(cx + d[1] - 1, top + d[2]) end
+  else
+    for i = 0, 2 do dot(cx - 1, top - 2 - i*3) end
+  end
+end
+
+-- Movers draw their sprite per covered tile (the block footprint), plus
+-- a direction tick: a dot trail pointing the way the line runs (grey for
+-- an auto cycler; an orange dot on the face of a parked trigger mover,
+-- which lights the way it will run once struck).
+local function draw_mover_ticks(m, bx, by)
+  local tw = config.tile_size
+  local cx = math.floor(bx + m.bw / 2)
+  local cy = math.floor(by + m.bh / 2)
+  if m.mode == "trigger" and m.state == "rest" then
+    -- parked trigger: a warm dot (it waits for you)
+    love.graphics.setColor(pcol(9))
+    dot(cx - 1, cy - 1)
+    return
+  end
+  -- moving (or auto): grey dots trailing along the travel axis ahead
+  love.graphics.setColor(pcol(7))
+  local ddx, ddy = m.dirn * m.dx, m.dirn * m.dy
+  for i = 1, 3 do
+    dot(cx - 1 + math.floor(ddx * (i * 5)),
+        cy - 1 + math.floor(ddy * (i * 5)))
+  end
+end
+
 local function draw_interactables(ctx)
   local ents = ctx.ents
   local tiles = ctx.tiles
@@ -78,11 +127,44 @@ local function draw_interactables(ctx)
     Sprites.draw(s.ext and tiles.spring_ext or (s.spr or tiles.spring),
       s.x, s.y, false, s.rot)
   end
+  for _, gg in ipairs(ents.guns) do
+    if not gg.taken then
+      -- the dropped gun (placeholder art: a chunky dark slab with a red
+      -- tip; sits on the ground like the key pickups)
+      local gx, gy = math.floor(gg.x) + 2, math.floor(gg.y) + 8
+      love.graphics.setColor(pcol(1))
+      love.graphics.rectangle("fill", gx, gy, 10, 5)
+      love.graphics.setColor(pcol(0))
+      love.graphics.rectangle("fill", gx, gy + 5, 3, 3)
+      love.graphics.setColor(pcol(8))
+      love.graphics.rectangle("fill", gx + 9, gy, 3, 2)
+      love.graphics.setColor(1, 1, 1, 1)
+    end
+  end
   for _, w in ipairs(ents.winches) do
     Sprites.draw(w.spr or tiles.winch, w.x, w.y, false, w.rot)
   end
   for _, pu in ipairs(ents.pushers) do
     Sprites.draw(pu.spr or tiles.pusher, pu.x, pu.y, false, pu.rot)
+    draw_pusher_ticks(pu)
+  end
+  for _, m in ipairs(ents.movers) do
+    -- the block draws one sprite per footprint cell laid out from the
+    -- block's LIVE pixel position (a 1x2 mover is two stacked cells of
+    -- the same art, glued to the fractional box as it slides) — floored
+    -- to whole pixels like every body, so the ride is smooth rather
+    -- than popping tile to tile
+    -- the block's box lives on bx/by (not x/y): ease the box origin
+    local bx = m._px and Util.lerp(m._px, m.bx, alpha or 1) or m.bx
+    local by = m._py and Util.lerp(m._py, m.by, alpha or 1) or m.by
+    local spr = m.spr or tiles.mover
+    for r = 0, m.ht - 1 do
+      for c = 0, m.wt - 1 do
+        Sprites.draw(spr, bx + c * config.tile_size,
+          by + r * config.tile_size, false, nil)
+      end
+    end
+    draw_mover_ticks(m, bx, by)
   end
   for _, e in ipairs(ents.exits) do
     Sprites.draw(e.spr or tiles.exit, e.x, e.y, false, e.rot)
@@ -94,33 +176,36 @@ end
 
 -- ==== particles ====
 
-local function draw_particles(ctx)
+local function draw_particles(ctx, alpha)
   for _, pt in ipairs(ctx.ents.particles) do
     love.graphics.setColor(pcol(pt.col or 8))
     -- particles default to the 2x2 dot; shards carry their own chunk
     -- size so the debris reads bigger than the spray around it
     local s = pt.s or 2
-    love.graphics.rectangle("fill", math.floor(pt.x), math.floor(pt.y), s, s)
+    local x, y = Util.render_pos(pt, alpha)
+    love.graphics.rectangle("fill", math.floor(x), math.floor(y), s, s)
   end
 end
 
 -- ==== enemies ====
 
-local function draw_enemies(ctx)
+local function draw_enemies(ctx, alpha)
   if not config.enemies.enabled then return end  -- toggled off: invisible
   local ents, tiles = ctx.ents, ctx.tiles
   for _, e in ipairs(ents.enemies) do
+    local x, y = Util.render_pos(e, alpha)
     Sprites.draw(e.spr or ((e.type == "melee") and tiles.melee or tiles.archer),
-      e.x, e.y, e.facing < 0, e.rot)
+      x, y, e.facing < 0, e.rot)
   end
 end
 
 -- ==== enemy arrows ====
 
-local function draw_e_arrows(ctx)
+local function draw_e_arrows(ctx, alpha)
   for _, a in ipairs(ctx.ents.e_arrows) do
     if a.active then
-      local x, y = math.floor(a.x), math.floor(a.y)
+      local ex, ey = Util.render_pos(a, alpha)
+      local x, y = math.floor(ex), math.floor(ey)
       local len = math.sqrt(a.vx*a.vx + a.vy*a.vy)
       if len > 0 then
         love.graphics.setColor(pcol(8))  -- enemy arrows are red
@@ -138,13 +223,14 @@ end
 -- An aiming archer shows its ballistic arc, like the player's aim
 -- preview: a short direction line from the eye, then dots along the
 -- solved trajectory (stopping where terrain would block the arrow).
-local function draw_archer_aims(ctx)
+local function draw_archer_aims(ctx, alpha)
   if not config.enemies.enabled then return end  -- toggled off: invisible
   local cfg = config.enemies
   local shaft = config.arrows.colour
   for _, e in ipairs(ctx.ents.enemies) do
     if e.type == "archer" and e.state == "aim" and e.aim_vx then
-      local ex, ey = math.floor(e.x + e.w/2), math.floor(e.y + e.h/2)
+      local sx, sy = Util.render_pos(e, alpha)
+      local ex, ey = math.floor(sx + e.w/2), math.floor(sy + e.h/2)
       local len = math.sqrt(e.aim_vx*e.aim_vx + e.aim_vy*e.aim_vy)
       if len > 0 then
         local ux, uy = e.aim_vx/len, e.aim_vy/len
@@ -170,12 +256,13 @@ end
 -- red ribbon (two outer lines) around a hot white core, from the muzzle
 -- out to the wall it stops at. Vector primitives draw 2px thick, so the
 -- offsets fake the extra width without transforming the pixel canvas.
-local function draw_lasers(ctx)
+local function draw_lasers(ctx, alpha)
   if not config.enemies.enabled then return end  -- toggled off: invisible
   local cfg = config.enemies
   for _, e in ipairs(ctx.ents.enemies) do
     if e.type == "laser" then
-      local ex, ey = math.floor(e.x + e.w/2), math.floor(e.y + e.h/2)
+      local sx, sy = Util.render_pos(e, alpha)
+      local ex, ey = math.floor(sx + e.w/2), math.floor(sy + e.h/2)
       if e.beam then
         local b = e.beam
         local tx = ex + math.floor(b.dx * b.len)
@@ -207,7 +294,7 @@ end
 -- An aiming rocketeer telegraphs with a blinking red warning of dotted
 -- sparks rising from its head: the shot goes up, so the telegraph does
 -- too (same blink math as the laser sight).
-local function draw_rocketeer_aims(ctx)
+local function draw_rocketeer_aims(ctx, alpha)
   if not config.enemies.enabled then return end  -- toggled off: invisible
   local cfg = config.enemies
   for _, e in ipairs(ctx.ents.enemies) do
@@ -215,8 +302,9 @@ local function draw_rocketeer_aims(ctx)
       local phase = math.floor((cfg.rocket_aim_steps - e.aim_t)
         / cfg.rocket_sight_blink) % 2
       if phase == 0 then
-        local ex = math.floor(e.x + e.w/2)
-        local top = math.floor(e.y)
+        local sx, sy = Util.render_pos(e, alpha)
+        local ex = math.floor(sx + e.w/2)
+        local top = math.floor(sy)
         love.graphics.setColor(pcol(8))
         for i = 0, 3 do dot(ex, top - 2 - i*3) end
       end
@@ -229,7 +317,7 @@ end
 -- An aiming bomber telegraphs with a blinking orange dot held above
 -- its head (the raised bomb) around a flickering white fuse spark,
 -- same blink math as the other telegraphs.
-local function draw_bomber_aims(ctx)
+local function draw_bomber_aims(ctx, alpha)
   if not config.enemies.enabled then return end  -- toggled off: invisible
   local cfg = config.enemies
   for _, e in ipairs(ctx.ents.enemies) do
@@ -237,8 +325,9 @@ local function draw_bomber_aims(ctx)
       local phase = math.floor((cfg.bomber_aim_steps - e.aim_t)
         / cfg.bomber_sight_blink) % 2
       if phase == 0 then
-        local ex = math.floor(e.x + e.w/2)
-        local top = math.floor(e.y)
+        local sx, sy = Util.render_pos(e, alpha)
+        local ex = math.floor(sx + e.w/2)
+        local top = math.floor(sy)
         love.graphics.setColor(pcol(9))
         dot(ex, top - 5)
         love.graphics.setColor(pcol(7))
@@ -255,10 +344,11 @@ end
 -- cone and a flickering orange exhaust, oriented by the rocket's
 -- heading (a hovering rocket hangs nose-up). The smoke trail itself is
 -- particles.
-local function draw_rockets(ctx)
+local function draw_rockets(ctx, alpha)
   for _, r in ipairs(ctx.ents.rockets) do
     if r.active then
-      local x, y = math.floor(r.x), math.floor(r.y)
+      local rx, ry = Util.render_pos(r, alpha)
+      local x, y = math.floor(rx), math.floor(ry)
       local hx, hy = r.hx or 0, r.hy or -1
       -- exhaust flame flickers behind the tail
       love.graphics.setColor(pcol(9))
@@ -282,45 +372,16 @@ end
 
 -- A thrown bomb draws as a small round grenade: a 6px red body with a
 -- white fuse spark that blinks as the fuse burns down.
-local function draw_bombs(ctx)
+local function draw_bombs(ctx, alpha)
   for _, b in ipairs(ctx.ents.bombs) do
     if b.active then
-      local x, y = math.floor(b.x), math.floor(b.y)
+      local bx, by = Util.render_pos(b, alpha)
+      local x, y = math.floor(bx), math.floor(by)
       love.graphics.setColor(pcol(8))
       love.graphics.circle("fill", x, y, 3)
       love.graphics.setColor(pcol(7))
       if math.floor(b.fuse / 2) % 2 == 0 then
         dot(x + 3, y - 3)
-      end
-    end
-  end
-end
-
--- ==== shockwaves ====
-
--- A shockwave draws as its front: a semicircular arc of dots opening
--- along the travel direction (the 180-degree cone the sim collides
--- with). The nose of the front is hot white, the flanks the wave's
--- colour, and the arc grows with the wave (the radius is simulated
--- state). Parametrized trig-free: a point on the arc is
--- centre + r * (heading * sqrt(1-t^2) + perpendicular * t) for t in
--- -1..1.
-local function draw_shockwaves(ctx)
-  local cfg = config.shockwave
-  for _, w in ipairs(ctx.ents.shockwaves) do
-    if w.active then
-      local len = math.sqrt(w.vx*w.vx + w.vy*w.vy)
-      if len > 0 then
-        local fx, fy = w.vx/len, w.vy/len
-        local px, py = -fy, fx
-        local steps = math.max(6, math.floor(w.r * 2))
-        for i = 0, steps do
-          local t = (i / steps) * 2 - 1
-          local s = math.sqrt(1 - t*t)
-          love.graphics.setColor(pcol(math.abs(t) < 0.5 and 7 or cfg.colour))
-          dot(w.x + (fx * s + px * t) * w.r,
-              w.y + (fy * s + py * t) * w.r)
-        end
       end
     end
   end
@@ -361,10 +422,11 @@ end
 
 local ARROW_SHAFT = 9
 
-local function draw_arrows(ctx)
+local function draw_arrows(ctx, alpha)
   for _, a in ipairs(ctx.ents.arrows) do
     if a.active then
-      local x, y = math.floor(a.x), math.floor(a.y)
+      local ax, ay = Util.render_pos(a, alpha)
+      local x, y = math.floor(ax), math.floor(ay)
       if a.stuck then
         love.graphics.setColor(pcol(7))
         arrow_tip(x, y)
@@ -397,6 +459,14 @@ local function draw_arrows(ctx)
               love.graphics.setColor(pcol(7))
               dot(x + math.floor(hx*6), y + math.floor(hy*6))
             end
+          elseif a.kind == "gun" then
+            -- the gun in flight: a chunky dark shell with a red tip
+            -- (placeholder art, like the dropped pickup)
+            love.graphics.setColor(pcol(1))
+            love.graphics.rectangle("fill",
+              x + math.floor(hx*3) - 2, y + math.floor(hy*3) - 2, 4, 4)
+            love.graphics.setColor(pcol(8))
+            dot(x + math.floor(hx*4), y + math.floor(hy*4))
           else
             love.graphics.setColor(pcol(7))
             arrow_tip(x, y)
@@ -412,44 +482,45 @@ end
 
 -- The attached rope: a line from the anchored arrow's tip to the player
 -- centre, drawn under the player sprite.
-local function draw_ropes(ctx)
+local function draw_ropes(ctx, alpha)
   local p = ctx.player
   -- the winch's line: from the winch centre to the player while the
   -- motor reels them in (the arrow itself was consumed on capture)
   if p.winch and p.winch.ent then
     local w = p.winch.ent
     love.graphics.setColor(pcol(config.rope.colour))
+    local px, py = Util.render_pos(p, alpha)
     love.graphics.line(w.x + config.tile_size/2, w.y + config.tile_size/2,
-      math.floor(p.x + p.w/2), math.floor(p.y + p.h/2))
+      math.floor(px + p.w/2), math.floor(py + p.h/2))
     return
   end
   local rope = p.rope
   if not rope or not rope.arrow or not rope.arrow.active then return end
   local a = rope.arrow
   love.graphics.setColor(pcol(config.rope.colour))
+  local px, py = Util.render_pos(ctx.player, alpha)
   love.graphics.line(a.x, a.y,
-    math.floor(ctx.player.x + ctx.player.w/2),
-    math.floor(ctx.player.y + ctx.player.h/2))
+    math.floor(px + ctx.player.w/2),
+    math.floor(py + ctx.player.h/2))
 end
 
 -- The full world pass, in draw order (player drawn separately on top;
 -- the foreground overlay renders after them, see render/blit.lua).
-function Render.world(ctx)
+function Render.world(ctx, alpha)
   draw_map(ctx)
-  draw_interactables(ctx)
-  draw_particles(ctx)
-  draw_enemies(ctx)
-  draw_archer_aims(ctx)
-  draw_lasers(ctx)
-  draw_rocketeer_aims(ctx)
-  draw_bomber_aims(ctx)
-  draw_e_arrows(ctx)
-  draw_rockets(ctx)
-  draw_bombs(ctx)
-  draw_shockwaves(ctx)
-  draw_arrows(ctx)
+  draw_interactables(ctx, alpha)
+  draw_particles(ctx, alpha)
+  draw_enemies(ctx, alpha)
+  draw_archer_aims(ctx, alpha)
+  draw_lasers(ctx, alpha)
+  draw_rocketeer_aims(ctx, alpha)
+  draw_bomber_aims(ctx, alpha)
+  draw_e_arrows(ctx, alpha)
+  draw_rockets(ctx, alpha)
+  draw_bombs(ctx, alpha)
+  draw_arrows(ctx, alpha)
   draw_booms(ctx)
-  draw_ropes(ctx)
+  draw_ropes(ctx, alpha)
 end
 
 -- Foreground overlay pass: drawn after the player so buildings and

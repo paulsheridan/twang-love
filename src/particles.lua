@@ -1,6 +1,7 @@
 -- Particles: poofs (key releases, deaths, arrow expiry), blood,
 -- laser-impact sparks, smoke, explosion bursts, heavy-hit debris shards,
--- scorch chunks and the burning aftermath anchored at impact sites.
+-- the spirit arrow's ghostly fire jet, scorch chunks and the burning
+-- aftermath anchored at impact sites.
 --
 -- Particles are simple world-space dots with velocity and a step lifetime
 -- (`s` optionally sizes the drawn square; `g` overrides the shared
@@ -70,6 +71,34 @@ function Particles.smoke(ents, x, y)
   end
 end
 
+-- Footfall dust: a small spray of grey puffs kicked off the ground at
+-- (x, y) — jump takeoff and landings. `strength` in 0..1 scales the
+-- count and speed (a hard fall kicks more dust than a hop).
+function Particles.dust(ents, x, y, power)
+  local cfg = config.particles
+  local n = math.max(1, math.floor(cfg.dust_count * (0.5 + 0.5 * (power or 0.5)) + 0.5))
+  for i = 1, n do
+    local a   = -math.pi * 0.5 + (math.random() - 0.5) * 1.8
+    local spd = math.random() * 1.6 + 0.4 + (power or 0.5)
+    add(ents.particles, x + math.random()*6 - 3, y - 1,
+      math.cos(a)*spd, math.sin(a)*spd,
+      cfg.dust_colour, math.random(cfg.dust_life[1], cfg.dust_life[2]))
+  end
+end
+
+-- The bow's report: a tiny poof thrown along the fire direction at the
+-- muzzle (the shot's visible puff), darker than the white key poof.
+function Particles.fire_puff(ents, x, y, dx, dy)
+  local cfg = config.particles
+  local base = math.atan2(dy, dx)
+  for i = 1, cfg.fire_count do
+    local a   = base + math.random()*0.7 - 0.35
+    local spd = math.random() * 1.8 + 0.6
+    add(ents.particles, x, y, math.cos(a)*spd, math.sin(a)*spd,
+      cfg.fire_colour, math.random(cfg.fire_life[1], cfg.fire_life[2]))
+  end
+end
+
 -- A hot radial burst for a rocket detonation, alternating red/orange
 -- (the flash ring itself is drawn from the booms list, not particles).
 function Particles.boom(ents, x, y)
@@ -104,6 +133,23 @@ function Particles.shards(ents, x, y, avx, avy, bvx, bvy)
       cols[(i % #cols) + 1],
       math.random(cfg.shard_life[1], cfg.shard_life[2]),
       2 + math.floor(math.random() * 3))
+  end
+end
+
+-- The spirit arrow's fire burst: a jet of ghostly blue force streaming
+-- out from the bow along the AIM direction (dx/dy, the exhaust the
+-- fling pushes against) with a white new-moon core at the centre --
+-- the visible stand-in for the force applied to the player.
+function Particles.spirit_burst(ents, x, y, dx, dy)
+  local cfg = config.particles
+  local base = math.atan2(dy, dx)
+  for i = 1, cfg.spirit_count do
+    local a   = base + math.random()*0.9 - 0.45
+    local spd = math.random() * cfg.spirit_speed + 1
+    add(ents.particles, x, y, math.cos(a)*spd, math.sin(a)*spd,
+      (i % 2 == 0) and cfg.spirit_colour or 7,
+      math.random(cfg.spirit_life[1], cfg.spirit_life[2]),
+      2 + math.floor(math.random() * 2))
   end
 end
 

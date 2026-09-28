@@ -1,5 +1,7 @@
--- Player rendering: sprite state machine, carried key, and the aim
--- indicator with its bounce-aware trajectory preview.
+-- Player rendering: sprite state machine, carried key, the per-kind
+-- body tints (i-frame shield red; spirit equipped = ghostly blue) and
+-- the aim indicator (bounce-aware arc for arrows, fling trail for the
+-- spirit).
 
 local config = require("src.config")
 local Palette = require("src.palette")
@@ -15,8 +17,11 @@ local function dot(x, y)
   love.graphics.rectangle("fill", math.floor(x), math.floor(y), 2, 2)
 end
 
-return function(ctx)
+return function(ctx, alpha)
   local p = ctx.player
+  -- the body eases between the last two sim states like everything
+  -- else (the aim preview reads live state: the bow is real-time)
+  local px, py = Util.render_pos(p, alpha or 1)
 
   -- i-frames: a red silhouette overlay that fades out as the shield
   -- lapses (replaces the old blink, which hid the player during slow
@@ -28,6 +33,13 @@ return function(ctx)
                    / cfg.shield_tint_fade_steps
     local r, g, b = pcol(cfg.shield_tint_colour)
     tint = { r, g, b, cfg.shield_tint_alpha * fade }
+  elseif p.arrow_kind == "spirit" then
+    -- the spirit arrow: while its kind is equipped the body reads as
+    -- ghostly blue (same silhouette-masking overlay as the shield; the
+    -- i-frame red above wins while it lasts so hits stay legible)
+    local scfg = config.spirit
+    local r, g, b = pcol(scfg.tint_colour)
+    tint = { r, g, b, scfg.tint_alpha }
   end
 
   local s
@@ -44,7 +56,8 @@ return function(ctx)
   end
   local threshold = config.aiming.downward_sin_threshold
   if p.land_frames > 0 then s = 99
-  elseif ctx.input:down("aim") and Util.p8sin(p.aim_angle) > threshold then s = 98
+  elseif not p.gr and ctx.input:down("aim")
+  and Util.p8sin(p.aim_angle) > threshold then s = 98
   elseif p.aimed_down and not p.gr then s = 98
   end
 
@@ -54,10 +67,19 @@ return function(ctx)
     if ax > 0 then draw_facing = 1
     elseif ax < 0 then draw_facing = -1 end
   end
-  Sprites.draw(s, p.x - 4, p.y - 4, draw_facing < 0, nil, tint)
+  Sprites.draw(s, px - 4, py - 4, draw_facing < 0, nil, tint)
   -- a carried key rides centred on the player
   if p.key then
-    Sprites.draw(ctx.tiles.key, p.x - 4, p.y - 2)
+    Sprites.draw(ctx.tiles.key, px - 4, py - 2)
+  end
+  -- a held gun reads at the hip: a chunky dark slab (the placeholder
+  -- art; the pickup and the fired shell share it) until real art lands
+  if p.guns and p.guns > 0 then
+    love.graphics.setColor(pcol(1))
+    love.graphics.rectangle("fill", math.floor(px) + 3, math.floor(py) - 1, 5, 3)
+    love.graphics.setColor(pcol(8))
+    love.graphics.rectangle("fill", math.floor(px) + 7, math.floor(py) - 1, 1, 3)
+    love.graphics.setColor(1, 1, 1, 1)
   end
 
   -- aim indicator + predicted trajectory (floored: fractional line/point
@@ -66,7 +88,7 @@ return function(ctx)
     local tw = config.tile_size
     local vw, vh = config.view.width, config.view.height
     local cfg = config.arrows
-    local scfg = config.shockwave
+    local scfg = config.spirit
     local cx, cy = math.floor(p.x + p.w/2), math.floor(p.y + p.h/2)
     -- the preview launches at the same speed as the real shot: the
     -- analog stick force scales it just like Arrows.fire does
@@ -79,47 +101,17 @@ return function(ctx)
     end
     local world = ctx.world
     love.graphics.setColor(pcol(cfg.colour))
-    if p.arrow_kind == "shockwave" then
-      -- wave preview: straight flight that bounces off anything (the
-      -- wave never sticks), dots every preview_dot_px of flight,
-      -- stopping at the fizzle range; the front's full-grown arc
-      -- (opening along the final heading) shows the swept size
-      local w_spd = scfg.speeds[p.aim_power]
-        * math.max(p.aim_force or 1, scfg.min_force_scale)
-      local tvx = Util.p8cos(p.aim_angle) * w_spd
-      local tvy = Util.p8sin(p.aim_angle) * w_spd
-      local tx, ty = cx, cy
-      local traveled, next_dot, guard = 0, 0, 0
-      while traveled < scfg.max_range and guard < 96 do
-        guard = guard + 1
-        local nx, ny = tx + tvx, ty + tvy
-        if world:solid_for_arrow(nx, ny) or world:in_slope_solid(nx, ny) then
-          local hx = world:solid_for_arrow(nx, ty) or world:in_slope_solid(nx, ty)
-          local hy = world:solid_for_arrow(tx, ny) or world:in_slope_solid(tx, ny)
-          if hx then tvx = -tvx end
-          if hy then tvy = -tvy end
-          if not hx and not hy then tvx, tvy = -tvx, -tvy end
-        end
-        local step_len = math.sqrt((nx-tx)^2 + (ny-ty)^2)
-        tx, ty = nx, ny
-        traveled = traveled + step_len
-        if traveled >= next_dot then
-          dot(tx, ty)
-          next_dot = next_dot + scfg.preview_dot_px
-        end
-      end
-      love.graphics.setColor(pcol(scfg.colour))
-      local wlen = math.sqrt(tvx*tvx + tvy*tvy)
-      if wlen > 0 then
-        local fx, fy = tvx/wlen, tvy/wlen
-        local qx, qy = -fy, fx
-        local arc_steps = math.max(6, math.floor(scfg.radius_max))
-        for i = 0, arc_steps do
-          local t = (i / arc_steps) * 2 - 1
-          local s = math.sqrt(1 - t*t)
-          dot(tx + (fx * s + qx * t) * scfg.radius_max,
-              ty + (fy * s + qy * t) * scfg.radius_max)
-        end
+    if p.arrow_kind == "spirit" then
+      -- spirit preview: no projectile exists, so the dots show the
+      -- FLING instead -- a short spirit-coloured trail from the bow
+      -- opening along the exact opposite of the aim (the way the body
+      -- is about to fly): read it as "you go out along this line,
+      -- away from where you point"
+      local fx, fy = -Util.p8cos(p.aim_angle), -Util.p8sin(p.aim_angle)
+      love.graphics.setColor(pcol(scfg.tint_colour))
+      for i = 1, 5 do
+        local t = i * 6
+        dot(cx + fx * t, cy + fy * t)
       end
     else
       local tvx  = Util.p8cos(p.aim_angle) * spd

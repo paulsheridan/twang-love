@@ -17,10 +17,32 @@ tileset — no flags are hardcoded in level data.
 | `sticky`    | bool   | arrows bounce off these (see `config.arrows.max_bounces`)      |
 | `friction`  | bool   | slippery ground (low friction, like pico-8 flag 2)             |
 | `arrow_pass`| bool   | arrows (player and enemy) fly through, but it still blocks the player and enemies — arrow slits |
+| `oneway`    | bool   | thin platform: standable from above, passable from below — bodies land on it, arrows/enemies/sight pass through (tile 64, the blue slat) |
 | `phase`     | bool   | switch-flipped platform: every instance of a `phase` tile in the level toggles solid<->non-solid together on strikes of `phase`-flagged switches (see below) |
 | `runnable`  | bool   | wall-run lane marker: a line of these tiles is traversed by the player's wall-run (see below). Runnable tiles block nothing (players, enemies, arrows) — don't place them where a floor is needed. |
 | `kind`      | string | entity role, one of the kinds below (classifies tile objects placed on Object Layers) |
 | `slope`     | string | slope collision shape: `/floor`, `\floor`, `\ceil` or `/ceil`. Slope tiles must NOT have the `solid` property; slope collision is handled by the game. |
+
+### One-way platforms (`oneway`)
+
+A tile flagged `oneway` (the blue thin platform, tile 64) is a
+standable-from-above slat: a falling body whose feet cross the tile's
+top edge lands on it (the swept fall span can't tunnel through — a
+max-speed fall is 9px/step and the catch sweeps that whole span).
+Everything else passes through: it is not `solid`, so bodies rising
+from below (jump up through it), arrows, enemy sight and laser beams
+all ignore it. You cannot drop back down through it. Standing on one is
+ground in every gameplay sense (jump, coyote time, the spirit charge,
+walk caps) — `gr` flows as usual.
+
+### Springs (`spring`)
+
+Springs are **landing pads**: the pad fires the instant the player
+lands on it — extend + launch (`config.springs.launch_velocity`), no
+switch involved. A switch strike does nothing to a spring now. The
+hitbox is the pad band at the tile's bottom (`config.springs.
+pad_height` = 8px, matching the collapsed tile-16 art); the extended
+state plays the tile-32 art (`spring_ext`).
 
 ### Phase tiles
 
@@ -77,13 +99,12 @@ collides with them; they are pure markers.
 - **`switch`** — struck by arrows (no key needed); each strike toggles it and
   re-evaluates its group: all switches on -> the group's doors open, any
   off -> they close. The off art is the kind tile, the on art the next tile
-  (id + 1). Switches also extend their group's springs when a strike turns
-  them on. Give a switch the bool property `phase` to make it drive the
+  (id + 1). Give a switch the bool property `phase` to make it drive the
   level's phase tiles on every strike — switches without the flag never
-  touch the blocks (spring/door switches and phase switches stay
-  independent)
-- **`spring`** — spring pad: a switch strike in its group extends it for a
-  moment and vaults whoever stands on it into the air
+  touch the blocks (springs were switch-driven once; they are landing pads
+  now and no longer answer strikes).
+- **`spring`** — spring pad: fires the instant the player LANDS on it
+  (extend + launch skyward; see "Springs" above). No switch wiring.
 - **`spring_ext`** — the extended spring art (not placed)
 - **`winch`** — motorized rope reel: a rope arrow that strikes it is
   consumed and the player is reeled straight into the winch's centre at
@@ -99,16 +120,60 @@ collides with them; they are pure markers.
 - **`checkpoint`** — a green checkpoint flag: touching it makes it the
   death respawn point (a small poof marks the handover). Without a
   touched flag, deaths respawn at a spawn point (the legacy behaviour).
-- **`pusher`** — the pusher device: a solid one-tile block you hop over.
-  A player arrow striking it is consumed (a poof into the device, like
-  the winch capture) and the pusher shoves everything within
-  `config.pusher.radius` (4 tiles) directly away from its centre of mass
-  (its tile centre) with a constant great-force impulse — the launcher
-  puzzle element. Repeatable: every strike fires it again. A bomb arrow
-  striking it detonates its own blast and the pusher's push together
-  (stacking). Enemy darts and shockwave pulses never trigger it. Per-
-  instance overrides (`push`, `radius`, `shove_grace` object properties)
-  beat the defaults.
+- **`gun`** — a placed gun pickup (the one laser riflemen drop on death,
+  also placeable directly): walking into one collects it as ONE
+  explosive shot — the bow's next normal firing launches the gun itself,
+  which detonates on any contact like the bomb arrow's blast.
+- **`pusher` family** (`pusher`, `updraft`, `outdraft` Placements; the
+  kind IS the variant, all sharing sprite tile 86) — the pusher device:
+  a solid one-tile block you hop over. A player arrow striking it is
+  consumed (a poof into the device, like the winch capture) and the
+  device fires its variant's shove with a constant great-force impulse
+  — the launcher puzzle element:
+  - **`updraft`** — a column drag: everything overlapping the device's
+    column or `config.pusher.up.side` tiles (2) to either side, between
+    the device's top edge and `config.pusher.up.reach` (64px — 4 tiles)
+    above it, launches straight up. Legacy `pusher`-kind objects behave
+    as updrafts.
+  - **`outdraft`** — a sector drain: everything within
+    `config.pusher.out.radius` (4 tiles) of the device's centre whose
+    radial lies inside the `config.pusher.out.cone` (45° half-angle)
+    around straight up is shoved along that radial, up-and-away; anyone
+    beside or below the device feels nothing.
+- Repeatable: every strike fires it again. A bomb arrow striking it
+  detonates its own blast and the device's push together (stacking).
+  Enemy darts never trigger it (and the spirit arrow fires no
+  projectile, so it cannot strike anything). Per-instance
+  overrides (`push`, `shove_grace`; updraft `reach`, `side`; outdraft
+  `cone`, `radius` object properties) beat the defaults.
+- **`mover` family** (`mover`, `mover_trigger` Classes; sprite tile 17,
+  the plain orange block) — the moving blocks: a solid block of 1..3
+  tiles a way that travels back and forth along a tile-aligned line from
+  its rest position, pausing the same moment at each end (30 steps, 1s).
+  The line's DIRECTION is the required `dir` property (`up`, `down`,
+  `left` or `right`) — explicit only, nothing about the block's shape
+  implies it, so a block of any footprint can run any way; a missing or
+  misspelled `dir` skips the mover with a warning. It runs for the
+  required `distance` (tiles) property — a mover without either
+  property is skipped with a warning. Bodies standing on the top face
+  ride it; anything solid or any body in its path STALLS it (never a
+  crush).
+  - **`mover`** (auto) cycles forever: rest -> out -> pause -> back ->
+    pause -> out again.
+  - **`mover_trigger`** waits parked at rest until the player LANDS on
+    its top face (a fresh landing: a rider who never gets off keeps it
+    parked) or a player arrow tip enters any tile of the block (the
+    arrow consumed, pusher-style; a bomb arrow detonates first, then
+    fires it). It then runs to the far end, pauses, and returns on its
+    own to park again.
+  - Per-instance overrides: `speed` (px per world-time step, default
+    `config.mover.speed` = 1.0 — INTEGER speeds scroll perfectly
+    evenly; fractional ones stutter on the pixel canvas) and `pause`
+    (steps at each end, default 30). The footprint: explicit
+    `tiles_w`/`tiles_h` (int tiles) properties win; otherwise the
+    object's own placed size (resize the mover object in Tiled) rounds
+    to tiles. Both clamp to `config.mover.max_tiles` = 3 each way
+    (minimum 1). Level1's debug sandbox carries the demo pair.
 
 ## Entities on Object Layers
 
@@ -177,9 +242,29 @@ objects** (no tile) on any Object Layer with the Class/kind `room`
 contiguous world: terrain, entities and puzzle state are shared across
 rooms and persist.
 
+Worked example: `maps/rooms_demo.json` (the level select's "rooms demo"
+row) — two side-by-side 480x320 rooms with a seam pit between them;
+crossing it wipes the screen into room B.
+
+### Authoring rooms in Tiled (step by step)
+
+1. Open the level (16x16, the `twang.tsx` tileset).
+2. **Layer menu → Add Object Layer** (name it e.g. `Rooms`).
+3. Select the **Insert Rectangle** tool (`R`). Draw a rectangle:
+   - its **top-left must sit on a tile corner** — turn on the 16px grid
+     and snap (the loader warns and snaps otherwise),
+   - size it a **multiple of the 480x320 view** (480 wide x 320 tall
+     for one screen; 960x320 for a two-screen-wide room). A room
+     smaller than the view instead centres the camera (a load warning
+     notes it).
+4. With the rectangle selected, set its **Class** (the `type` field in
+   older Tiled) to `room`. Case-insensitive — `Room` works.
+5. Optionally set the rectangle's **Name** (`room_a`, `lower_vault`…).
+   Names are for you; the game only reads Class/kind and geometry.
+
+Rules the loader enforces / warns about:
+
 - Rooms snap to the tile grid at load; overlaps warn.
-- Rooms should be at least one view (480x320) — smaller ones centre the
-  camera in the room instead of scrolling (a load warning notes it).
 - Rooms need not cover the whole map: uncovered "wilderness" clamps the
   camera to the whole map and simulates everything (a warning notes it).
 - A map with no `room` objects behaves exactly as before (one implicit

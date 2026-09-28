@@ -1,10 +1,11 @@
--- Characterization harness driver.
+-- Determinism harness driver.
 --
--- Runs an entry file (legacy or refactored main.lua) headlessly for a fixed
--- number of 30hz sim steps with a deterministic scripted input sequence and
--- dumps periodic state snapshots ("traces"). Run it twice on the legacy
--- entry to confirm determinism, then diff the refactored trace against the
--- legacy one (tests/trace_diff.lua) to prove the refactor changed nothing.
+-- Runs an entry file headlessly for a fixed number of scripted steps with
+-- a deterministic input sequence and dumps periodic state snapshots
+-- ("traces"). Run it twice on the SAME entry and diff the two traces
+-- (tests/trace_diff.lua) to prove the simulation is deterministic.
+-- (The original legacy-cart parity oracle retired when the sim moved off
+-- the cart's 30hz rate: the gameplay has deliberately diverged since.)
 --
 -- Usage (from the love2d project root):
 --   luajit tests/run.lua tests/legacy_main.lua tests/trace_legacy.txt
@@ -18,12 +19,15 @@ if not entry_path or not out_path then
   error("usage: luajit tests/run.lua <entry.lua> <trace-out.txt> [from project root]")
 end
 
+-- The driver feeds 1/30s of real time per scripted step (two 60hz sim
+-- ticks), so the script's step indices are 30hz world-steps -- the game's
+-- internal world-time currency -- whatever the sim rate is.
 local TOTAL_STEPS = 900
 local DUMP_EVERY = 30
 
 -- ==== scripted input ====
 -- Keys are the legacy keymap names. Presses are exactly one step long so
--- they produce a clean btnp edge on that step.
+-- they produce a clean press edge on that step.
 local function script(step)
   local k = {}
   local t = step
@@ -101,7 +105,7 @@ for step = 1, TOTAL_STEPS do
   for k, v in pairs(script(step)) do keys_down[k] = v end
   local event = menu_events[step]
   if event then env.love.keypressed(event) end
-  env.love.update(1 / 30)
+  env.love.update(1 / 30)  -- 1/30s real time: rate/30 sim ticks
   -- exercise the draw path every step too; the strict graphics stubs
   -- turn malformed draw calls (wrong arity/types) into hard errors
   env.love.draw()

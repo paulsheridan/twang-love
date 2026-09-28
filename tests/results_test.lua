@@ -132,7 +132,9 @@ do
     "the new level is a fresh load (with its own exit)")
   assert_true(g.play_steps == 0, "the new level's clock restarts at zero")
   step(env)
-  assert_true(g.play_steps == 1, "the new level's clock runs again")
+  -- one harness call feeds 1/30s of real time: rate/30 sim ticks
+  assert_true(g.play_steps == config.sim.rate / 30,
+    "the new level's clock runs again")
 
   -- completing the last visible level sends jump to the level select
   local p2 = g.ctx.player
@@ -170,7 +172,9 @@ do
   assert_true(g.play_steps == 0 and g.deaths == 0 and g.result == nil,
     "the replay resets the run state")
   step(env)
-  assert_true(g.play_steps == 1, "the replay's clock runs again")
+  -- one harness call feeds 1/30s of real time: rate/30 sim ticks
+  assert_true(g.play_steps == config.sim.rate / 30,
+    "the replay's clock runs again")
 end
 
 -- ==== 6. deaths are counted through the die route ====

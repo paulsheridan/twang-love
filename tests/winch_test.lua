@@ -200,7 +200,8 @@ do
   end
   assert_true(released, "the reel released inside the pass radius")
   local speed = math.sqrt(p.vx*p.vx + p.vy*p.vy)
-  assert_true(speed >= wcfg.min_throw_speed - 0.01,
+  assert_true(speed >= wcfg.min_throw_speed
+    - g.ctx.config.physics.gravity * (30 / g.ctx.config.sim.rate),
     "the throw is at least the minimum speed (got " .. speed .. ")")
   vy_at_release = p.vy
   assert_true(vy_at_release < -8,
@@ -459,7 +460,10 @@ do
   assert_true(edx * tvx + edy * tvy > 0,
     "the throw direction matches the entry side (dot "
       .. (edx * tvx + edy * tvy) .. ")")
-  assert_true(math.sqrt(tvx*tvx + tvy*tvy) >= g.ctx.config.winch.min_throw_speed - 0.01,
+  -- the sampling may catch one gravity tick after the release, so the
+  -- floor carries that slack
+  assert_true(math.sqrt(tvx*tvx + tvy*tvy) >= g.ctx.config.winch.min_throw_speed
+    - g.ctx.config.physics.gravity * (30 / g.ctx.config.sim.rate) - 0.01,
     "the throw keeps its guaranteed minimum speed")
 end
 do
@@ -494,7 +498,9 @@ do
           wcfg = g.ctx.config.winch
           local spd = math.sqrt(p.vx^2 + p.vy^2)
           local dot = edx * p.vx + edy * p.vy
-          if dot <= 0 or spd < wcfg.min_throw_speed - 0.01 then
+          -- the sample may catch one gravity tick after the release
+          local slack = g.ctx.config.physics.gravity * (30 / g.ctx.config.sim.rate)
+          if dot <= 0 or spd < wcfg.min_throw_speed - slack then
             bad = bad + 1
             print(("FAIL (sweep): off=%d yi=%d dot=%.1f spd=%.2f")
               :format(off, yi, dot, spd))

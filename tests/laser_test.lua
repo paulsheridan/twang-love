@@ -347,10 +347,13 @@ do
   end
   assert_true(charges >= 2,
     "the laser recharges into further bursts (" .. charges .. " charges)")
+  -- the wait sample catches the state flip mid-call, one integration
+  -- tick (in world-time steps) after the wait was drawn
+  local slack = 30 / config.sim.rate
   for _, wt in ipairs(waits) do
-    local burst = wt >= config.enemies.laser_burst_min
+    local burst = wt >= config.enemies.laser_burst_min - slack
       and wt <= config.enemies.laser_burst_min + config.enemies.laser_burst_extra
-    local long = wt >= config.enemies.laser_rapid_min
+    local long = wt >= config.enemies.laser_rapid_min - slack
       and wt <= config.enemies.laser_rapid_min + config.enemies.laser_rapid_extra
     assert_true(burst or long,
       "each follow-up wait is either a burst gap or the full recharge ("

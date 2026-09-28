@@ -6,11 +6,11 @@
 --     puzzle)
 --   * a switch strike opens its group's doors while every switch of the
 --     group is on, and closes them again otherwise
---   * a switch strike also extends every spring in its group, vaulting
---     whoever is standing on one
+--   * springs are landing pads: no switch drives them (Player.physics
+--     fires the pad on the landing edge; spring_vault does the launch)
 --   * only switches flagged "phase" (a Tiled bool property) flip the
 --     level's phase tiles (switch-flipped platforms) solid<->non-solid,
---     so a spring or door switch never dissolves the blocks
+--     so a door switch never dissolves the blocks
 
 local config = require("src.config")
 
@@ -43,39 +43,28 @@ function Interactables.trigger_lock(ents, lock)
   end
 end
 
--- A switch strike extends every spring in its group for a moment and
--- vaults whoever is standing on one at that instant.
-function Interactables.trigger_springs(ents, player, group)
+-- Springs are LANDING PADS now (no switches): the pad fires itself the
+-- instant the player lands on it — see Player.physics. This helper does
+-- the vault: the one standing on the pad surface is launched skyward.
+-- `spring` may carry a group (unused now; kept so future wiring can
+-- scope strikes), and `player` is the landing body.
+function Interactables.spring_vault(ents, spring, body)
   local tw = config.tile_size
   local pad = config.springs.pad_height
-  for _, spring in ipairs(ents.springs) do
-    if spring.g == group then
-      spring.ext = config.springs.extension_frames
-      -- vault the player standing on the pad (feet on its surface)
-      local stand = spring.y + tw - pad
-      if player.gr and math.abs((player.y + player.h) - stand) <= 4
-      and player.x + player.w > spring.x and player.x < spring.x + tw then
-        player.vy = config.springs.launch_velocity
-        player.gr = false
-        player.j_frames = 0
-      end
-      -- and any enemy standing on it
-      for _, e in ipairs(ents.enemies) do
-        if e.gr and math.abs((e.y + e.h) - stand) <= 4
-        and e.x + e.w > spring.x and e.x < spring.x + tw then
-          e.vy = config.springs.launch_velocity
-          e.gr = false
-        end
-      end
-    end
+  local stand = spring.y + tw - pad
+  if body.gr and math.abs((body.y + body.h) - stand) <= 4
+  and body.x + body.w > spring.x and body.x < spring.x + tw then
+    body.vy = config.springs.launch_velocity
+    body.gr = false
+    body.j_frames = 0
+    return true
   end
+  return false
 end
 
--- Steps spring extension art timers by `dt` steps of world time.
--- Switches that drive springs are momentary: once every spring of the
--- group has reset, the struck switch pops back out so it can be shot
--- again (door-driving switches stay latched; they belong to groups
--- without springs).
+-- Steps spring extension art timers by `dt` steps of world time. Springs
+-- are landing pads now (fired by the player's landing, src/player.lua):
+-- this pass only ages the extended art.
 function Interactables.update_springs(ents, dt, world)
   local tw = config.tile_size
   for _, spring in ipairs(ents.springs) do
@@ -85,23 +74,6 @@ function Interactables.update_springs(ents, dt, world)
       spring.ext = spring.ext - dt
       if spring.ext <= 0 then
         spring.ext = nil
-        local still_ext = false
-        for _, other in ipairs(ents.springs) do
-          if other.g == spring.g and other.ext then
-            still_ext = true
-            break
-          end
-        end
-        if not still_ext then
-          local popped = false
-          for _, switch in ipairs(ents.switches) do
-            if switch.g == spring.g and switch.on then
-              switch.on = false
-              popped = true
-            end
-          end
-          if popped then Interactables.eval_switch_doors(ents, spring.g) end
-        end
       end
     end
   end

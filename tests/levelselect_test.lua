@@ -70,14 +70,14 @@ do
   g.mode = "select"
   step(env)
   local n = #g.select_levels
-    assert_true(n == 9, "the select shows 8 ladder rows + 1 debug row")
+    assert_true(n == 11, "the select shows 9 ladder rows + 2 debug rows")
   local ladder_rows, debug_rows = 0, 0
   for _, entry in ipairs(g.select_levels) do
     if entry.debug then debug_rows = debug_rows + 1
     else ladder_rows = ladder_rows + 1 end
   end
-  assert_true(ladder_rows == 8 and debug_rows == 1,
-    "eight ladder rows plus one debug row")
+  assert_true(ladder_rows == 9 and debug_rows == 2,
+    "nine ladder rows plus two debug rows (level 1 + the rooms demo)")
   for _, entry in ipairs(config.levels) do
     if entry.hidden then
       local shown = false

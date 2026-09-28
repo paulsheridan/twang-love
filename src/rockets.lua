@@ -68,7 +68,7 @@ end
 -- The global airborne cap (rocket_max_alive) drops excess launches.
 -- A rocket carries a unit heading (hx, hy) instead of a free velocity:
 -- the flight phases steer the heading and the speed comes from config.
--- `kx`/`ky` is a knock vector (a shockwave hit sets it) that drifts the
+-- `kx`/`ky` is a knock vector (a bomb-blast hit sets it) that drifts the
 -- rocket on top of its steered cruise, damped out each step.
 function Rockets.spawn(ctx, x, y)
   local cfg = ctx.config.enemies
@@ -162,7 +162,7 @@ local function step_rocket(ctx, r)
   end
 
   -- flight motion: the steered cruise (heading * speed) plus any
-  -- shockwave knock (a wave-hit rocket drifts along the knock vector,
+  -- blast knock (a bomb-hit rocket drifts along the knock vector,
   -- damped each step, until it fades out)
   local kx, ky = r.kx or 0, r.ky or 0
   local mvx, mvy = r.hx * move + kx * ctx.dt, r.hy * move + ky * ctx.dt

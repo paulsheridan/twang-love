@@ -1,6 +1,7 @@
 -- Level assembly: turns a src/tiled.lua load result into the game's live
 -- entity lists (spawns, enemies, arrows, particles) and the puzzle
--- interactables (keys/locks/doors/switches/springs).
+-- interactables (keys/locks/doors/switches/springs) plus the mover blocks
+-- (src/movers.lua).
 --
 -- Entities are Tiled objects (see src/tiled.lua): roles from the object's
 -- kind/class, puzzle groups from names, extra custom properties override
@@ -41,6 +42,7 @@ function Level.build(level, config)
     spring_ext = level.special.spring_ext or config.tiles.spring_ext,
     winch      = level.special.winch      or config.tiles.winch,
     pusher     = level.special.pusher     or config.tiles.pusher,
+    mover      = level.special.mover      or config.tiles.mover,
     exit       = level.special.exit       or config.tiles.exit,
     checkpoint = level.special.checkpoint or config.tiles.checkpoint,
     archer     = level.special.archer     or config.tiles.archer,
@@ -58,7 +60,9 @@ function Level.build(level, config)
     bombs        = {},
     booms        = {},
     burns        = {},
-    shockwaves   = {},
+    guns         = {},  -- dropped guns (laser kills; pickup = one explosive shot)
+    -- the spirit arrow fires no projectile (src/spirit.lua runs at
+    -- fire time only), so unlike the bomb arrow there is no list
     particles    = {},
     spawn_points = {},
     keys         = {},
@@ -68,6 +72,7 @@ function Level.build(level, config)
     springs      = {},
     winches      = {},
     pushers      = {},
+    movers       = {},
     exits        = {},
     checkpoints  = {},
   }
@@ -153,18 +158,92 @@ function Level.build(level, config)
       local wx, wy = snap_tile(o.x, tw), snap_tile(o.y, tw)
       table.insert(ents.winches, {x = wx, y = wy, g = o.g,
         spr = o.spr or tiles.winch, rot = o.rot})
-    elseif k == "pusher" then
-      -- the pusher owns its tile (a solid block, like a door): the tile
-      -- column/row come from the snapped position
+    elseif k == "gun" then
+      -- a placed gun pickup (an authoring tool for tests/demo maps):
+      -- acts exactly like a dropped one
+      local wx, wy = snap_tile(o.x, tw), snap_tile(o.y, tw)
+      table.insert(ents.guns, { x = wx, y = wy, g = o.g, taken = false,
+        spr = o.spr, rot = o.rot })
+    elseif k == "pusher" or k == "updraft" or k == "outdraft" then
+      -- the pusher family owns its tile (a solid block, like a door):
+      -- the tile column/row come from the snapped position. The kind IS
+      -- the variant ("updraft" launches straight up, "outdraft" drains
+      -- a cone above it up-and-away); legacy "pusher" objects default
+      -- to the updraft behaviour.
       local wx, wy = snap_tile(o.x, tw), snap_tile(o.y, tw)
       local e = {x = wx, y = wy, g = o.g,
         tc = math.floor(wx/tw), tr = math.floor(wy/tw),
+        variant = k == "pusher" and "updraft" or k,
         spr = o.spr or tiles.pusher, rot = o.rot}
-      -- per-instance overrides (push, radius) ride the object props
-      for _, prop in ipairs({"push", "radius", "shove_grace"}) do
+      -- per-instance overrides (push, reach, side, cone, radius,
+      -- shove_grace) ride the object props
+      for _, prop in ipairs({"push", "radius", "shove_grace",
+                             "reach", "side", "cone"}) do
         if o[prop] ~= nil then e[prop] = o[prop] end
       end
       table.insert(ents.pushers, e)
+    elseif k == "mover" or k == "mover_trigger" or k == "movertrigger" then
+      -- the moving block (src/movers.lua): a solid block of tiles that
+      -- travels back and forth along a tile-aligned line from its rest
+      -- position. The line's DIRECTION is the explicit `dir` property
+      -- (up / down / left / right) — nothing about the block's shape
+      -- implies it, so a block of any footprint can run any way — for
+      -- the `distance` (tiles) property's length, rest position first:
+      -- at distance 4 pointing right the block starts at its object
+      -- top-left and runs right, pausing 4 tiles over. `distance` AND
+      -- `dir` are both required (a mover without either is skipped
+      -- with a warning). Per-instance speed/pause overrides ride the
+      -- object props.
+      local wx, wy = snap_tile(o.x, tw), snap_tile(o.y, tw)
+      local dist_tiles = math.floor(tonumber(o.distance or 0))
+      local dirs = {
+        right = { 1, 0 }, left = { -1, 0 },
+        up = { 0, -1 }, down = { 0, 1 },
+      }
+      local d = o.dir and dirs[tostring(o.dir):lower()]
+      if not dist_tiles or dist_tiles <= 0 then
+        print("level: warning - mover '" .. tostring(o.name)
+          .. "' has no usable `distance` property (tiles); skipped")
+      elseif not d then
+        print("level: warning - mover '" .. tostring(o.name)
+          .. "' has no usable `dir` property (up/down/left/right); skipped")
+      else
+        -- footprint: explicit `tiles_w`/`tiles_h` (int tiles) properties
+        -- win; otherwise the object's own placed size (o.ow/o.oh, from
+        -- resizing it in Tiled) rounds to tiles; clamped 1..3 each way
+        local cfg = config.mover
+        local wt = math.max(1, math.min(cfg.max_tiles,
+          tonumber(o.tiles_w)
+            or math.floor((o.ow or tw) / tw + 0.5)))
+        local ht = math.max(1, math.min(cfg.max_tiles,
+          tonumber(o.tiles_h)
+            or math.floor((o.oh or tw) / tw + 0.5)))
+        local dx, dy = d[1], d[2]
+        local m = {
+          mode = k == "mover" and "auto" or "trigger",
+          ox = wx, oy = wy,   -- rest (A end) top-left, px
+          dx = dx, dy = dy,   -- the line's direction (one tile step)
+          len = dist_tiles * tw, -- line length, px
+          wt = wt, ht = ht,   -- footprint, tiles
+          bw = wt * tw, bh = ht * tw,
+          bx = wx, by = wy,   -- the block's current box top-left, px
+          px = 0,             -- progress along the line, tiles
+          dirn = 1,           -- outward (+1) / homeward (-1)
+          state = "rest",     -- rest -> go -> pause -> go ...
+          vel = 0,            -- the block's live world x-velocity, px/step
+          t = 0, f = 0,       -- timers: pause steps, whole-pixel bank
+          g = o.g, name = o.name,
+          spr = o.spr or tiles.mover, rot = o.rot,
+        }
+        for _, prop in ipairs({"speed", "pause", "pause_steps"}) do
+          if o[prop] ~= nil then m[prop] = o[prop] end
+        end
+        if m.pause_steps == nil and m.pause ~= nil then
+          m.pause_steps = m.pause
+          m.pause = nil
+        end
+        table.insert(ents.movers, m)
+      end
     elseif k == "exit" then
       local wx, wy = snap_tile(o.x, tw), snap_tile(o.y, tw)
       table.insert(ents.exits, {x = wx, y = wy,

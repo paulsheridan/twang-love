@@ -463,7 +463,9 @@ do
   assert_true(charges >= 2,
     "the bomber recharges into further bursts (" .. charges .. " charges)")
   for _, wt in ipairs(waits) do
-    local burst = wt >= config.enemies.bomber_burst_min
+    -- (the capture trails the set by one half-tick of update: the wait
+    -- is captured after its first decrement)
+    local burst = wt >= config.enemies.bomber_burst_min - 0.5
       and wt <= config.enemies.bomber_burst_min + config.enemies.bomber_burst_extra
     local long = wt >= config.enemies.bomber_rapid_min
       and wt <= config.enemies.bomber_rapid_min + config.enemies.bomber_rapid_extra

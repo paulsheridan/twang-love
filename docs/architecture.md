@@ -2,8 +2,11 @@
 
 A LÖVE 11 port of the twang pico-8 cart: a 480x320 native render (16x16
 tiles and sprites, each an exact 2x2 upscale of the original 8x8 art) at
-a 30hz fixed-timestep simulation with a smooth camera. Levels are Tiled
-JSON maps (format documented in `docs/tiled-format.md`).
+a 60hz fixed-timestep simulation with render interpolation and a smooth
+camera. World time is measured in 30hz-steps (the pico-8 cart's tick):
+`ctx.dt = 30/sim.rate` per sim tick, so the per-step tuning constants
+are rate-invariant and the rate knob can move without retuning. Levels
+are Tiled JSON maps (format documented in `docs/tiled-format.md`).
 
 ## Layout
 
@@ -19,26 +22,32 @@ src/
    player.lua             player physics, bow aiming/firing, key carrying,
                           rope pendulum (attach/detach/winch), the
                           wall-run over runnable tile lines
-   arrows.lua             player + enemy arrows (flight, bounce, stick, hits);
-                          rope arrows (range, anchoring); the bomb arrow's
-                          contact detonation + blast (detonate_bomb); the
-                          pusher's strike (trigger_pusher); also exposes
-                          simulate_path and the shared radial shove
-                          (radial_shove)
-   enemies.lua            melee patrol; archers with a sense -> aim -> volley ->
-                          investigate brain; patrols bounded by roam_tiles
-   rockets.lua            the rocketeer's homing rockets: spawn, pursuit
+    arrows.lua             player + enemy arrows (flight, bounce, stick, hits);
+                           rope arrows (range, anchoring); the bomb arrow's
+                           contact detonation + blast (detonate_bomb);
+                           the pusher's strike (trigger_pusher); also
+                           exposes simulate_path and the shared
+                           zone-driven shove (shove)
+    enemies.lua            melee patrol; archers with a sense -> aim -> volley ->
+                           investigate brain; patrols bounded by roam_tiles
+    rockets.lua            the rocketeer's homing rockets: spawn, pursuit
                            steering, proximity/terrain/lifetime fuse, blasts
                            (plus the explosion flashes they leave behind)
-   bombs.lua              the bomber's thrown explosives: straight-line
+    bombs.lua              the bomber's thrown explosives: straight-line
                            flight, the thrower's crude timed fuse, flak
                            proximity bursts over an airborne player,
                            grenade bounces over one on the ground
-   shockwaves.lua         the bow's shockwave pulse: short-range arc that
-                           bounces off any surface, grows in flight and
-                           shoves what it touches (enemies, the player on
-                           bounce-backs, enemy projectiles)
+    spirit.lua             the bow's spirit arrow: a fire-time burst of
+                           ghostly force at the player's centre that
+                           flings the body opposite the aim (no
+                           projectile at all -- the fling, the burst
+                           particles and the ghost tint are the whole
+                           effect)
    interactables.lua      key/lock/door/switch/spring puzzle logic
+   movers.lua             moving blocks: tile-aligned platforms that
+                          travel a line and pause at each end; the
+                          auto cycler and the stand/arrow-triggered
+                          lift (rider carry, stalls, no crush)
    save.lua               per-level best time/grade, persisted to the
                           LÖVE save directory (no-op headless)
    particles.lua          poofs, blood, sparks, smoke, explosion bursts,
@@ -84,8 +93,9 @@ ctx = { config, input, world, ents, tiles, cam, player, die }
 - `world` — the tile grid + flags + slope shapes (from `src/world.lua`),
   created from the loaded Tiled map and the interactable entity lists
 - `ents` — live entity lists from `src/level.lua`: spawn_points, arrows,
-  e_arrows, enemies, rockets, bombs, shockwaves, particles, keys, locks,
-  doors, switches, springs, winches
+  e_arrows, enemies, rockets, bombs, particles, keys, locks, doors,
+  switches, springs, winches. (The spirit arrow adds none: it fires no
+  projectile.)
 - `player` — the player body
 - `die` — routes player deaths to `Player.die`; `hurt` routes damage to
   `Player.hurt` (systems never require `src/player.lua` for those;
@@ -127,8 +137,8 @@ the scripted gates stay simulation-only.
 
 **Completion.** A level's exit entities (`ents.exits`, the `exit` kind)
 are touch-checked at the end of `Game:step`; the first player overlap
-runs `Game:complete_level`: the run's clock (`Game.play_steps`, real
-30hz steps) and death count (`ctx.die` is wrapped at level load to count
+runs `Game:complete_level`: the run's clock (`Game.play_steps`, sim
+ticks; seconds = ticks/rate) and death count (`ctx.die` is wrapped at level load to count
 `Player.die` calls) are graded against the level's `gold`/`par` times,
 recorded via `src/save.lua` (best time strictly, best grade
 independently, keyed by map file) and the world freezes on the results
@@ -195,9 +205,21 @@ which is what keeps the trace baseline stable.
   rendered frame, but press edges are evaluated once per sim step;
   key/gamepad press events additionally latch so a tap shorter than one
   rendered frame still fires. `btnp` repeats pico-8 style (every 4 steps
-  after 15 held).
-- **Mid-loop resets.** Player death clears the arrow/shockwave lists
-  (and rockets, bombs, enemy arrows); the update loops read the list
+  after 15 held). Action buttons read `Input:pressed_fresh` (the first
+  step of a press only, repeats excluded): jump buffering (one press is
+  one jump — landing while holding it stays grounded), the arrow-kind
+  cycle (one press, one kind) and the test menu's row toggles. Menu
+  cursor movement keeps the repeat — that is what it is for.
+- **Firing deafens the analog stick briefly.** An arrow shot
+  (`Player.aim_step`'s release branch) calls
+  `Input:ignore_stick(aiming.stick_ignore_frames)`: the stick's movement
+  and aim readings drop out for that many rendered frames (keyboard and
+  physical buttons keep working), so the bow hand's aim deflection
+  cannot lurch the body the step the bow releases. The fire lands
+  mid-update, after that frame's poll, so the release step also drops
+  the movement buttons the stick drove (from `Input.axis_held`).
+- **Mid-loop resets.** Player death clears the arrow list (and rockets,
+  bombs, enemy arrows); the update loops read the list
   fresh each iteration and bail out when it is reset mid-loop. Player
   respawn reuses the same player table.
 - **Jump corner forgiveness.** When a rising body clips a ledge with
@@ -211,24 +233,39 @@ which is what keeps the trace baseline stable.
 - **Doors and springs own tiles.** A door's state alone decides its
   tile's solidity; a closed door is also a bouncy surface like a sticky
   wall (`World.sticky_at` answers for doors), so arrows never embed in
-  one and hang in the doorway after a switch opens it; springs are
-  standable pads solid across the bottom
-  `springs.pad_height` px of their tile (matching the inactive sprite's
-  pad, so bodies stand on it instead of hovering), with `resolve_y`
-  landing bodies on the pad surface; switch tiles are recessed (arrows
-  fly in, bodies don't). Switches that drive springs are momentary —
-  they pop back to inactive when every spring of their group has reset,
-  so they can be shot again; every strike flips a switch on<->off.
+  one and hang in a doorway after a switch opens it; springs are
+  **landing pads**: solid across the bottom `springs.pad_height` px of
+  their tile (matching the inactive sprite's pad, so bodies stand on it
+  instead of hovering), with `resolve_y` landing bodies on the pad
+  surface — and the pad FIRES ITSELF on the landing edge: every landing
+  that touches a spring pad extends it and vaults the body
+  (`Interactables.spring_vault`). Switch strikes no longer touch
+  springs. Switch tiles are recessed (arrows fly in, bodies don't).
+  Switches that drive doors stay momentary-free: every strike flips a
+  switch on<->off and re-evaluates its group's doors; only switches
+  flagged `phase` flip the blocks.
 - **Phase tiles flip with phase-switch strikes.** Tiles flagged `phase`
   on the tileset (one designated tile per level, e.g. the platform ring,
   tile 135) all toggle solid<->non-solid together on a strike of a
   switch carrying the bool `phase` property (the level's `switch_pform`
-  trio), regardless of that switch's group; spring and door switches
-  never touch the blocks. While non-solid they collide with
+  trio), regardless of that switch's group; door switches never touch
+  the blocks. While non-solid they collide with
   nothing (bodies, arrows) and render translucent (`phase.alpha`).
   `World.phase_solid` is the single state flag, checked in
-  `solid_at` and the map draw; spring pop-backs don't flip it — only
-  arrow strikes do.
+  `solid_at` and the map draw; spring pop-backs don't flip it (springs
+  don't answer switches any more) — only arrow strikes do.
+- **One-way platforms.** Tiles flagged `oneway` (the blue thin slat,
+  tile 64; tileset property, gff bit 5) are standable from above only:
+  `resolve_y`'s downward pass runs `World:oneway_catch` — the feet's
+  SWEPT span (previous feet from the render-stamp `_py`; a full-speed
+  9px/step fall can cross a whole tile in two steps, so the swept span
+  is what counts) crossing into an oneway tile's row snaps the body to
+  the tile's top edge. Everything else passes through: the tile is not
+  `solid`, so rising bodies jump through from below, arrows fly through
+  (`solid_for_arrow`), enemy sight and laser beams see past it, and
+  enemies treat it as open air (their ledge probes read `solid_at`).
+  There is no drop-through. Standing on one is ground (`gr` set, no
+  friction quirk).
 - **The archer brain** (below) runs archers; melee enemies just patrol.
 - **Patrols are bounded.** Every enemy patrols at most
   `enemies.roam_tiles` (10) tiles from its spawn anchor (`home_x`,
@@ -277,9 +314,14 @@ which is what keeps the trace baseline stable.
   dark grey with near-black mix). These are stand-ins for the impact
   art to come, like the boom flash; a blast in open air leaves no
   remains, and laser spots spark without smoking.
-- **Stuck arrows are platforms** (embedded in vertical walls only), and
-  arrows substep their flight so fast shots never skip a tile. Rope
-  arrows are exempt (they anchor instead).
+- **Stuck arrows are perches** (embedded in vertical walls only; see
+  the arrow-perch bullet below), not ground, and arrows substep their
+  flight so fast shots never skip a tile. Rope arrows are exempt (they
+  anchor instead).
+- **Rope attach is range-checked.** A stuck rope arrow only attaches
+  when the player sits within `rope.max_length` of the anchor at attach
+  time — farther anchors are ignored (the pendulum length-clamp used to
+  yank the player across the map onto them).
 - **The rope pendulum.** Rope arrows (selected with the swap button)
   expire at `config.rope.max_range` in flight; when one sticks, the
   player attaches on the next step (one rope at a time, one attach per
@@ -288,7 +330,10 @@ which is what keeps the trace baseline stable.
   `Player.physics` applies the constraint: the outward radial velocity
   is removed before integration when the rope is taut (gravity keeps
   feeding the tangential swing), and the position is pulled back onto
-  the rope circle after collision resolution. Detaching preserves
+  the rope circle after collision resolution. While airborne on the
+  rope the walk motor's air damping stands down (the swing coasts —
+  only gravity and the constraint own its speed); left/right input
+  still pumps. Detaching preserves
   velocity.
 - **The winch** (motorized rope reel). A rope arrow whose tip enters a
   winch's box is consumed on impact and the player is attached to the
@@ -319,6 +364,57 @@ which is what keeps the trace baseline stable.
   `config.winch.debug` enables `src/winchlog.lua` to append a per-event
   trace (capture/reel/release/grace, including the entry-vs-throw dot)
   to `winch_debug.txt` in the LÖVE save directory.
+- **The wall-slide.** While airborne, falling (`vy > 0`) and against a
+  wall (`check_walls`, which `solid_at` answers for: doors, movers and
+  pushers all count), the body presses itself against the wall
+  automatically — no held input — and descends at `player.slide_speed`
+  instead of full speed; pushing the direction AWAY from the wall
+  releases. There is no grab and no climb. A fresh jump press while
+  sliding launches a **wall leap**: up at the jump speed and away from
+  the wall at `player.walljump_push`. Blocked while a rope, winch,
+  wall-run or arrow perch owns the body.
+- **Arrow perches catch falls, not ground.** A stuck (non-rope) arrow
+  in a vertical wall stops a falling player as a PERCH (`p.
+  arrow_stand`): the feet pin to the arrow's band and vy is zeroed,
+  but `p.gr` stays false — no coyote, no walk (the walk motor stands
+  down), no wall-run trigger, no spirit recharge. The perch is
+  something to stop a fall and nothing else: the exits are a jump (a
+  buffered press launches a normal jump), the arrow's destruction, a
+  shove, a rope attach, a winch capture or death. While perched the
+  AIM is clamped to the 180 degrees away from the wall the arrow sits
+  in (`Util.clamp_aim_away`): the stick, the keyboard nudge and the
+  entering angle all pass through — you cannot fire back into the wall
+  you lean against.
+- **The gun.** Laser riflemen drop their gun at their death spot
+  (player-arrow kills); walking into a dropped one (or a placed `gun`
+  object) collects ONE explosive shot (`p.guns`). The next normal-arrow
+  firing launches the GUN itself as the projectile (kind "gun"): it
+  flies an arrow's arc a touch heavier (`gun.speed_scale`), carries no
+  key, and detonates on ANY contact through `Arrows.detonate_bomb` —
+  the shared red boom ring, camera shake and proximity-falloff shove
+  exactly like the bomb arrow (the "red bang on contact"). Placeholder
+  art: a dark slab with a red tip (pickup held/rendered in
+  render/world.lua + render/player.lua).
+- **Hitstop.** `ctx.freeze` counts world-steps the simulation hangs:
+  `Game:step` sets `ctx.dt = 0` while it is positive (every integrator
+  and timer scales with dt, so the whole world freezes mid-state; the
+  render keeps drawing, input cadence and bow turning run in real
+  time) — then resets. Named kicks: a player hit (`Player.hurt`),
+  any player-arrow enemy kill (in `Arrows.step_one`). Cleared by
+  death (`Player.die`) and level load.
+- **Juice: thuds and dust.** `Camera.thud` is Camera.shake's little
+  sibling (random jitter on the clamped follow, own decay length
+  `camera.thud_steps`): jumps, hard landings (scaled by fall speed),
+  bow releases and gun shots kick one; a live blast shake is never
+  overridden by a thud. `Particles.dust` throws grey footfall puffs on
+  jumps, landings and wall leaps (strength-scaled), and
+  `Particles.fire_puff` blows a small report along the aim on every
+  bow release.
+- **Post-fire deaf window.** `aiming.stick_ignore_frames` (12) now also
+  covers HELD movement: the walk motor zeroes its push while
+  `Input.stick_deaf > 0` (the alias `ignore_stick` maintains), so a held
+  direction cannot lurch the body the step the bow releases — keyboard
+  and stick both fall under the count.
 - **The wall-run.** A tile flagged `runnable` (the checkered box; the
   tileset's property, packed as flag bit 4) marks a wall-run lane: a
   maximal horizontal line of consecutive runnable tiles in one row, at
@@ -350,50 +446,64 @@ which is what keeps the trace baseline stable.
   (`Player.wallrun_state`, `config.wallrun.cycle_*`) mirroring the ground
   run's cadence — `sprite_base` points at the ground-run frames until
   wall-run art lands. New tests live in `tests/wallrun_test.lua`.
-- **The shockwave pulse.** The swap cycle's third arrow kind
-  (`normal -> rope -> shockwave`), fired through `Arrows.fire` but
-  spawned by `src/shockwaves.lua` into `ents.shockwaves` — it is a
-  wave, not an arrow: no quiver cost (own `shockwave.max_active` cap),
-  no keys, no sticking, no platforms. The pulse flies straight (no
-  gravity) along the aim direction as a **semicircular front** — a
-  180-degree cone of force opening along travel, its flat back edge
-  riding through the wave centre perpendicular to it, so only what
-  lies *ahead* of the wave gets swept and the shooter, behind that
-  edge, is untouched by their own shot. It **bounces off any surface**
-  (the arrow's axis-separated reflection — and since the heading *is*
-  the velocity, the reflection re-aims the cone for free, no trig in
-  the sim; spark flecks mark each impact), **grows** with the distance
-  flown (`radius_start` -> `radius_max` at the fizzle range — the
-  wider front is easier to connect with) and **fizzles** (a poof) at
-  `shockwave.max_range`. The speeds (`shockwave.speeds`) outrun the
-  player's fall (`max_fall_speed` is 6) so a straight-down shot
-  separates from the shooter and the range is a TOTAL flight budget:
-  the round trip (down to a surface and back up to the falling player)
-  must fit inside it. It shoves with a strong fixed impulse
-  (`shockwave.push`) along the radial from the wave centre — enemies
-  (never killed), thrown bombs and enemy darts (knocked off course) and
-  rockets (a damped `kx`/`ky` knock vector the rocket drifts along on
-  top of its steered cruise). The wave is not consumed by a hit: it
-  passes through, shoving each thing once per leg (`pushed` flags,
-  cleared on every bounce so pinballing repeats). Collision is the
-  cheap half-disc test: a target's closest point to the wave centre
-  must lie within the radius *and* in front of the flat back edge (a
-  swallowed target's closest point is the centre itself, whose forward
-  dot is zero — still counts).
-  **The player is only shoved by a turned-around front**: the wave is
-  born at the bow with its back edge running through the shooter, and a
-  substep may shove them only once the wave has bounced at least once
-  (`w.bounced > 0`) — the first leg can never fling the shooter,
-  however their own fall repositions them past the centre, while any
-  bounce that reverses the wave (a wall ahead, the floor under their
-  feet, a ceiling overhead) opens the cone back onto them. A down-shot
-  bounces off the ground and launches them, anywhere, no sticky surface
-  needed. Firing one cuts an attached rope (mobility tool, like the
-  propel arrow it replaced); the aim preview simulates the bounced path
-  and draws the front's full-grown arc at the fizzle point.
+- **The spirit arrow.** The swap cycle's third arrow kind
+  (`normal -> rope -> spirit`; the test menu's *special arrows
+  hidden* toggle — default on — drops the bomb and spirit from the
+  cycle entirely, so `Player.arrow_step` walks normal -> rope only and
+  an equipped special falls back to normal), fired through `Arrows.fire`
+  but handled by `src/spirit.lua` (`Spirit.fire`) — it is **not an
+  arrow at all**: no quiver cost (no projectile exists; the fire
+  bypasses `ents.arrows` entirely), no keys, no sticking, no
+  platforms, no trajectory in the world. The release applies its whole
+  effect at the player's centre in one shot:
+  - **the burst** — a ghostly-blue spark jet streaming out along the
+    aim direction (the force's exhaust, `Particles.spirit_burst`:
+    chunky flecks in spirit blue alternating with white). Nothing
+    travels and nothing flashes: the burst marks the force, no wave,
+    no projectile, no boom.
+  - **the fling** — the body is knocked along the **exact opposite of
+    the aim direction** (`config.spirit.push[p.aim_power]` px/step,
+    scaled by the analog tilt with the `spirit.min_force_scale` floor
+    so a light tilt still flings): aim down and you launch skyward,
+    aim at a wall and you fly away from it. The knock is ADDED to the
+    body's velocity (it stacks with jump and swing momentum), ends a
+    caught-mid-launch wall-run (when the knock points up), and rides
+    the winch-throw grace window (`spirit.shove_grace`): movement
+    input and the walk cap are ignored so the fling plays out
+    untouched, ending early on landing. An attached rope is cut at
+    fire time (mobility tool, like every shove the bow makes), with
+    `rope_cd` blocking an instant re-grab.
+  - **the second jump** — any upward fling (the aim below level) is a
+    guaranteed full-jump rise THROUGH the current fall: the vertical
+    knock is floored so the body launches at the player's jump speed
+    (`player.jump_velocity`) plus the one gravity tick the first
+    integration step pays (`physics.gravity`), whatever it was falling
+    at — even at top fall speed the fling still arcs a whole jump's
+    height above the fired point. A floor, not a ceiling: stronger
+    intended flings (a hi-power down-cast, a running start) keep their
+    edge over it, and a level or upward aim grants nothing extra (the
+    fall carries; the fling is purely lateral then).
+  - **the once-per-airtime charge** — `p.spirit_armed` (a plain bool,
+    true at every spawn/respawn) is burned by a shot and refilled each
+    physics step the player stands on solid ground (`p.gr`, set in
+    `Player.physics`); a spent bow **clicks**: `Spirit.fire` returns
+    before anything happens — no fling, no burst, no rope cut. A jump
+    takes the charge airborne without spending it (landing is what
+    refills), so the tool reads as one free boost between landings,
+    not flight.
+  - **the ghost** — while the spirit kind is equipped the player reads
+    as a **ghostly blue silhouette** (`src/render/player.lua` layers a
+    translucent overlay in `spirit.tint_colour` at `spirit.tint_alpha`
+    over the sprite, the same masking the i-frame shield uses; the
+    shield's red wins while an i-frame lasts so hits stay legible).
+    While aiming the preview shows the fling instead of a trajectory: a
+    short spirit-coloured trail opening along the exact opposite of the
+    aim (the way the body is about to fly).
 
 - **The bomb arrow.** The swap cycle's fourth kind
-  (`normal -> rope -> shockwave -> bomb`), a real arrow in every way
+  (`normal -> rope -> spirit -> bomb`; hidden from the cycle like the
+  spirit while the test menu's *special arrows hidden* toggle is on),
+  a real arrow in every way
   (quiver slot, gravity arc, the aim preview — which rings the blast's
   catch radius at the predicted contact point) except keys (rope and
   bomb arrows never carry or pick up them: a blast must not eat a
@@ -417,42 +527,153 @@ which is what keeps the trace baseline stable.
   - enemy projectiles: rockets knocked off their heading (the homing
     re-curves them later), thrown bombs and darts knocked off course.
   Firing a bomb cuts an attached rope (mobility tool, like the
-  shockwave); the blast knocks a line loose too, with `rope_cd` blocking
+  spirit); the blast knocks a line loose too, with `rope_cd` blocking
   an instant re-grab. Rocket or thrown-bomb tip hits go through the
   enemy blast as with other arrows, the arrow consumed either way. A
    bomb arrow that touches nothing poofs silently — no blast.
 
-## The pusher
+## The moving blocks
 
-The pusher (`pusher_01`-style objects; kind tile 86 in `twang.tsx`) is a
+Movers (`src/movers.lua`, scanned in `src/level.lua` from `mover` /
+`mover_trigger` Tiled objects) are the ride puzzle device: a solid block
+of 1..3 tiles a way — explicit `tiles_w`/`tiles_h` (int tiles)
+properties win, otherwise the object's own placed size rounds to tiles;
+both clamp to `config.mover.max_tiles` — that travels back and forth
+along a tile-aligned line for the required `distance` tiles from its
+rest position. The line's direction is EXPLICIT ONLY: the required
+`dir` object property (up / down / left / right) — nothing about the
+block's shape implies it, so a block of any footprint can run any way,
+and a missing or misspelled `dir` skips the mover with a warning,
+pausing `pause_steps` (30, one
+second) at each end — the SAME pause both ends. Per-instance `speed`
+(px per world-time step; default 1.0) and `pause` overrides ride the
+object properties. INTEGER speeds are the smooth ones: the block then
+advances a whole pixel every step, so the scroll is perfectly even on
+the pixel canvas; fractional speeds beat instead (1.2 hops 2px every
+5th step, which reads as stutter). A mover without a usable
+`distance` is skipped with a warning. Level1's debug sandbox carries
+the demo pair (`mover_auto`,
+a 1x1 horizontal cycler, and `mover_lift`, a 1x2 vertical lift).
+
+- **Two flavours.** The kind IS the behaviour: an auto `mover` cycles
+  forever (rest -> go -> pause -> back -> pause -> on and on); a
+  `mover_trigger` waits parked at rest until stood on or struck, runs
+  the line, pauses at the far end and returns on its own to park at
+  rest again.
+- **Solidity.** The block owns its CURRENT box, PIXEL-EXACT: a moving
+  block is an object in the world, not tile-aligned terrain — its face
+  travels mid-tile, and tile-granular solidity would claim each
+  half-covered edge tile whole, supporting bodies on edge pixels that
+  shift with the block's travel (edge-standing that flickers bind/sever
+  as tile alignment changes, and an edge-stander the ride could never
+  see, which froze the block under them). Solid ground to bodies in
+  `solid_at` (`World:mover_at` tests the exact px box; `skip_mover`
+  lets the mover's own stall checks pass), RECESSED to arrows in
+  `solid_for_arrow` (like the pusher: tips fly into the block and
+  strike), and a bouncy surface in `sticky_at` (arrows never embed in
+  a moving block — they would hang over the void between pauses).
+  Landing uses
+  `World:mover_stand_y` in `resolve_y`'s stand chain: bodies land on
+  the block's FRACTIONAL top face (the exact surface they ride, not
+  the tile's top edge).
+- **Riding is ground.** Only the player rides (enemies are left for
+  their patrol logic). A block is solid ground to the body passes
+  (`p.gr`, friction, the walk motor, jump buffering, coyote time all
+  flow through `solid_at`/`resolve_y` unchanged), so a rider can walk,
+  stop, and jump on a moving block exactly as on normal ground. The
+  platform-specific bits: the ride binds while the rider's feet y sit
+  in the top-face band (`ride_margin`, 8px up) and their FOOT SPAN
+  still overlaps the block — the footing rule matches `resolve_y`'s
+  two-corner stand, so hanging a toe over the edge holds and only
+  walking FULLY off severs. After the block's advance the carry
+  follows the rider RELATIVELY by the same delta (vertical lifts
+  press/pull the rider with the face, horizontal ones drag them along,
+  clamped out of walls beside the line), and the next physics pass
+  re-lands their feet exactly on the face via `mover_stand_y` — a
+  falling rider caught inside the band drifts down onto the face
+  naturally instead of being yanked to it. A rider also NEVER collides
+  with the block they stand on: `resolve_x` skips the ridden mover
+  (obj.ride as the solid_at skip), because a moving face sits mid-tile
+  and tile-granular solidity would otherwise read the half-covered top
+  row as a wall under the rider's own feet — sticking them and
+  tile-snapping them sideways off the platform the moment they tried
+  to walk. Jumping or walking off
+  severs the ride (`vy < 0`, or the body leaving the block), and the
+  sever INHERITS the block's live velocity (`m.vel`) into `p.vx`:
+  jumping straight up from a moving block drifts with it and lands
+  back on it, the way ground inertia would. `p.ride` clears on
+  respawn.
+- **Triggers** fire only from rest. The player trigger is a fresh
+  LANDING on the top face: the edge reads "feet on the block" for
+  re-arm (only feet that LEFT the band arm it again) and "grounded on
+  it" for the fire — a rider who never gets off keeps it parked, by
+  design. The arrow trigger consumes any player arrow tip entering
+  the block (recessed, pusher-style: a poof at the tip; bomb arrows
+  detonate their own blast at the strike first, then the strike fires
+  the run). Mid-trip strikes are eaten without re-triggering.
+- **Stalls, no crush.** The block never advances into anything solid:
+  terrain, closed doors, another mover's box, or a BODY (player or
+  enemy) in its path all stall it for the step (the banked step is
+  dropped — nothing teleports through the way when it clears; the
+  bank never grows past one step's worth). Riders on the top face are
+  exempt (they move WITH the block); a lowering lift parks flush on
+  the floor instead of crushing whoever stands beneath. A stalled
+  block resumes the moment the way clears.
+- **Room gating and time.** Movers beyond the active room freeze
+  exactly where they sit (like the springs), and everything scales by
+  `ctx.dt`, so movers ride aiming's slow motion. Tests:
+  `tests/mover_test.lua`.
+
+## The pusher (updraft / outdraft)
+
+The pusher family (`pusher_01`-style objects placed with the Class
+`Updraft` or `Outdraft`; shared sprite tile 86 in `twang.tsx`) is the
 launcher puzzle device: a solid one-tile block standing on the ground
-that you hop over — and that flings you skyward when you shoot it.
+that you hop over — and that flings you skyward when you shoot it. The
+kind IS the variant: the **updraft** launches everything over it
+straight up, the **outdraft** drains a cone above it up-and-away.
 
-- **Body** (`src/level.lua` scan, `src/world.lua` solidity): the pusher
+- **Body** (`src/level.lua` scan, `src/world.lua` solidity): the device
   object owns its tile like a door does — always solid to bodies (you
   bump it walking, stand on its top, jump over it), and recessed to
   arrows (`solid_for_arrow` answers false) so a player arrow's tip flies
-  INTO the tile and strikes.
+  INTO the tile and strikes. Every variant shares the tile-86 sprite
+  (a per-variant tick overlay in `src/render/world.lua` shows the flow
+  direction: vertical ticks for the updraft, a splayed fan for the
+  outdraft).
 - **Strike** (`Arrows.step_one`'s per-substep pusher check): the tip
   entering the device's tile consumes the arrow (a poof at the strike
   point, like the winch capture) and fires `Arrows.trigger_pusher`. A
   bomb arrow's tip also detonates its own blast at the strike point
-  first, so the two forces stack. Enemy arrows and shockwave pulses
-  never strike it. Repeatable: every strike fires the push again.
-- **The push** (`Arrows.trigger_pusher` through the shared
-  `Arrows.radial_shove`, also used verbatim by `detonate_bomb`): the
-  flash ring sized to the device's radius (the camera shake rides
-  ents.booms) plus a spark burst, then a shove on everything caught
-  within `config.pusher.radius` (64px — 4 tiles, "fairly close") along
-  the unit radial from the device's tile centre, at CONSTANT strength
-  everywhere in the radius (a predictable launcher). The player's knock
-  is ADDED to their velocity — it stacks with jump and swing momentum,
-  the point of the tool ("jump over it, shoot it, get pushed straight
-  up") — riding the shove-grace window so the walk cap cannot clamp it,
-  knocking an attached rope line (or winch reel) loose and ending a
-  mid-launch wall-run. Enemies are shoved along the radial and never
-  killed by the push; rockets, thrown bombs and darts are knocked off
-  course. Tests: `tests/pusher_test.lua`.
+  first, so the two forces stack. Enemy arrows never strike it (the
+  spirit arrow fires no projectile at all). Repeatable: every strike
+  fires the push again.
+- **The push** (`Arrows.trigger_pusher` through the shared zone-driven
+  `Arrows.shove`, also used by `detonate_bomb`): the flash ring sized to
+  the variant's catch radius (the camera shake rides ents.booms) plus a
+  spark burst, then a shove on everything the variant's catch zone
+  accepts, at CONSTANT strength (a predictable launcher). The player's
+  knock is ADDED to their velocity — it stacks with jump and swing
+  momentum, the point of the tool — riding the shove-grace window so
+  the walk cap cannot clamp it, knocking an attached rope line (or
+  winch reel) loose and ending a mid-launch wall-run. Enemies are
+  shoved along the flow and never killed by the push; rockets, thrown
+  bombs and darts are knocked off course.
+  - **Updraft zone**: a box over the device's tile column plus
+    `config.pusher.up.side` tiles to either side (2: a 5-tile pad
+    band), from the device's top edge up to `config.pusher.up.reach`
+    (64px — 4 tiles) above it; caught targets launch straight up no
+    matter where they sit in the box. A legacy `pusher`-kind object
+    defaults to this variant.
+  - **Outdraft zone**: everything within `config.pusher.out.radius`
+    (64px — 4 tiles) of the device's tile centre whose radial points
+    inside the `config.pusher.out.cone` half-angle (45°) around
+    straight up is shoved along the radial (up-and-away); anyone
+    beside or below the device feels nothing.
+  - Per-instance overrides ride the object properties: `push`,
+    `reach`, `side` (updraft), `cone`, `radius` (outdraft) and
+    `shove_grace` beat the config defaults. Tests:
+    `tests/pusher_test.lua`.
 
 ## The archer brain
 
@@ -468,6 +689,14 @@ after sight breaks aims at the freshest known spot.
   archer is blind) and in clear line of sight — the eye -> player ray is
   sampled every `enemies.sight_step` px and terrain (solid tiles and
   slope wedges) blocks vision. No x-ray vision.
+- **Arrow senses** (`Enemies.arrow_spot`): a flying PLAYER arrow the
+  enemy can see (in front, in range, clear sight) marks its position as
+  the tracked spot — patrol switches to an investigate, an existing
+  search follows the arrow's path. A LANDING arrow alerts every enemy
+  within `enemies.arrow_alert_radius` (80px) with no sight needed (the
+  thunk carries) through `Arrows.notify_arrow_contact`. Enemy darts are
+  their own gunfire: they alert nobody. Arrows never trigger combat —
+  the arrow spot only ever feeds investigate/chase.
 - **Aim**: on spotting, the archer stops moving and solves a ballistic
   arc to the player (`enemies.aim_steps` preparation, 1/3 of the
   original 30-step draw): flat arc first, then a loftier arc if terrain
@@ -730,10 +959,9 @@ luajit tests/trace_diff.lua tests/trace_baseline.txt /tmp/trace.txt
    refill, void death);    `tests/rope_test.lua` covers the rope arrow
    (attach + hang, pendulum swing bounds, detach-preserving-velocity,
    winching, max-range expiry, platform exemption, swap, anchor loss)
-   and the shockwave pulse (bounce-back launches — airborne and
-   flush-with-the-feet, enemy shoves that leave the wave alive, bomb
-   and dart knocks, the rocket knock, the rope cut, the airborne cap
-   past a full quiver); `tests/bomb_arrow_test.lua` covers the bomb
+   and the spirit arrow (opposite-of-aim flings — airborne, grounded
+   and additive, the power/force scaling, the ghost tint window, the
+   rope cut and the quiver bypass); `tests/bomb_arrow_test.lua` covers the bomb
    arrow (the swap cycle, contact detonation on terrain and sticky
    surfaces, the blast's enemy shove with out-of-radius sparing, the
    direct-hit kill plus blast, the additive proximity-falloff shove,
@@ -760,6 +988,7 @@ luajit tests/results_test.lua
 luajit tests/checkpoints_test.lua
 luajit tests/levels_test.lua
 luajit tests/levels_flow_test.lua
+luajit tests/mover_test.lua
 ```
 
 `tests/legacy_main.lua` is the frozen pre-refactor monolith with a

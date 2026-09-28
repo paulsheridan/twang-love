@@ -353,7 +353,9 @@ do
   assert_true(#waits >= 2,
     "rapid fire repeats while the player stays visible (" .. #waits .. " volleys)")
   for _, wt in ipairs(waits) do
-    assert_true(wt >= config.enemies.rapid_min
+    -- (the capture trails the set by up to one half-tick of update:
+    -- the cadence tick decrements wait_t before the test sees it)
+    assert_true(wt >= config.enemies.rapid_min - 0.5
       and wt <= config.enemies.rapid_min + config.enemies.rapid_extra,
       "each follow-up wait is within the randomized range (" .. wt .. ")")
   end
@@ -665,7 +667,8 @@ do
   e.state = "investigate"
   e.investigate_t = 200
   e.last_known = { x = e.x + 200, y = e.y }  -- searching rightward
-  place_player(g, 1300, 228)  -- visible, but out of contact reach
+  place_player(g, 1290, 228)  -- visible (clear of the wall at col 81),
+                              -- but out of contact reach
   run_steps(env, 3)
   assert_true(e.state == "chase", "re-spotting returns the melee to the chase")
 end

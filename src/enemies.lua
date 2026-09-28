@@ -42,6 +42,26 @@ local Enemies = {}
 
 -- ==== archer senses ====
 
+-- Clear line of sight between (ex, ey) and (ax, ay)? Samples the ray
+-- each sight_step px and lets terrain (solid tiles and slope wedges)
+-- block it. No x-ray vision. Shared by the enemy-sight and the arrow
+-- sight (below).
+local function sight_clear(ctx, ex, ey, ax, ay)
+  local cfg = config.enemies
+  local dx, dy = ax - ex, ay - ey
+  local dist2 = dx*dx + dy*dy
+  local dist = math.sqrt(dist2)
+  if dist < 1 then return true end  -- overlapping: nothing between them
+  local step = cfg.sight_step
+  for d = step, dist - 1, step do
+    local x, y = ex + dx/dist*d, ey + dy/dist*d
+    if ctx.world:solid_at(x, y) or ctx.world:in_slope_solid(x, y) then
+      return false
+    end
+  end
+  return true
+end
+
 -- True when the player is in range, in front of the archer (its back is
 -- turned otherwise) and visible: nothing solid along the eye -> player
 -- ray. Exposed for tests.
@@ -53,20 +73,32 @@ function Enemies.sees(ctx, e)
   local dx, dy = tx - ex, ty - ey
   -- its back is turned: the player must be in the facing half-plane
   if dx * e.facing <= 0 then return false end
-  local dist2 = dx*dx + dy*dy
-  if dist2 > cfg.detect_distance * cfg.detect_distance then return false end
-  local dist = math.sqrt(dist2)
-  if dist == 0 then return true end
-  local ux, uy = dx/dist, dy/dist
-  local world = ctx.world
-  local step = cfg.sight_step
-  for d = step, dist - 1, step do
-    local x, y = ex + ux*d, ey + uy*d
-    if world:solid_at(x, y) or world:in_slope_solid(x, y) then
-      return false
+  if dx*dx + dy*dy > cfg.detect_distance * cfg.detect_distance
+  then return false end
+  return sight_clear(ctx, ex, ey, tx, ty)
+end
+
+-- An arrow sight: any player arrow the enemy can see -- in front of it,
+-- within detect_distance, with clear line of sight to the arrow's
+-- current position. A visible flying arrow points at the shooter:
+-- the brain follows it (last_known refresh) the same way it tracks the
+-- player. Landed arrows alert through Arrows' side instead (thunk:
+-- no sight needed). Rope arrows include (a visible rope arrow is
+-- as loud as any other shooting).
+function Enemies.arrow_spot(ctx, e)
+  local ex, ey = e.x + e.w/2, e.y + e.h/2
+  for _, a in ipairs(ctx.ents.arrows) do
+    if a.active then
+      local dx, dy = a.x - ex, a.y - ey
+      if dx * e.facing > 0
+      and dx*dx + dy*dy <= config.enemies.detect_distance
+                          * config.enemies.detect_distance
+      and sight_clear(ctx, ex, ey, a.x, a.y) then
+        return a.x, a.y
+      end
     end
   end
-  return true
+  return nil
 end
 
 -- Solves the ballistic arc from origin to target for an arrow flying at
@@ -426,6 +458,20 @@ local function ranged_brain(ctx, e, spec)
     local p = ctx.player
     e.last_known = {x = p.x + p.w/2, y = p.y + p.h/2}
   end
+  -- arrows make noise: a flying player arrow crossing the senses marks
+  -- its position as the tracked spot (the brain then investigates it --
+  -- never fires at it: the arrow may be a stray). Patrol -> investigate;
+  -- an existing investigate keeps tracking the arrow's path.
+  if e.state == "patrol" or e.state == "investigate" then
+    local spot_x, spot_y = Enemies.arrow_spot(ctx, e)
+    if spot_x then
+      e.last_known = { x = spot_x, y = spot_y }
+      if e.state == "patrol" then
+        e.state = "investigate"
+        e.investigate_t = cfg.investigate_timeout
+      end
+    end
+  end
 
   if e.state == "aim" then
     if seen then
@@ -527,6 +573,18 @@ local function melee_brain(ctx, e)
   if seen then
     local p = ctx.player
     e.last_known = {x = p.x + p.w/2, y = p.y + p.h/2}
+  end
+  -- the same arrow senses: a seen arrow calls the chase toward its
+  -- position (the ranged investigate covers it for their brains)
+  if e.state == "patrol" or e.state == "investigate" then
+    local spot_x, spot_y = Enemies.arrow_spot(ctx, e)
+    if spot_x then
+      e.last_known = { x = spot_x, y = spot_y }
+      if e.state == "patrol" then
+        e.state = "investigate"
+        e.investigate_t = cfg.investigate_timeout
+      end
+    end
   end
 
   if e.state == "chase" then

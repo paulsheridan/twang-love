@@ -1,7 +1,8 @@
 -- Slow-motion tests (deterministic, headless; requires LuaJIT).
 --
 -- Covers the dt-parametric slow motion:
---   1. ctx.dt is 1 normally, 1/aiming.slow_motion_steps while aiming
+--   1. ctx.dt is one world-time step (30/sim.rate) normally,
+--      (30/sim.rate)/aiming.slow_motion_steps while aiming
 --   2. while aiming the world advances a little EVERY step (steady
 --      framerate slow motion): a flying arrow creeps forward each step
 --      at ~1/N of its per-step speed instead of only moving every Nth
@@ -36,7 +37,8 @@ local function place_player(g, x, y)
 end
 
 -- Fires an arrow by holding aim one step, forcing the angle, then
--- releasing (fires on the release step, which itself runs at dt=1).
+-- releasing (fires on the release step, which itself runs at full
+-- world speed).
 local function fire_at(env, g, angle)
   local kd = env.TWANG_TEST.keys_down
   kd.z = true
@@ -51,7 +53,8 @@ local g = env.TWANG_TEST.game
 local p = g.ctx.player
 local cfg = g.ctx.config
 
-assert_true(g.ctx.dt == 1, "world time advances at dt=1 outside aim mode")
+assert_true(g.ctx.dt == 30 / cfg.sim.rate,
+  "world time advances one 30hz-step-equivalent outside aim mode")
 
 -- ==== fire a flat shot into clear sky ====
 place_player(g, 80, 212)  -- standing on the spawn-area floor; row 13 above
@@ -69,7 +72,7 @@ assert_true(math.abs(a.x - (p.x + p.w/2 + spd)) < 0.01,
 local kd = env.TWANG_TEST.keys_down
 kd.z = true
 run_steps(env, 1)
-assert_true(g.ctx.dt == 1 / cfg.aiming.slow_motion_steps,
+assert_true(g.ctx.dt == (30 / cfg.sim.rate) / cfg.aiming.slow_motion_steps,
   "aiming divides world time by aiming.slow_motion_steps (dt "
     .. tostring(g.ctx.dt) .. ")")
 
@@ -92,7 +95,8 @@ assert_true(math.abs((after - x1) - spd) < 0.01,
 -- ==== 4. releasing aim resumes full speed ====
 kd.z = false
 run_steps(env, 1)
-assert_true(g.ctx.dt == 1, "releasing aim restores dt=1")
+assert_true(g.ctx.dt == 30 / cfg.sim.rate,
+  "releasing aim restores full world speed")
 assert_true(math.abs(a.x - after - spd) < 0.01,
   "the arrow flies a full step per step again (dx " .. (a.x - after) .. ")")
 

@@ -13,8 +13,9 @@ local WinchLog     = require("src.winchlog")
 
 local Player = {}
 
--- Run cycle state (advances at the 30hz sim rate; twang.p8 advanced it in
--- _draw at 30fps). Deliberately not reset on respawn, like the original.
+-- Run cycle state (advances in world time -- the 30hz-step currency --
+-- so the animation keeps its pace at any sim rate; twang.p8 advanced it
+-- in _draw at 30fps). Deliberately not reset on respawn, like the original.
 local run_frame, run_tick = 0, 0
 -- The wall-run's animation cycle (same scheme, while the wall-run lasts).
 local wallrun_frame, wallrun_tick = 0, 0
@@ -37,7 +38,11 @@ function Player.new(spawn)
     hp = config.player.hearts * 2,   -- health in half-hearts (drawn top-left)
     invuln = 0,  -- post-hit invulnerability steps remaining
     arrow_kind = "normal",  -- currently selected arrow type
-                            -- ("normal"/"rope"/"shockwave"/"bomb")
+                            -- ("normal"/"rope"/"spirit"/"bomb")
+    spirit_armed = true,    -- the spirit fling's charge: one shot between
+                            -- landings on solid ground (see Spirit.fire)
+    guns = 0,    -- explosive-gun shots carried (collected from dead lasers)
+    slide = false,  -- wall-sliding this step (falling pinned to a wall)
     rope = nil,  -- attached rope: { arrow = <anchored rope arrow>, length = px }
     rope_cd = 0, -- steps before another rope can attach (post-detach grace)
     winch = nil, -- winch reel in progress: { ent = <winch entity> }
@@ -76,11 +81,20 @@ function Player.reset(p, spawn_points, cam, world)
   p.hp = config.player.hearts * 2
   p.invuln = 0
   p.arrow_kind = "normal"
+  p.spirit_armed = true
   p.rope = nil
   p.rope_cd = 0
   p.winch = nil
   p.winch_grace = nil
   p.wallrun = nil
+  p.slide = false
+  p.wall_slide_side = nil
+  p.arrow_stand = nil
+  p.guns = p.guns or 0  -- the guns carried survive a death (you keep the pickup)
+  p.ride = nil  -- no mover carries the body across a respawn
+  -- the render-interpolation shadow lands with the body (no cross-map
+  -- ease on respawn)
+  p._px, p._py = p.x, p.y
   -- the respawn point picks the active room (no wipe on respawn); the
   -- camera then snaps under that room's clamp
   world:sync_room(p.x, p.y)
@@ -96,9 +110,14 @@ end
 -- point (the legacy behaviour).
 function Player.die(ctx)
   local p = ctx.player
+  ctx.freeze = 0  -- a fatal hit's stop ends with the respawn
   p.rope = nil
   p.winch = nil
   p.winch_grace = nil
+  p.wallrun = nil
+  p.slide = false
+  p.wall_slide_side = nil
+  p.arrow_stand = nil
   if p.key and not p.key.used then
     Particles.poof(ctx.ents, p.x, p.y)
     p.key.taken = false
@@ -113,7 +132,6 @@ function Player.die(ctx)
   ctx.ents.e_arrows = {}
   ctx.ents.rockets = {}
   ctx.ents.bombs = {}
-  ctx.ents.shockwaves = {}
 end
 
 -- Taking a hit: half a heart lost by default (unless still invulnerable
@@ -131,6 +149,10 @@ function Player.hurt(ctx, ix, iy, amount)
   local p = ctx.player
   if p.invuln > 0 then return false end  -- shielded by i-frames
   p.hp = p.hp - (amount or config.player.half_hearts_per_hit)
+  -- hitstop: the whole world freezes for a few steps when a body is
+  -- hit (src/game.lua reads ctx.freeze; a poison-free handicap of the
+  -- frozen frame — pending input and animations keep their state)
+  if ctx.freeze then ctx.freeze = config.player.freeze_steps end
   -- blood before the death flow: a fatal hit respawns the player and
   -- would otherwise move them before the spray can spawn
   Particles.blood(ctx.ents, p.x + p.w/2, p.y + p.h/2,
@@ -161,15 +183,22 @@ function Player.rope_step(ctx)
   if p.wallrun then return end
 
   if not p.rope then
-    -- attach to the first anchored rope arrow not yet claimed
+    -- attach to the first anchored rope arrow not yet claimed. The
+    -- anchor must be in REACH: a rope arrow stuck farther than the
+    -- rope's max length never attaches -- the pendulum would clamp the
+    -- length and SPRING the player up toward the anchor (hard yank)
     if p.rope_cd == 0 then
       for _, a in ipairs(ctx.ents.arrows) do
         if a.active and a.stuck and a.kind == "rope" and not a.rope_taken then
           local px, py = p.x + p.w/2, p.y + p.h/2
           local dist = math.sqrt((px - a.x)^2 + (py - a.y)^2)
-          p.rope = { arrow = a, length = math.max(rcfg.min_length, math.min(rcfg.max_length, dist)) }
-          a.rope_taken = true
-          break
+          if dist <= ctx.config.rope.max_length then
+            p.rope = { arrow = a, length = math.max(rcfg.min_length,
+              math.min(rcfg.max_length, dist)) }
+            a.rope_taken = true
+            p.arrow_stand = nil  -- the swing owns the body now
+            break
+          end
         end
       end
     end
@@ -197,8 +226,9 @@ function Player.rope_step(ctx)
   -- jump releases the rope; the current velocity carries the player on.
   -- Consumed here so the jump buffer never fires a normal jump, and with
   -- a short cooldown so the same arrow (or a second stuck one) cannot
-  -- instantly re-grab the player.
-  if ctx.input:pressed("jump") then
+  -- instantly re-grab the player. Fresh press only: holding the button
+  -- must not detach (a repeat edge would cut the swing mid-hold).
+  if ctx.input:pressed_fresh("jump") then
     p.rope = nil
     p.rope_cd = ctx.config.player.jump_buffer_frames
     return
@@ -222,7 +252,7 @@ end
 -- winch-owned: those modes own the body.
 function Player.wallrun_check(ctx)
   local p = ctx.player
-  if p.rope or p.winch
+  if p.rope or p.winch or p.arrow_stand
   or (p.winch_grace and p.winch_grace > 0) then return end
   local world = ctx.world
   local tw = config.tile_size
@@ -332,6 +362,7 @@ end
 -- aiming.slow_motion_steps while aiming).
 function Player.physics(ctx)
   local p = ctx.player
+  local ents = ctx.ents
   local world = ctx.world
   local cfg = config.player
   local tw = config.tile_size
@@ -363,19 +394,45 @@ function Player.physics(ctx)
     Player.wallrun_step(ctx)
   else
     local motor = p.winch or (p.winch_grace ~= nil and p.winch_grace > 0)
+    -- an arrow perch owns movement: nothing to walk on, exits only via
+    -- jump or a shove (Arrows.check_platforms maintains the perch)
+    if p.arrow_stand then motor = true end
     if motor then
-      -- (velocity comes from the reel below, or from the throw itself)
+      if p.arrow_stand then
+        -- perch: no walk motor, no air damping; the fall is stopped
+        -- dead (feet pinned by check_platforms below; vx bleeds to zero
+        -- so a caught body doesn't drift off its arrow)
+        p.vx = 0
+      elseif not (p.winch or (p.winch_grace ~= nil and p.winch_grace > 0)) then
+        -- (velocity comes from a winch reel below, or the throw itself)
+      end
     elseif not ctx.input:down("aim") then
       local ax = 0
       if ctx.input:down("left") then ax = -1 end
       if ctx.input:down("right") then ax =  1 end
+      -- the fire's deaf window also covers HELD movement: an arrow
+      -- released while a direction is held must not lurch the body to
+      -- a stop-and-go (the stick ignore lands mid-update, so both
+      -- stick-driven and keyboard movement fall under its frame count)
+      local Iface = ctx.input  -- stick_deaf / held reads below
+      if Iface.stick_deaf and Iface.stick_deaf > 0 then ax = 0 end
+      -- the airborne rope pendulum coasts: gravity and the radial
+      -- constraint govern the swing, so the walk motor's air damping
+      -- stands down (the swing's momentum must survive)
+      local coasting = p.rope ~= nil and not p.gr
+      -- a slide presses the body against the wall: no outward drive
+      if p.slide then
+        local away = (p.wall_slide_side or 0) > 0 and -1 or 1
+        if ax == away then ax = 0 end  -- (release handled below the fall cap)
+      end
       if ax ~= 0 then
         p.facing = ax
         local a = p.gr and cfg.acceleration or (cfg.acceleration * cfg.air_acceleration_scale)
         p.vx = p.vx + ax * a * dt
       else
-        local d = p.gr and (cfg.deceleration * p.fr)
-                       or (cfg.deceleration * cfg.air_deceleration_scale)
+        local d = coasting and 0
+                       or (p.gr and (cfg.deceleration * p.fr)
+                                or (cfg.deceleration * cfg.air_deceleration_scale))
         if p.vx > 0 then p.vx = math.max(0, p.vx - d * dt)
         elseif p.vx < 0 then p.vx = math.min(0, p.vx + d * dt) end
       end
@@ -394,6 +451,35 @@ function Player.physics(ctx)
       p.vy = Util.move_toward(p.vy, cfg.jump_velocity, cfg.jump_accel_initial * dt)
       p.coy, p.jbuf = 0, 0
       p.j_frames = cfg.jump_hold_frames
+      -- takeoff dust + a small camera thud (juice: jumping reads)
+      Particles.dust(ents, p.x + p.w/2, p.y + p.h, 0.25)
+      Camera.thud(ctx.cam, config.camera.thud_jump)
+    end
+
+    -- THE WALL LEAP: the perch's jump, always launched AWAY from the
+    -- wall. It rides the same buffered press as the ground jump (set
+    -- above when coyote lingered from the catch) and fires on the same
+    -- line, same phase, same hold window, same dust: hugging an arrow
+    -- and jumping is the ground jump's twin, not a late special-case
+    -- launch. A wallslide-jump with no perch no longer leaps.
+    if p.arrow_stand and p.jbuf > 0 then
+      local side = p.arrow_stand.side
+      p.jbuf = 0
+      p.coy = 0
+      p.j_frames = cfg.jump_hold_frames
+      p.vy = Util.move_toward(p.vy, cfg.jump_velocity, cfg.jump_accel_initial * dt)
+      p.vx = -(side or p.facing or 1) * cfg.walljump_push
+      p.facing = -(side or p.facing or 1)
+      p.arrow_stand = nil
+      Camera.thud(ctx.cam, config.camera.thud_jump)
+      Particles.dust(ctx.ents, p.x + p.w/2, p.y + p.h, 0.4)
+    end
+
+    -- an arrow perch pins the fall: vy is zeroed every step (gravity
+    -- pulls, the perch holds) — the body sits still until it jumps or
+    -- the arrow is destroyed
+    if p.arrow_stand then
+      p.vy = 0
     end
 
     if p.j_frames > 0 then
@@ -412,6 +498,29 @@ function Player.physics(ctx)
     if p.vy > 0 then g = g * config.physics.fall_gravity_scale end
     p.vy = p.vy + g * dt
     p.vy = math.min(p.vy, config.physics.max_fall_speed)
+
+    -- wall slide (Celeste-style, no grab): while airborne and falling
+    -- against a wall the body presses itself to the wall and descends
+    -- at the slide speed; pushing AWAY from the wall releases. Objects
+    -- own walls via solid_at (doors/movers/pushers included); the
+    -- slide is inert while roped or winch-owned (the swing owns the body).
+    p.slide = false
+    p.wall_slide_side = nil
+    if not p.gr and not p.rope and not p.winch and not p.wallrun
+    and p.vy > 0 and not p.arrow_stand then
+      world:check_walls(p)
+      local side = p.wall_r and 1 or (p.wall_l and -1 or nil)
+      if side then
+        local pushing_away = (side > 0 and ctx.input:down("left"))
+                          or (side < 0 and ctx.input:down("right"))
+        if not pushing_away then
+          p.slide = true
+          p.wall_slide_side = side
+          p.vy = math.min(p.vy, cfg.slide_speed)
+        end
+      end
+    end
+
 
     -- rope pendulum: when the rope is taut, remove the outward radial
     -- component of the velocity so the player swings tangentially (gravity
@@ -546,8 +655,30 @@ function Player.physics(ctx)
     p.coy = cfg.coyote_frames
     p.j_frames = 0
     p.aimed_down = false
-    if not p.prev_gr then p.land_frames = cfg.landing_frames end
+    if not p.prev_gr then
+      p.land_frames = cfg.landing_frames
+      -- hard landings kick up dust (and a camera thud: see Camera.thud)
+      local fall = p.vy
+      Particles.dust(ents, p.x + p.w/2, p.y + p.h,
+        math.min(1, fall / config.physics.max_fall_speed))
+      local strength = config.camera.thud_land
+        * math.min(1, fall / config.physics.max_fall_speed)
+      if strength > 0.2 then Camera.thud(ctx.cam, strength) end
+      -- landing on a spring pad fires it: the vault replaces the landing
+      for _, spring in ipairs(ents.springs) do
+        if Interactables.spring_vault(ents, spring, p) then
+          if not spring.ext then
+            spring.ext = config.springs.extension_frames
+          end
+          break
+        end
+      end
+      p.vy = math.min(p.vy, 0)
+    end
     if p.land_frames > 0 then p.land_frames = math.max(0, p.land_frames - dt) end
+    -- standing on solid ground refills the spirit fling's charge: one
+    -- shot between landings (see Spirit.fire)
+    p.spirit_armed = true
   else
     p.coy = math.max(0, p.coy - dt)
     p.land_frames = 0
@@ -616,6 +747,21 @@ function Player.physics(ctx)
     end
   end
 
+  -- dropped guns: walking into one collects it as one explosive shot
+  -- (the bow's next normal firing launches the gun itself)
+  for _, g in ipairs(ctx.ents.guns) do
+    if not g.taken
+    and p.x < g.x+tw+config.gun.pickup_pad
+    and p.x+p.w > g.x-config.gun.pickup_pad
+    and p.y < g.y+tw+config.gun.pickup_pad
+    and p.y+p.h > g.y-config.gun.pickup_pad then
+      g.taken = true
+      p.guns = (p.guns or 0) + 1
+      Particles.poof(ctx.ents, g.x + tw/2, g.y + tw/2)
+      break
+    end
+  end
+
   -- run cycle: advances in world time (scales with the step's dt, so
   -- slow motion slows the animation with the body). While wall-running
   -- the ground cycle holds reset and the wall-run advances its own.
@@ -637,15 +783,28 @@ function Player.physics(ctx)
 end
 
 -- Arrow selection: cycles the equipped arrow type (normal -> rope ->
--- shockwave -> bomb -> normal) on the dedicated button. Runs every step,
+-- spirit -> bomb -> normal) on the dedicated button. Runs every step,
 -- entirely outside of aim mode, so the player can cycle arrow types
--- whenever they like.
+-- whenever they like. With the test menu's "special arrows hidden"
+-- toggle on (the default), the bomb and spirit drop out of the cycle:
+-- normal -> rope -> normal; an equipped special is unequipped at once
+-- (nothing unreachable stays in the bow's hands).
+local function next_arrow_kind(kind, no_special)
+  if no_special then return kind == "rope" and "normal" or "rope" end
+  return kind == "normal" and "rope"
+       or kind == "rope" and "spirit"
+       or kind == "spirit" and "bomb" or "normal"
+end
 function Player.arrow_step(ctx)
   local p = ctx.player
-  if ctx.input:pressed("swap") then
-    p.arrow_kind = p.arrow_kind == "normal" and "rope"
-                 or p.arrow_kind == "rope" and "shockwave"
-                 or p.arrow_kind == "shockwave" and "bomb" or "normal"
+  local no_special = not ctx.settings or ctx.settings.no_special
+  if no_special and p.arrow_kind ~= "normal" and p.arrow_kind ~= "rope" then
+    p.arrow_kind = "normal"  -- a hidden special is unequipped at once
+  end
+  -- fresh press only: one press cycles one kind -- the btnp-style
+  -- repeat of a held button must not spin the quiver around
+  if ctx.input:pressed_fresh("swap") then
+    p.arrow_kind = next_arrow_kind(p.arrow_kind, no_special)
   end
 end
 
@@ -690,6 +849,16 @@ function Player.aim_step(ctx)
     elseif ctx.input:down("right") then
       p.aim_angle = (p.aim_angle - cfg.turn_rate) % 1
     end
+    -- the PERCH's aim clamp: standing on an arrow stuck in a wall, the
+    -- aim is limited to the 180 degrees pointing AWAY from that wall --
+    -- you cannot fire back into the wall you lean against. Wall on the
+    -- body's right (side = 1): aim turn restricted to 0.25..0.75 (down
+    -- through left to up); wall on the left: 0.75..1.25, i.e. up
+    -- through right to down. The stick, the keyboard nudge and the
+    -- entering angle all pass through the clamp.
+    if p.arrow_stand then
+      p.aim_angle = Util.clamp_aim_away(p.aim_angle, p.arrow_stand.side)
+    end
     -- power levels: keyboard up/down or the physical dpad (the "up"/"down"
     -- buttons deliberately exclude the analog stick)
     if ctx.input:pressed("up") then
@@ -704,17 +873,40 @@ function Player.aim_step(ctx)
         p.aimed_down = true
       end
       Arrows.fire(ctx, p.aim_angle, p.arrow_kind, p.aim_force)
+      -- the released shot deafens the analog stick AND held movement
+      -- for cfg.stick_ignore_frames (the walk motor reads the window):
+      -- the bow hand's aim deflection / a held direction must not
+      -- lurch the body the step the bow lets go. The spirit's
+      -- recoil-launch rides its own grace window instead.
+      if p.arrow_kind ~= "spirit" then
+        ctx.input:ignore_stick(cfg.stick_ignore_frames)
+        -- juice: the shot's report -- a small puff along the aim plus a
+        -- tiny camera thud (the gun's is chunkier, see Arrows.fire)
+        local is_gun = false
+        for _, a in ipairs(ctx.ents.arrows) do
+          if a.kind == "gun" then is_gun = true break end
+        end
+        Particles.fire_puff(ctx.ents, p.x + p.w/2, p.y + p.h/2,
+          Util.p8cos(p.aim_angle), Util.p8sin(p.aim_angle))
+        Camera.thud(ctx.cam, is_gun and config.camera.thud_gun
+          or config.camera.thud_fire)
+      end
       p.was_aiming = false
     end
     -- jumping while attached releases the rope (handled in rope_step);
     -- only buffer a normal jump when free. A winch reel is unstoppable,
-    -- so no jump buffer there either; a wall-run owns the jump state too.
-    if ctx.input:pressed("jump") and not p.rope and not p.winch
+    -- so no jump buffer there either; a wall-run owns the jump state
+    -- too. Fresh press only: one press, one jump -- a held button never
+    -- refills the buffer (no auto-bunny-hop on landing). A perch counts
+    -- as free: its buffered press IS the wall leap (Player.physics).
+    if ctx.input:pressed_fresh("jump") and not p.rope and not p.winch
     and not p.wallrun then
       p.jbuf = config.player.jump_buffer_frames
     end
   end
-  if p.jbuf > 0 then p.jbuf = math.max(0, p.jbuf - (ctx.dt or 1)) end
+  if p.jbuf > 0 then
+    p.jbuf = math.max(0, p.jbuf - (ctx.dt or 30 / config.sim.rate))
+  end
 end
 
 -- Exposes the run cycle state for rendering and tests.

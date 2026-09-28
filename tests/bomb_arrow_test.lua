@@ -2,7 +2,7 @@
 --
 -- Covers the swap cycle's fourth arrow kind (see Arrows.detonate_bomb /
 -- Arrows.step_one / Player.arrow_step):
---   1. the cycle: normal -> rope -> shockwave -> bomb -> normal
+--   1. the cycle: normal -> rope -> spirit -> bomb -> normal
 --   2. firing the bomb produces a bomb arrow that flies
 --   3. terrain detonation: any solid contact detonates (no stick, no
 --      bounce), leaving a boom flash at the contact point
@@ -11,7 +11,7 @@
 --      nobody dies to the blast itself
 --   6. a direct enemy hit kills the touched enemy (blood) and the blast
 --      shoves the rest
---   7. the shock wave shoves the player radially away from the blast
+--   7. the blast shoves the player radially away from the blast
 --      centre, additive with linear proximity falloff to the rim;
 --      dead-centre pushes up
 --   8. the player is never damaged by their own bomb
@@ -60,14 +60,27 @@ do
   local env = Harness.boot()
   local g = env.TWANG_TEST.game
   local p = g.ctx.player
+  -- the menu's bomb/shock hide toggle defaults on: unhide so the full
+  -- four-kind cycle is under test here
+  g.settings.no_special = false
   assert_true(p.arrow_kind == "normal", "the bow starts on normal arrows")
-  local expect = { "rope", "shockwave", "bomb", "normal" }
+  local expect = { "rope", "spirit", "bomb", "normal" }
   for i, kind in ipairs(expect) do
     env.love.keypressed("c")
     step(env)
     assert_true(p.arrow_kind == kind,
       ("swap %d lands on %s (got %s)"):format(i, kind, p.arrow_kind))
   end
+  -- re-hiding the specials shrinks the cycle back to normal <-> rope
+  g.settings.no_special = true
+  env.love.keypressed("c")
+  step(env)
+  assert_true(p.arrow_kind == "rope",
+    "with the toggle on, swap offers the rope arrow")
+  env.love.keypressed("c")
+  step(env)
+  assert_true(p.arrow_kind == "normal",
+    "with the toggle on, the cycle skips spirit and bomb")
 end
 
 -- ==== 2. firing the bomb ====
@@ -237,7 +250,7 @@ do
   assert_true(#ents.booms > booms, "the direct hit detonates the blast")
 end
 
--- ==== 7. the shock wave shoves the player radially away ====
+-- ==== 7. the bomb blast shoves the player radially away ====
 do
   local env = Harness.boot()
   local g = env.TWANG_TEST.game
@@ -291,7 +304,9 @@ do
   local g = env.TWANG_TEST.game
   local p = settle(env, 200, 100)
   local Arrows = env.require("src.arrows")
-  -- an airborne player (as after a vault): the grace holds in the air
+  -- a GENUINELY airborne player (as after a vault): lifted off the
+  -- floor, so the grace holds in the air (landing would end it early)
+  p.y = p.y - 40
   p.gr = false
   Arrows.detonate_bomb(g.ctx, p.x - 30, p.y + p.h/2)
   assert_true(p.winch_grace == blast.shove_grace,
