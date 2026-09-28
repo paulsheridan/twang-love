@@ -59,26 +59,26 @@ local fc, fr = find_tile(function(c, r)
   return w:fg_tile(c, r) ~= 0 and w:tile(c, r) == 0
 end)
 assert_true(fc ~= nil, "the map has a foreground-only tile")
-assert_true(not w:solid_at(fc*16 + 8, fr*16 + 8),
+assert_true(not w:solid_at(fc*8 + 4, fr*8 + 4),
   "an overlay tile blocks nothing, even a solid-flagged tile id")
 local tc, tr = find_tile(function(c, r)
   return w:solid(w:tile(c, r))
 end)
 assert_true(tc ~= nil, "the map has solid terrain")
-assert_true(w:solid_at(tc*16 + 8, tr*16 + 8),
+assert_true(w:solid_at(tc*8 + 4, tr*8 + 4),
   "terrain solidity is untouched by the overlay")
 
 -- ==== 2. behind any overlay tile, the whole layer fades out ====
-step_at(fc*16, fr*16, 12)  -- 12 steps: past the ~8-step full fade
+step_at(fc*8, fr*8, 12)  -- 12 steps: past the ~8-step full fade
 assert_true(fga(w) == 0, "the layer fades fully out while behind it")
 
 -- the fade eases rather than snapping
 g:load_level("maps/farmhouse.json")
 w = g.ctx.world
 p = g.ctx.player
-step_at(fc*16, fr*16, 2)
+step_at(fc*8, fr*8, 2)
 local a1, a2 = fga(w), nil
-step_at(fc*16, fr*16, 1)
+step_at(fc*8, fr*8, 1)
 a2 = fga(w)
 assert_true(a1 < 1 and a2 < a1, "the fade eases step by step")
 

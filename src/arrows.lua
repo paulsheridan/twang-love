@@ -53,7 +53,7 @@ function Arrows.simulate_path(world, x, y, vx, vy, opts)
       local ny = y + vy * sdt + g * sdt * sdt / 2
       vy = vy + g * sdt
       x, y = nx, ny
-      if world:solid_for_arrow(nx, ny) or world:in_slope_solid(nx, ny) then
+      if world:solid_for_arrow(nx, ny) then
         return { points = points, hit = true, reached = false }
       end
       local t = opts.target
@@ -224,14 +224,14 @@ function Arrows.trigger_pusher(ctx, pu)
   local variant = pu.variant
   local grace = pu.shove_grace or cfg.shove_grace
   local push = pu.push or cfg.push
-  local cx, cy = pu.x + tw/2, pu.y + tw/2
+  local cx, cy = pu.x + ctx.config.art_size/2, pu.y + ctx.config.art_size/2
 
   local zone, joy -- joy: the flash ring's radius, for the camera shake
   if variant == "updraft" then
-    local side  = (pu.side  or cfg.up.side)  * tw
+    local side  = (pu.side  or cfg.up.side)  * ctx.config.art_size
     local top   = pu.y - (pu.reach or cfg.up.reach)
     local left  = pu.x - side
-    local right = pu.x + tw + side
+    local right = pu.x + ctx.config.art_size + side
     joy = (pu.reach or cfg.up.reach)
     -- the catch box: the device's column plus the side band, from the
     -- device's top edge to `reach` px above it; the knock is straight
@@ -378,7 +378,7 @@ function Arrows.step_one(ctx, a)
     a.dying = a.dying - dt
     a.spin  = a.spin + cfg.spin_out_speed * dt
     local nx, ny = a.x + a.vx * dt, a.y + a.vy * dt
-    if a.dying <= 0 or world:solid_at(nx, ny) or world:in_slope_solid(nx, ny) then
+    if a.dying <= 0 or world:solid_at(nx, ny) then
       Particles.poof(ents, a.x, a.y)
       a.active = false
       return
@@ -396,25 +396,6 @@ function Arrows.step_one(ctx, a)
   for _ = 1, nsub do
     local nx = a.x + sx
     local ny = a.y + sy
-
-    if world:in_slope_solid(nx, ny) then
-      -- bomb arrows and gun shots detonate on anything they touch,
-      -- slopes included
-      if a.kind == "bomb" or a.kind == "gun" then
-        Arrows.detonate_bomb(ctx, nx, ny)
-        a.active = false
-        return
-      end
-      local spd = math.sqrt(a.vx*a.vx + a.vy*a.vy)
-      a.sdx = spd > 0 and (a.vx/spd) or a.sdx
-      a.sdy = spd > 0 and (a.vy/spd) or a.sdy
-      a.x, a.y = nx, ny
-      a.stuck, a.on_slope = true, true
-      a.lt = cfg.stuck_lifetime
-      if a.kind == "rope" then a.anchored = true end
-      notify_arrow_contact(ctx, a, nx, ny)
-      return
-    end
 
     if world:solid_for_arrow(nx, ny) then
       -- bomb arrows and gun shots detonate on any surface: sticky walls
@@ -497,10 +478,11 @@ function Arrows.step_one(ctx, a)
     -- key's tile so a near-miss still snags it
     if not a.key and a.kind ~= "rope" and a.kind ~= "bomb" and a.kind ~= "gun" then
       local pad = config.keys.pickup_pad
+      local art = ctx.config.art_size
       for _, k in ipairs(ents.keys) do
         if not k.taken
-        and nx >= k.x-pad and nx < k.x+tw+pad
-        and ny >= k.y-pad and ny < k.y+tw+pad then
+        and nx >= k.x-pad and nx < k.x+art+pad
+        and ny >= k.y-pad and ny < k.y+art+pad then
           a.key, k.taken = k, true
           break
         end
@@ -512,9 +494,10 @@ function Arrows.step_one(ctx, a)
     -- centre and thrown out the far side (see Player.physics)
     if a.kind == "rope" and not ctx.player.winch then
       local pad = config.winch.hit_pad
+      local art = ctx.config.art_size
       for _, w in ipairs(ents.winches) do
-        if nx >= w.x-pad and nx < w.x+tw+pad
-        and ny >= w.y-pad and ny < w.y+tw+pad then
+        if nx >= w.x-pad and nx < w.x+art+pad
+        and ny >= w.y-pad and ny < w.y+art+pad then
           local p = ctx.player
           p.rope = nil      -- a winch replaces any rope, and the rope_cd
           p.rope_cd = 0     -- grace: the pull is immediate
@@ -522,7 +505,7 @@ function Arrows.step_one(ctx, a)
           -- unit vector toward the winch now, refreshed by the reel
           -- while the player is still outside the pass radius, so an
           -- overshoot past the centre can never invert the throw
-          local wcx, wcy = w.x + tw/2, w.y + tw/2
+          local wcx, wcy = w.x + art/2, w.y + art/2
           local edx, edy = wcx - p.x - p.w/2, wcy - p.y - p.h/2
           local d = math.sqrt(edx*edx + edy*edy)
           if d > 0 then
@@ -555,7 +538,8 @@ function Arrows.step_one(ctx, a)
     -- up-and-away cone). Bomb arrows detonate their own blast at the
     -- strike point first, so the two shoves stack.
     for _, pu in ipairs(ents.pushers) do
-      if nx >= pu.x and nx < pu.x+tw and ny >= pu.y and ny < pu.y+tw then
+      local art = ctx.config.art_size
+      if nx >= pu.x and nx < pu.x+art and ny >= pu.y and ny < pu.y+art then
         Particles.poof(ents, nx, ny)
         a.active = false
         if a.kind == "bomb" then
@@ -590,7 +574,8 @@ function Arrows.step_one(ctx, a)
     -- answer switch strikes: they are landing pads now (Player.physics).
     local in_switch = false
     for _, s in ipairs(ents.switches) do
-      if nx >= s.x and nx < s.x+tw and ny >= s.y and ny < s.y+tw then
+      local art = ctx.config.art_size
+      if nx >= s.x and nx < s.x+art and ny >= s.y and ny < s.y+art then
         in_switch = true
         if a.last_switch ~= s then
           a.last_switch = s
@@ -610,11 +595,12 @@ function Arrows.step_one(ctx, a)
     -- triggers on a near pass, not just a direct hit)
     if a.key then
       local pad = config.keys.lock_pad
+      local art = ctx.config.art_size
       for _, lock in ipairs(ents.locks) do
         if not lock.triggered
         and Interactables.key_fits_lock(a.key, lock)
-        and nx >= lock.x-pad and nx < lock.x+tw+pad
-        and ny >= lock.y-pad and ny < lock.y+tw+pad then
+        and nx >= lock.x-pad and nx < lock.x+art+pad
+        and ny >= lock.y-pad and ny < lock.y+art+pad then
           Interactables.trigger_lock(ents, lock)
           a.key.used = true  -- consumed; will not respawn if arrow expires
           a.key      = nil
@@ -755,7 +741,7 @@ function Arrows.check_platforms(ctx)
     if p.arrow_stand then return end  -- still perched: land check done
   end
   for _, a in ipairs(ents.arrows) do
-    if a.stuck and a.active and not a.on_slope and a.kind ~= "rope"
+    if a.stuck and a.active and a.kind ~= "rope"
     and math.abs(a.sdx) > math.abs(a.sdy) then
       -- only arrows embedded in vertical walls (horizontal travel) act
       -- as perch platforms; the wall face was recorded at stick time
@@ -825,7 +811,7 @@ function Arrows.update_enemy_arrows(ctx)
       for _ = 1, nsub do
         local nx = a.x + sx
         local ny = a.y + sy
-        if world:solid_for_arrow(nx, ny) or world:in_slope_solid(nx, ny) then
+        if world:solid_for_arrow(nx, ny) then
           -- an enemy dart burying itself in terrain throws scorched
           -- chunks off the surface (the player's own arrows hit quietly
           -- by design; the enemies' impacts are set pieces)

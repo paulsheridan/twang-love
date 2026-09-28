@@ -266,7 +266,6 @@ do
     .. ", bound " .. string.format("%.1f", bound) .. ")")
   local world = g.ctx.world
   local solid_past = world:solid_for_arrow(hx + b.dx*3, hy + b.dy*3)
-    or world:in_slope_solid(hx + b.dx*3, hy + b.dy*3)
   assert_true(solid_past, "the beam stops at a wall (solid just past its tip)")
   -- no player impact: no sparks, no blood spray — but the wall the
   -- beam slams into throws its scorched chunks off the surface

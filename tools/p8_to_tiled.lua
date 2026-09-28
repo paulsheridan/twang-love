@@ -66,10 +66,8 @@ end
 
 -- ===== build the Tiled map =====
 -- layer data: GIDs are 1-based (firstgid 1), so GID = tile + 1
-local KINDS  = {}
-for name, id in pairs(tiled.DEFAULT_KINDS)  do KINDS[id]  = name end
-local SLOPES = {}
-for id, s   in pairs(tiled.DEFAULT_SLOPES) do SLOPES[id] = s end
+local KINDS = {}
+for name, id in pairs(tiled.DEFAULT_KINDS) do KINDS[id] = name end
 
 local data, ents = {}, {}
 for r = 0, H - 1 do
@@ -97,7 +95,8 @@ for r = 0, H - 1 do
   end
 end
 
--- tileset entries: pico-8 flags -> custom properties, plus kind/slope
+-- tileset entries: pico-8 flags -> custom properties, plus kind
+-- (slopes are gone: the game removed slope collision)
 local tiles = {}
 for t = 0, 127 do
   local fl = flags[t + 1]
@@ -113,9 +112,6 @@ for t = 0, 127 do
   end
   if KINDS[t] then
     props[#props + 1] = { name = "kind",  type = "string", value = KINDS[t] }
-  end
-  if SLOPES[t] then
-    props[#props + 1] = { name = "slope", type = "string", value = SLOPES[t] }
   end
   if #props > 0 then
     tiles[#tiles + 1] = { id = t, properties = props }

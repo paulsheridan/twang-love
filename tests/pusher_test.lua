@@ -52,8 +52,9 @@ end
 -- Rigs a player arrow mid-flight one step from the device's tile.
 local function rig_arrow(g, kind, vx, vy)
   local pu = g.ctx.ents.pushers[1]
+  local art = g.ctx.config.art_size
   local a = {
-    x = pu.x + 8 - vx, y = pu.y + 8 - vy,
+    x = pu.x + art/2 - vx, y = pu.y + art/2 - vy,
     vx = vx, vy = vy,
     active = true, stuck = false, bounced = 0,
     sdx = 0, sdy = 1, spin = 0, lt = 300,
@@ -74,8 +75,8 @@ do
   for _, pu in ipairs(pus) do
     by_tile[pu.tc .. "," .. pu.tr] = pu
   end
-  local pu = by_tile["89,14"]
-  assert_true(pu ~= nil, "the test device scans at tile (89, 14)")
+  local pu = by_tile["178,28"]
+  assert_true(pu ~= nil, "the test device scans at sub-tile (178, 28)")
   assert_true(pu.variant == "outdraft",
     "the Class Outdraft object resolves the outdraft variant (got "
     .. tostring(pu and pu.variant) .. ")")
@@ -101,7 +102,7 @@ end
 -- The device these tests rig: the outdraft at tile (89, 14).
 local function test_device(g)
   for _, pu in ipairs(g.ctx.ents.pushers) do
-    if pu.tc == 89 and pu.tr == 14 then return pu end
+    if pu.tc == 178 and pu.tr == 28 then return pu end
   end
 end
 

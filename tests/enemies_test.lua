@@ -296,7 +296,7 @@ do
     env.love.draw()
     max_x = math.max(max_x, melee.x)
   end
-  assert_true(melee.home_x + config.enemies.roam_tiles * config.tile_size
+  assert_true(melee.home_x + config.enemies.roam_tiles * config.art_size
     + melee.w + 4 > max_x,
     "melee on flat ground turns at its roam limit (max x "
     .. math.floor(max_x) .. ")")
@@ -317,7 +317,7 @@ do
   for _ = 1, 400 do
     env.love.update(1/30)
     env.love.draw()
-    if e.state == "investigate" and e.x > e.home_x + config.enemies.roam_tiles * config.tile_size then
+    if e.state == "investigate" and e.x > e.home_x + config.enemies.roam_tiles * config.art_size then
       beyond = true break
     end
     if e.state == "patrol" then break end

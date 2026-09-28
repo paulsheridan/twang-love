@@ -100,11 +100,18 @@ do
   -- a spare non-phase switch (strikes of ANY switch used to flip phase)
   local other = g.ctx.ents.switches[1]
   assert_true(not other.phase, "a spring/door switch carries no phase flag")
-  -- an empty, object-free cell: (8,8) in level1's upper-left sky region
+  -- an empty, object-free art cell: (8,8) in level1's upper-left sky
+  -- region (its four 8px sub-cells at (16..17, 16..17))
   local c, r = 8, 8
   local px, py = c*16 + 8, r*16 + 8
-  w:set_tile(c, r, 135)  -- the tileset's designated phase tile
-  assert_true(w:is_phase(135), "tile 135 is flagged as a phase tile")
+  -- art 135's linear sub ids: TL = (135//16)*64 + (135%16)*2 = 526
+  local phase_base = 526
+  for dc = 0, 1 do
+    for dr = 0, 1 do
+      w:set_tile(c*2 + dc, r*2 + dr, phase_base + dc + dr*32)
+    end
+  end
+  assert_true(w:is_phase(phase_base), "tile 135 is flagged as a phase tile")
   assert_true(w.phase_solid, "phase tiles start solid on level load")
   assert_true(w:solid_at(px, py),
     "a placed phase tile blocks bodies while solid")
@@ -140,7 +147,8 @@ do
   -- a door object in an empty sky cell (8,10): solidity and bounciness
   -- are the door object's alone, so this needs no map terrain
   local c, r = 8, 10
-  local door = { tc = c, tr = r, x = c*16, y = r*16, open = false, g = "t" }
+  local door = { tc = c*2, tr = r*2, x = c*16, y = r*16, open = false,
+    g = "t" }
   table.insert(g.ctx.ents.doors, door)
   local px, py = c*16 + 8, r*16 + 8
   assert_true(w:solid_at(px, py), "a closed door owns a solid tile")

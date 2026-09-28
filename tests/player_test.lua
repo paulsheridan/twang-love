@@ -278,13 +278,18 @@ do
 end
 
 -- ==== 5. jump corner forgiveness ====
--- Rigs a ceiling tile at (6,9): x 96..111, y 144..159. The player (8px
--- wide) placed at x=90 has only its right head corner inside the tile's
--- column, so rising into row 9 clips the ledge's edge corner.
+-- Rigs a ceiling block at art cell (6,9): x 96..111, y 144..159 (its four
+-- 8px sub-cells). The player (8px wide) placed at x=90 has only its right
+-- head corner inside the block's column, so rising into art row 9 clips
+-- the ledge's edge corner.
 local function rig_ledge(g)
   local w = g.ctx.world
-  local solid_id = w:tile(0, 14)  -- the spawn-area wall/floor tile id
-  w:set_tile(6, 9, solid_id)
+  local solid_id = w:tile(0, 28)  -- the spawn-area wall/floor sub-tile id
+  for dc = 0, 1 do
+    for dr = 0, 1 do
+      w:set_tile(6*2 + dc, 9*2 + dr, solid_id)
+    end
+  end
   return w
 end
 

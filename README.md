@@ -1,7 +1,8 @@
 # twang
 
 An archer side-scroller: a LÖVE 11 port of the twang pico-8 cart. Native
-480x320 pixel rendering (16x16 tiles and sprites), a 60hz fixed-timestep
+480x320 pixel rendering (8x8 terrain tiles over the untouched 2x2
+upscaled sheet; 16x16 entity art cells), a 60hz fixed-timestep
 simulation with render interpolation (smooth on any refresh rate) and a
 smooth camera. Levels are edited in Tiled (see `docs/tiled-format.md`).
 
@@ -319,19 +320,23 @@ rebase the baseline first (see docs/architecture.md). Requires LuaJIT
 
 ## Tools
 
-- `tools/build_level.lua` — the ladder's level DSL: emits the eight
-  ladder maps plus the rooms demo (`luajit tools/build_level.lua`)
 - `tools/render_map.py` — renders any Tiled map to a sprite-accurate PNG
   (`python3 tools/render_map.py maps/meadow.json /tmp/meadow.png`)
-- `tools/p8_to_tiled.lua` — migrates the original pico-8 cart to a Tiled
-  JSON map: `luajit tools/p8_to_tiled.lua ../twang.p8 maps/level1.json`
+- `tools/migrate_maps_8px.py` — the 16px -> 8px tile migration (applied
+  to every map; kept for reference)
+- `tools/build_tsx_8px.py` — rebuilt `maps/twang.tsx` in place as the
+  8px terrain tileset (one-shot; refuses to run twice)
+- `tools/make_chars16.py` — generated `chars16.png` + the 16px sprite
+  tileset `maps/chars16.tsx` (one-shot)
+- `tools/fill_slopes_16px.py` — pre-migration slope fill (slopes are
+  removed from the game)
+- `tools/build_level.lua` — STALE: the 16px-era ladder DSL; its
+  committed maps were migrated in place and regeneration needs a DSL
+  update
 - `tools/import_kenney.py` — spritesheet asset import (builds the
   256x256 sheet, upscaling each 8x8 source tile 2x2)
-- `tools/upscale_sheet.py` — one-shot 2x2 upscale of an existing 8x8-era
-  spritesheet to the current 16x16 format
-- `tools/migrate_maps_16px.py` — one-shot migration of 8x8-era Tiled
-  maps to the current 16x16 tile size (applied to both maps; kept for
-  reference)
+- `tools/upscale_sheet.py` / `tools/migrate_maps_16px.py` — one-shot
+  8x8-era -> 16px migrations (historical)
 
 ## Repository
 

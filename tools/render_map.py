@@ -1,53 +1,64 @@
 #!/usr/bin/env python3
 """Render a twang Tiled map to a PNG preview (all visible tile layers,
-true spritesheet art, entities drawn as boxes). Not part of the game:
-authoring/QA tool for generated levels.
+true spritesheet art at the map's tile size, entities drawn as boxes).
+Not part of the game: authoring/QA tool.
 
     python3 tools/render_map.py maps/meadow.json /tmp/meadow.png [scale]
+    python3 tools/render_map.py maps/level1.json out.png 1 --terrain-only
+
+Tile size and grid come from the map itself (8px terrain cells over the
+256x256 spritesheet; 16px sprite-tileset cells are not drawn -- entity
+boxes stand in for them, as in the 16px tool). `--terrain-only` skips
+the entity boxes/labels (clean pixel-diff gate for terrain art).
 """
 
 import json
 import os
+import re
 import sys
-from PIL import Image
+from PIL import Image, ImageDraw
 
-TSX = os.path.join(os.path.dirname(__file__), "..", "maps", "twang.tsx")
 SHEET = os.path.join(os.path.dirname(__file__), "..", "spritesheet.png")
-TW = 16
+
 
 def parse_tsx(path):
-    """Minimal .tsx reader: tile id -> properties (mirrors src/tiled.lua)."""
-    import re
+    """Minimal .tsx reader: header + per-tile id (mirrors src/tiled.lua)."""
     with open(path) as f:
         xml = f.read()
-    props = {}
-    for m in re.finditer(r'<tile\s+id="(\d+)"\s*(.-)</tile>', xml, re.S):
+    head = re.search(r'<tileset[^>]*>', xml)
+    info = {}
+    for k, v in re.findall(r'([\w_]+)\s*=\s*"([^"]*)"', head.group(0)):
+        info[k] = int(v) if v.isdigit() else v
+    tiles = {}
+    xml = re.sub(r'<tile\s+id="(\d+)"[^>]*/>',
+                 lambda m: '<tile id="%s"></tile>' % m.group(1), xml)
+    for m in re.finditer(r'<tile\s+id="(\d+)"\s*(.*?)</tile>', xml, re.S):
         tid, body = int(m.group(1)), m.group(2)
         props = {}
         for p in re.finditer(r'<property\s+name="([^"]+)"[^>]*value="([^"]*)"', body):
             props[p.group(1)] = p.group(2)
-        if props:
-            tiles[tid + 1] = props
-    return tiles
+        tiles[tid] = props
+    return info, tiles
 
-tiles = {}
 
-def tile_props(gid):
-    return tiles.get(gid, {})
-
-def render(map_path, out_path, scale=2):
+def render(map_path, out_path, scale=2, terrain_only=False):
     m = json.load(open(map_path))
     W, H = m['width'], m['height']
-    tsx_ref = m['tilesets'][0]
+    TW, TH = m['tilewidth'], m['tileheight']
     tsx_dir = os.path.dirname(map_path)
-    tsx_path = tsx_ref = tsx_ref.get('source') and os.path.join(tsx_dir, tsx_ref['source']) \
-        or None
-    if tsx_path and not tiles:
-        parse_tsx(tsx_path)
+    terrain = None
+    chars_first = None
+    for ref in m['tilesets']:
+        info, tiles = parse_tsx(os.path.join(tsx_dir, ref['source']))
+        if info['tilewidth'] == TW:
+            terrain = (info, tiles, ref['firstgid'])
+        elif chars_first is None:
+            chars_first = ref['firstgid']
+    cols = terrain[0]['columns']
+    firstgid = terrain[2]
     sheet = Image.open(SHEET).convert('RGBA')
 
-    out = Image.new('RGBA', (W*TW, H*TW), (135, 206, 235, 255))  # sky blue
-    # terrain layers (levels carry no backdrop sprites: sky shows through)
+    out = Image.new('RGBA', (W*TW, H*TH), (135, 206, 235, 255))  # sky blue
     for layer in m['layers']:
         if layer['type'] != 'tilelayer' or not layer.get('visible', True):
             continue
@@ -56,27 +67,28 @@ def render(map_path, out_path, scale=2):
             continue
         data = layer['data']
         for i, gid in enumerate(data):
-            if not gid:
+            if not gid or (chars_first and gid >= chars_first):
                 continue
-            t = gid - 1
-            r, c = divmod(t, 16)
-            tile = sheet.crop((c*TW, r*16 if False else r*TW, (c+1)*TW, (r+1)*TW))
+            t = gid - firstgid
+            col, row = t % cols, t // cols
+            tile = sheet.crop((col*TW, row*TH, (col+1)*TW, (row+1)*TH))
             x, y = i % W, i // W
-            out.alpha_composite(tile, (x*TW, y*TW))
-    # entity boxes + labels
-    d = ImageDraw = __import__('PIL.ImageDraw', fromlist=['ImageDraw']).Draw(out)
+            out.alpha_composite(tile, (x*TW, y*TH))
+    # entity boxes + labels (16px art boxes, as in the 16px renderer)
+    d = ImageDraw.Draw(out) if not terrain_only else None
+    art = 16
     for layer in m['layers']:
-        if layer['type'] != 'objectgroup' or not layer.get('visible', True):
+        if terrain_only or layer['type'] != 'objectgroup' or not layer.get('visible', True):
             continue
         for o in layer.get('objects', []):
             props = {p['name']: p.get('value') for p in o.get('properties', [])}
             kind = (props.get('kind') or o.get('type') or o.get('class') or '?')
             x, y = o.get('x', 0), o.get('y', 0)
-            w = o.get('width', 0) or (TW if o.get('point') is None else 0)
-            h = o.get('height', 0) or (TW if o.get('point') is None else 0)
+            w = o.get('width', 0) or (art if o.get('point') is None else 0)
+            h = o.get('height', 0) or (art if o.get('point') is None else 0)
             if o.get('point'):
-                w, h = TW, TW
-                y -= TW  # point objects: feet at the point
+                w, h = art, art
+                y -= art  # point objects: feet at the point
             colours = {'Spawn': (0, 228, 54), 'Room': (60, 60, 90),
                        'Exit': (255, 0, 77), 'Key': (255, 236, 39),
                        'Lock': (255, 163, 0), 'Door': (255, 119, 168),
@@ -89,12 +101,15 @@ def render(map_path, out_path, scale=2):
             d.rectangle([x, y, x + w - 1, y + h - 1], outline=col + (255,))
             d.text((x + 1, y + 1), (o.get('name') or kind)[:6], fill=col + (255,))
     if scale != 1:
-        out = out.resize((W*TW*scale, H*TW*scale), Image.NEAREST)
+        out = out.resize((W*TW*scale, H*TH*scale), Image.NEAREST)
     out.save(out_path)
-    print(f"{map_path} -> {out_path} ({W*TW*scale}x{H*TW*scale})")
+    print(f"{map_path} -> {out_path} ({W*TW*scale}x{H*TH*scale})")
+
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
         print(__doc__)
         sys.exit(1)
-    render(sys.argv[1], sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 2)
+    args = [a for a in sys.argv[1:] if a != '--terrain-only']
+    render(args[0], args[1], int(args[2]) if len(args) > 2 else 2,
+           terrain_only='--terrain-only' in sys.argv)

@@ -57,7 +57,7 @@ do
   local g = env.TWANG_TEST.game
   g.ctx.config.enemies.enabled = false
   local p = g.ctx.player
-  p.x, p.y, p.vx, p.vy = 720, 148, 0, 0
+  p.x, p.y, p.vx, p.vy = 1376, 148, 0, 0
   run_steps(env, 6)
   local keys = env.TWANG_TEST.keys_down
   keys.right = true
@@ -76,7 +76,7 @@ do
   local g = env.TWANG_TEST.game
   g.ctx.config.enemies.enabled = false
   local p = g.ctx.player
-  p.x, p.y, p.vx, p.vy = 720, 148, 0, 0
+  p.x, p.y, p.vx, p.vy = 1488, 148, 0, 0
   run_steps(env, 6)
   local keys = env.TWANG_TEST.keys_down
   keys.x = true
@@ -108,7 +108,7 @@ do
   -- a fresh grounded player: full coyote; force airborne and count the
   -- window's decay (the player is over solid floor, so the ground keep
   -- must not refill it: lift them a tile into the air)
-  p.x, p.y, p.vx, p.vy = 720, 148, 0, 0
+  p.x, p.y, p.vx, p.vy = 1488, 148, 0, 0
   run_steps(env, 6)
   p.y = p.y - 100  -- lifted well clear: the fall outlasts the window,
                    -- so the ground keep cannot refill it
@@ -131,7 +131,7 @@ do
   local g = env.TWANG_TEST.game
   g.ctx.config.enemies.enabled = false
   local p = g.ctx.player
-  p.x, p.y, p.vx, p.vy = 720, 148, 0, 0
+  p.x, p.y, p.vx, p.vy = 1488, 148, 0, 0
   run_steps(env, 6)
   p.invuln = config.player.invuln_steps
   local waited = 0
@@ -150,7 +150,7 @@ do
   local p = g.ctx.player
   local Arrows = dofile("src/arrows.lua")
   place = nil
-  p.x, p.y, p.vx, p.vy = 720, 148, 0, 0
+  p.x, p.y, p.vx, p.vy = 1376, 148, 0, 0
   run_steps(env, 2)
   p.aim_power = 3
   Arrows.fire(g.ctx, 0, "normal", 1)

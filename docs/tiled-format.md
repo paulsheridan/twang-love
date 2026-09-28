@@ -1,13 +1,31 @@
 # Tiled level format for twang
 
 Levels are Tiled (mapeditor.org) JSON maps in `maps/`, loaded by
-`src/tiled.lua`. Open them in Tiled as a **16x16 orthogonal map** with
-the `twang.tsx` tileset (16 columns, firstgid 1; the 256x256 sheet whose
-tiles are 2x2 upscales of the cart's 8x8 art). External tilesets are
-resolved from `.tsx` files next to the map.
+`src/tiled.lua`. Open them in Tiled as an **8x8 orthogonal map** with the
+`twang.tsx` terrain tileset (32 columns of 8px cells over the untouched
+256x256 spritesheet; firstgid 1). The old 16px cell O became four 8px
+sub-tiles at Tiled's linear ids (O//16)*64 + (O%16)*2 + {0,1,32,33}
+(TL, TR, BL, BR) over the same image. External
+tilesets are resolved from `.tsx` files next to the map.
+
+A map that places sprite art (the characters/numbers cells) also
+references `chars16.tsx`, a **16x16 sprite tileset at firstgid 1025**
+(right after the terrain tileset's 1024 grid cells) backed by
+`chars16.png` (a byte-exact copy of spritesheet.png rows 6-10 = art
+96-175): art label = 96 + (gid - 1025). Terrain cells must come from the
+8px tileset; sprite-art gids in a tile layer are rejected with a
+warning.
+
+Reserved sprite art (NOT terrain — placeable only from chars16.tsx):
+art cells 96-103 (player animation) and 128-170 (other characters and
+numbers). Cell 135 is the one exception: the phase platform is real
+terrain and stays in the 8px tileset. The loader also rejects any
+terrain use of the reserved cells.
 
 The game is driven entirely by per-tile custom properties set on the
-tileset — no flags are hardcoded in level data.
+tilesets — no flags are hardcoded in level data. Entity art and hit
+anchors stay on the 16px art grid (`config.art_size` = 16) even though
+the terrain grid is 8px.
 
 ## Tile properties
 
@@ -25,7 +43,7 @@ tileset — no flags are hardcoded in level data.
 
 ### One-way platforms (`oneway`)
 
-A tile flagged `oneway` (the blue thin platform, tile 64) is a
+A tile flagged `oneway` (the blue thin platform, art 64) is a
 standable-from-above slat: a falling body whose feet cross the tile's
 top edge lands on it (the swept fall span can't tunnel through — a
 max-speed fall is 9px/step and the catch sweeps that whole span).
@@ -42,7 +60,7 @@ lands on it — extend + launch (`config.springs.launch_velocity`), no
 switch involved. A switch strike does nothing to a spring now. The
 hitbox is the pad band at the tile's bottom (`config.springs.
 pad_height` = 8px, matching the collapsed tile-16 art); the extended
-state plays the tile-32 art (`spring_ext`).
+state plays the art-32 cell (`spring_ext`).
 
 ### Phase tiles
 
@@ -58,10 +76,10 @@ arrow strikes flip them (a spring switch popping back does not).
 
 ### Wall-run lanes (`runnable`)
 
-A tile flagged `runnable` (the checkered box) marks a wall-run lane: a
-maximal horizontal line of consecutive runnable tiles in one row, at
-least two tiles long. The tiles themselves are pass-through — nothing
-collides with them; they are pure markers.
+A tile flagged `runnable` (the checkered box, art 81) marks a wall-run
+lane: a maximal horizontal band where BOTH 8px rows of a 16px art row
+are runnable, at least two art tiles long. The tiles themselves are
+pass-through — nothing collides with them; they are pure markers.
 
 - **Trigger**: the player's body centre enters one of the line's first
   two tiles from a pushed end — the outermost tile, or one in from it —
@@ -131,12 +149,12 @@ collides with them; they are pure markers.
   device fires its variant's shove with a constant great-force impulse
   — the launcher puzzle element:
   - **`updraft`** — a column drag: everything overlapping the device's
-    column or `config.pusher.up.side` tiles (2) to either side, between
-    the device's top edge and `config.pusher.up.reach` (64px — 4 tiles)
+    16px block or `config.pusher.up.side` art tiles (2) to either side,
+    between the device's top edge and `config.pusher.up.reach` (64px)
     above it, launches straight up. Legacy `pusher`-kind objects behave
     as updrafts.
   - **`outdraft`** — a sector drain: everything within
-    `config.pusher.out.radius` (4 tiles) of the device's centre whose
+    `config.pusher.out.radius` (64px) of the device's centre whose
     radial lies inside the `config.pusher.out.cone` (45° half-angle)
     around straight up is shoved along that radial, up-and-away; anyone
     beside or below the device feels nothing.
@@ -146,15 +164,16 @@ collides with them; they are pure markers.
   projectile, so it cannot strike anything). Per-instance
   overrides (`push`, `shove_grace`; updraft `reach`, `side`; outdraft
   `cone`, `radius` object properties) beat the defaults.
-- **`mover` family** (`mover`, `mover_trigger` Classes; sprite tile 17,
+- **`mover` family** (`mover`, `mover_trigger` Classes; sprite art 17,
   the plain orange block) — the moving blocks: a solid block of 1..3
-  tiles a way that travels back and forth along a tile-aligned line from
-  its rest position, pausing the same moment at each end (30 steps, 1s).
+  art tiles (16px cells) a way that travels back and forth along a
+  tile-aligned line (8px map tiles) from its rest position, pausing the
+  same moment at each end (30 steps, 1s).
   The line's DIRECTION is the required `dir` property (`up`, `down`,
   `left` or `right`) — explicit only, nothing about the block's shape
   implies it, so a block of any footprint can run any way; a missing or
   misspelled `dir` skips the mover with a warning. It runs for the
-  required `distance` (tiles) property — a mover without either
+  required `distance` (8px map tiles) property — a mover without either
   property is skipped with a warning. Bodies standing on the top face
   ride it; anything solid or any body in its path STALLS it (never a
   crush).
@@ -170,9 +189,9 @@ collides with them; they are pure markers.
     `config.mover.speed` = 1.0 — INTEGER speeds scroll perfectly
     evenly; fractional ones stutter on the pixel canvas) and `pause`
     (steps at each end, default 30). The footprint: explicit
-    `tiles_w`/`tiles_h` (int tiles) properties win; otherwise the
+    `tiles_w`/`tiles_h` (int art tiles) properties win; otherwise the
     object's own placed size (resize the mover object in Tiled) rounds
-    to tiles. Both clamp to `config.mover.max_tiles` = 3 each way
+    to art tiles. Both clamp to `config.mover.max_tiles` = 3 each way
     (minimum 1). Level1's debug sandbox carries the demo pair.
 
 ## Entities on Object Layers
@@ -200,9 +219,9 @@ Grouping rules:
   ungrouped keys/locks work with anything
 - a door opens once every lock in its group is triggered (ungrouped
   locks for an ungrouped door) and opens every door of that group
-- a door object OWNS its tile: its state alone decides the tile's
-  solidity, so a 2-block-tall door can be authored as two door objects
-  stacked over doorway art
+- a door object OWNS its 16px art block (a 2x2 run of 8px cells): its
+  state alone decides the block's solidity, so a 2-block-tall door can
+  be authored as two door objects stacked over doorway art
 
 Any other custom property on an object is passed through to the game
 entity and overrides that entity's defaults (per-instance tuning, e.g.
@@ -248,10 +267,10 @@ crossing it wipes the screen into room B.
 
 ### Authoring rooms in Tiled (step by step)
 
-1. Open the level (16x16, the `twang.tsx` tileset).
+1. Open the level (8x8, the `twang.tsx` terrain tileset).
 2. **Layer menu → Add Object Layer** (name it e.g. `Rooms`).
 3. Select the **Insert Rectangle** tool (`R`). Draw a rectangle:
-   - its **top-left must sit on a tile corner** — turn on the 16px grid
+   - its **top-left must sit on a tile corner** — turn on the 8px grid
      and snap (the loader warns and snaps otherwise),
    - size it a **multiple of the 480x320 view** (480 wide x 320 tall
      for one screen; 960x320 for a two-screen-wide room). A room
@@ -290,8 +309,18 @@ At runtime:
 
 ## Cart fallbacks
 
-If the tileset defines no kind/slope properties at all, the pico-8 cart
-defaults in `src/tiled.lua` apply, so a migrated level needs no manual
-setup. The per-kind tile ids used for sprite fallbacks are in
+If no tileset defines kind properties at all, the pico-8 cart defaults
+in `src/tiled.lua` apply, so a migrated level needs no manual setup.
+The per-kind sprite label ids used for fallbacks are in
 `src/config.lua` (`config.tiles`).
+
+## Migration notes
+
+The 8px tile migration was performed by `tools/migrate_maps_8px.py`
+(tile layers expand 16px cells into their four sub-tiles; kind-marker
+cells into their top-left sub-tile; object anchors re-derived at the
+old 16px snap). `tools/build_tsx_8px.py` rebuilt the terrain tileset in
+place and `tools/make_chars16.py` generated the sprite tileset.
+`maps/little.json` predates the 16px era and was never part of the
+level set — it is left as an unreferenced fixture.
 

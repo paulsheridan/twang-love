@@ -23,7 +23,7 @@ local function assert_true(cond, msg)
   end
 end
 
-local tw = config.tile_size
+local tw = config.art_size  -- art-cell px (16): the fixtures think in 16px cells
 
 local function step(env)
   env.love.update(1/30)
@@ -49,6 +49,13 @@ do
   local ground_key
   for _, k in ipairs(ents.keys) do
     if not k.taken and k.y == 15 * tw then ground_key = k end
+  end
+  -- the meadow's ground key rests on art row 15 (y 240; the loader
+  -- snaps to the 16px art grid in the 8px world too)
+  if not ground_key then
+    for _, k in ipairs(ents.keys) do
+      if not k.taken and k.y == 240 then ground_key = k end
+    end
   end
   assert_true(ground_key ~= nil, "a key sits on the ground")
   p.x, p.y, p.vx, p.vy = ground_key.x, ground_key.y + 4, 0, 0

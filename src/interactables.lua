@@ -49,11 +49,11 @@ end
 -- `spring` may carry a group (unused now; kept so future wiring can
 -- scope strikes), and `player` is the landing body.
 function Interactables.spring_vault(ents, spring, body)
-  local tw = config.tile_size
+  local art = config.art_size
   local pad = config.springs.pad_height
-  local stand = spring.y + tw - pad
+  local stand = spring.y + art - pad
   if body.gr and math.abs((body.y + body.h) - stand) <= 4
-  and body.x + body.w > spring.x and body.x < spring.x + tw then
+  and body.x + body.w > spring.x and body.x < spring.x + art then
     body.vy = config.springs.launch_velocity
     body.gr = false
     body.j_frames = 0
@@ -66,11 +66,11 @@ end
 -- are landing pads now (fired by the player's landing, src/player.lua):
 -- this pass only ages the extended art.
 function Interactables.update_springs(ents, dt, world)
-  local tw = config.tile_size
+  local art = config.art_size
   for _, spring in ipairs(ents.springs) do
     -- springs beyond the active room hold their extension (off-screen)
     if spring.ext and (not world
-    or world:in_room(spring.x + tw/2, spring.y + tw/2)) then
+    or world:in_room(spring.x + art/2, spring.y + art/2)) then
       spring.ext = spring.ext - dt
       if spring.ext <= 0 then
         spring.ext = nil

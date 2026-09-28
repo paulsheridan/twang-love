@@ -217,8 +217,7 @@ function Particles.aftermath(ents, world, x, y, smoke)
     local a = i / 8 * math.pi * 2
     local ux, uy = math.cos(a), math.sin(a)
     for d = 6, 24, 6 do
-      if world:solid_for_arrow(x + ux*d, y + uy*d)
-      or world:in_slope_solid(x + ux*d, y + uy*d) then
+      if world:solid_for_arrow(x + ux*d, y + uy*d) then
         px, py = x + ux*d, y + uy*d   -- the burnt face
         dx, dy = -ux, -uy             -- sparks fly back off it
         break

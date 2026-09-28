@@ -172,7 +172,7 @@ local function step_rocket(ctx, r)
     local sx, sy = mvx / nsub, mvy / nsub
     for _ = 1, nsub do
       local nx, ny = r.x + sx, r.y + sy
-      if world:solid_for_arrow(nx, ny) or world:in_slope_solid(nx, ny) then
+      if world:solid_for_arrow(nx, ny) then
         -- scorched chunks off the struck wall, flying back along the
         -- rocket's heading (the blast's spark burst rides the boom)
         Particles.scorch(ctx.ents, r.x, r.y, r.hx, r.hy)

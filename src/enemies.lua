@@ -43,8 +43,7 @@ local Enemies = {}
 -- ==== archer senses ====
 
 -- Clear line of sight between (ex, ey) and (ax, ay)? Samples the ray
--- each sight_step px and lets terrain (solid tiles and slope wedges)
--- block it. No x-ray vision. Shared by the enemy-sight and the arrow
+-- each sight_step px and lets terrain block it. No x-ray vision. Shared by the enemy-sight and the arrow
 -- sight (below).
 local function sight_clear(ctx, ex, ey, ax, ay)
   local cfg = config.enemies
@@ -55,7 +54,7 @@ local function sight_clear(ctx, ex, ey, ax, ay)
   local step = cfg.sight_step
   for d = step, dist - 1, step do
     local x, y = ex + dx/dist*d, ey + dy/dist*d
-    if ctx.world:solid_at(x, y) or ctx.world:in_slope_solid(x, y) then
+    if ctx.world:solid_at(x, y) then
       return false
     end
   end
@@ -219,8 +218,8 @@ local function range_to_bounds(x, y, ux, uy, w, h)
 end
 
 -- Marches a ray from (x, y) along the unit vector (ux, uy) until it hits
--- terrain (anything arrows cannot fly through, plus slopes) or leaves the
--- world, and returns the px distance travelled. Exposed for tests.
+-- terrain (anything arrows cannot fly through) or leaves the world, and
+-- returns the px distance travelled. Exposed for tests.
 function Enemies.beam_range(world, x, y, ux, uy)
   local cfg = config.enemies
   local step = cfg.laser_ray_step
@@ -228,8 +227,7 @@ function Enemies.beam_range(world, x, y, ux, uy)
   local d = 0
   while d < bound do
     local nd = math.min(d + step, bound)
-    if world:solid_for_arrow(x + ux*nd, y + uy*nd)
-    or world:in_slope_solid(x + ux*nd, y + uy*nd) then
+    if world:solid_for_arrow(x + ux*nd, y + uy*nd) then
       return nd
     end
     d = nd
@@ -619,7 +617,7 @@ local function patrol(e, spd, world)
   local px = e.facing > 0 and (e.x+e.w) or (e.x-1)
   local wall_ahead  = world:solid_at(px, e.y+e.h/2)
   local ledge_ahead = not world:solid_at(px, e.y+e.h)
-  local roam = config.enemies.roam_tiles * config.tile_size
+  local roam = config.enemies.roam_tiles * config.art_size
   local lo, hi = e.home_x and e.home_x - roam or nil,
                  e.home_x and e.home_x + roam or nil
   if lo or hi then
@@ -645,7 +643,7 @@ local function walk_toward(e, tx, spd, world)
   local dir = (tx >= e.x + e.w/2) and 1 or -1
   local px = dir > 0 and (e.x + e.w) or (e.x - 1)
   local ledge_ahead = not world:solid_at(px, e.y + e.h)
-  local max_drop = config.enemies.max_drop_tiles * config.tile_size
+  local max_drop = config.enemies.max_drop_tiles * config.art_size
   if ledge_ahead
   and world:drop_depth(px, e.y + e.h, max_drop) > max_drop then
     e.vx = 0  -- toes at the edge: the walk refuses to step off
@@ -656,18 +654,18 @@ local function walk_toward(e, tx, spd, world)
   return true
 end
 
--- A small backed perch: a wall within two tiles behind the archer and
--- open ground (a ledge) within two tiles ahead. Such archers hold the
--- edge instead of pacing back and forth in a box.
+-- A small backed perch: a wall within two art tiles (16px cells) behind
+-- the archer and open ground (a ledge) within two art tiles ahead. Such
+-- archers hold the edge instead of pacing back and forth in a box.
 local function perch(e, world)
-  local tw = config.tile_size
+  local art = config.art_size
   local wall_behind = false
-  for d = 1, 2 * tw do
+  for d = 1, 2 * art do
     local bx = e.facing > 0 and (e.x - d) or (e.x + e.w - 1 + d)
     if world:solid_at(bx, e.y + e.h/2) then wall_behind = true break end
   end
   if not wall_behind then return false end
-  for d = 0, 2 * tw - 1 do
+  for d = 0, 2 * art - 1 do
     local ax = e.facing > 0 and (e.x + e.w + d) or (e.x - 1 - d)
     if not world:solid_at(ax, e.y + e.h) then return true end
   end
@@ -685,7 +683,6 @@ function Enemies.update_one(ctx, e)
   e.gr = false
   e.y  = e.y + e.vy * dt
   world:resolve_y(e)
-  world:resolve_slopes(e)
 
   if e.gr then
     if e.type == "melee" then

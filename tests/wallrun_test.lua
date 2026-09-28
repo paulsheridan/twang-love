@@ -57,9 +57,13 @@ local function run_until_done(env, cap)
   return steps
 end
 
--- level1's placed line: ground row 27, columns 6..15 (10 tiles).
+-- level1's placed line: ground art row 27, art columns 6..15 (10 tiles)
+-- = 8px rows 54/55, columns 12..31 after the 8px migration.
 local LINE_ROW = 27
 local LINE_C0, LINE_C1 = 6, 15
+local LINE_ROW8 = LINE_ROW * 2        -- the band's top 8px row
+local LINE_C0_8 = LINE_C0 * 2         -- 8px columns
+local LINE_C1_8 = LINE_C1 * 2 + 1
 local PIN_Y = LINE_ROW * 16 + (16 - 12) / 2
 
 -- ==== 1. trigger from the line's left end tile ====
@@ -74,7 +78,7 @@ do
   run_steps(env, 1)
   assert_true(p.wallrun ~= nil, "the run engages from the line's left end tile")
   assert_true(p.wallrun.dir == 1, "the run direction follows the pushed stick")
-  assert_true(p.wallrun.c_end == LINE_C1,
+  assert_true(p.wallrun.c_end == LINE_C1_8,
     "the run targets the line's far end (got " .. tostring(p.wallrun
     and p.wallrun.c_end) .. ")")
   assert_true(p.vx == config.wallrun.speed, "the run moves at its own speed")
@@ -173,7 +177,7 @@ do
   env.TWANG_TEST.keys_down.x = true
   run_steps(env, 1)
   assert_true(p.wallrun ~= nil, "the run engages one tile in from the left end")
-  assert_true(p.wallrun.c_end == LINE_C1,
+  assert_true(p.wallrun.c_end == LINE_C1_8,
     "the second-tile entry still targets the line's far end (got "
     .. tostring(p.wallrun and p.wallrun.c_end) .. ")")
   run_until_done(env, 90)
@@ -192,7 +196,7 @@ do
   run_steps(env, 1)
   assert_true(p.wallrun ~= nil, "the run engages one tile in from the right end")
   assert_true(p.wallrun.dir == -1, "the mirrored entry runs leftward")
-  assert_true(p.wallrun.c_end == LINE_C0,
+  assert_true(p.wallrun.c_end == LINE_C0_8,
     "the mirrored entry targets the line's far left (got "
     .. tostring(p.wallrun and p.wallrun.c_end) .. ")")
 end
@@ -236,17 +240,17 @@ do
   local env = Harness.boot()
   local g = env.TWANG_TEST.game
   local w = g.ctx.world
-  local c0, c1 = w:runnable_line(8, LINE_ROW)
-  assert_true(c0 == LINE_C0 and c1 == LINE_C1,
-    "runnable_line spans the placed row (got " .. c0 .. ".." .. c1 .. ")")
-  local c0b, c1b = w:runnable_line(LINE_C0, LINE_ROW)
-  local c0c, c1c = w:runnable_line(LINE_C1, LINE_ROW)
-  assert_true(c0b == LINE_C0 and c1b == LINE_C1 and c0c == LINE_C0
-    and c1c == LINE_C1, "the scan is the same from any tile of the line")
-  assert_true(w:runnable_line(5, LINE_ROW) == nil,
+  local c0, c1 = w:runnable_band_line(16, LINE_ROW8)
+  assert_true(c0 == LINE_C0_8 and c1 == LINE_C1_8,
+    "runnable_band_line spans the placed band (got " .. c0 .. ".." .. c1 .. ")")
+  local c0b, c1b = w:runnable_band_line(LINE_C0_8, LINE_ROW8)
+  local c0c, c1c = w:runnable_band_line(LINE_C1_8 - 1, LINE_ROW8)
+  assert_true(c0b == LINE_C0_8 and c1b == LINE_C1_8 and c0c == LINE_C0_8
+    and c1c == LINE_C1_8, "the scan is the same from any tile of the line")
+  assert_true(w:runnable_band_line(10, LINE_ROW8) == nil,
     "the empty square beside the line is not runnable")
-  assert_true(w:runnable_line(8, LINE_ROW + 1) == nil,
-    "a plain-air row is not runnable")
+  assert_true(w:runnable_band_line(16, LINE_ROW8 + 2) == nil,
+    "a plain-air band is not runnable")
   assert_true(w:runnable(0) == false, "tile 0 (outside the map) is inert")
 end
 

@@ -74,14 +74,14 @@ local function step_bomb(ctx, b)
     local sx, sy = b.vx * ctx.dt / nsub, b.vy * ctx.dt / nsub
     for _ = 1, nsub do
       local nx, ny = b.x + sx, b.y + sy
-      if world:solid_for_arrow(nx, ny) or world:in_slope_solid(nx, ny) then
+      if world:solid_for_arrow(nx, ny) then
         -- grenade body: bounce, don't detonate (axis-separated checks,
         -- like the arrow bounce; a corner reverses both axes) -- then
         -- spend the rest of the step at the last free spot. Each bounce
         -- cracks the surface: scorched chunks blast off it.
         local ivx, ivy = b.vx, b.vy
-        local hx = world:solid_for_arrow(nx, b.y) or world:in_slope_solid(nx, b.y)
-        local hy = world:solid_for_arrow(b.x, ny) or world:in_slope_solid(b.x, ny)
+        local hx = world:solid_for_arrow(nx, b.y)
+        local hy = world:solid_for_arrow(b.x, ny)
         if hx then b.vx = -b.vx end
         if hy then b.vy = -b.vy end
         if not hx and not hy then b.vx, b.vy = -b.vx, -b.vy end

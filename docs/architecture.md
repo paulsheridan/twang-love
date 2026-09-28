@@ -1,8 +1,9 @@
 # twang architecture
 
-A LÖVE 11 port of the twang pico-8 cart: a 480x320 native render (16x16
-tiles and sprites, each an exact 2x2 upscale of the original 8x8 art) at
-a 60hz fixed-timestep simulation with render interpolation and a smooth
+A LÖVE 11 port of the twang pico-8 cart: a 480x320 native render (8x8
+terrain tiles over the untouched 2x2-upscaled sheet; 16x16 entity art
+cells, each an exact 2x2 upscale of the original 8x8 art) at a 60hz
+fixed-timestep simulation with render interpolation and a smooth
 camera. World time is measured in 30hz-steps (the pico-8 cart's tick):
 `ctx.dt = 30/sim.rate` per sim tick, so the per-step tuning constants
 are rate-invariant and the rate knob can move without retuning. Levels
@@ -17,11 +18,11 @@ src/
   config.lua             every gameplay/rendering constant, in one place
   game.lua               orchestrator: owns state, runs the 30hz sim, renders
   input.lua              input state with pico-8 button semantics (btn/btnp)
-  world.lua              tile grid, tile flags, solidity queries, slope collision
+  world.lua              tile grid, tile flags, solidity queries
   level.lua              level assembly: scans Tiled objects into entity lists
    player.lua             player physics, bow aiming/firing, key carrying,
                           rope pendulum (attach/detach/winch), the
-                          wall-run over runnable tile lines
+                          wall-run over runnable bands
     arrows.lua             player + enemy arrows (flight, bounce, stick, hits);
                            rope arrows (range, anchoring); the bomb arrow's
                            contact detonation + blast (detonate_bomb);
@@ -44,7 +45,7 @@ src/
                            particles and the ghost tint are the whole
                            effect)
    interactables.lua      key/lock/door/switch/spring puzzle logic
-   movers.lua             moving blocks: tile-aligned platforms that
+   movers.lua             moving blocks: grid-aligned platforms that
                           travel a line and pause at each end; the
                           auto cycler and the stand/arrow-triggered
                           lift (rider carry, stalls, no crush)
@@ -55,8 +56,8 @@ src/
                           burning aftermath anchored at impact sites
    camera.lua             smooth follow, clamped to the world, with a
                           decaying random shake for explosions
-   sprites.lua            spritesheet quads + draw helper (flip/rot) -- 16x16
-                          tiles, 2x2 upscales of the cart's 8x8 art
+   sprites.lua            spritesheet quads + draw helper (flip/rot) --
+                          16x16 art cells; 8px terrain sub-tile quads
   palette.lua            the 16-colour pico-8 palette
   util.lua               small math/geometry helpers
   tiled.lua              Tiled JSON/TSX loader
@@ -90,7 +91,7 @@ tools/
 ctx = { config, input, world, ents, tiles, cam, player, die }
 ```
 
-- `world` — the tile grid + flags + slope shapes (from `src/world.lua`),
+- `world` — the tile grid + flags (from `src/world.lua`),
   created from the loaded Tiled map and the interactable entity lists
 - `ents` — live entity lists from `src/level.lua`: spawn_points, arrows,
   e_arrows, enemies, rockets, bombs, particles, keys, locks, doors,
@@ -158,7 +159,7 @@ checkpointless maps are unchanged.
 **The generated levels.** The v1 ladder's eight maps are emitted by
 `tools/build_level.lua` (a level DSL over the Tiled JSON format —
 terrain vocabulary: orange grass surface 36 over dark fill 2, orange
-blocks, sticky pebbles, the phase tile, arrow slits); the maps carry no
+blocks, sticky pebbles, the phase block, arrow slits); the maps carry no
 Background layer, so the void behind everything is the flat sky blue of
 `config.world.sky` (the renderer skips `World.bg_map` entirely);
 `tools/render_map.py` renders any map to a sprite-accurate PNG for
@@ -225,28 +226,28 @@ which is what keeps the trace baseline stable.
 - **Jump corner forgiveness.** When a rising body clips a ledge with
   exactly one head corner, `resolve_y` slides it horizontally around
   the corner (up to `player.corner_nudge_px`, destination head corners
-  verified free) instead of snapping below the tile and zeroing the
+  verified free) instead of snapping below the cell and zeroing the
   velocity — jumps taken under ledges reach their full height. Both
   corners covered (a real overhang) or a blocked/over-cap slide falls
   back to the normal head bump. Inert for enemies, which never move
   upward.
-- **Doors and springs own tiles.** A door's state alone decides its
-  tile's solidity; a closed door is also a bouncy surface like a sticky
-  wall (`World.sticky_at` answers for doors), so arrows never embed in
-  one and hang in a doorway after a switch opens it; springs are
-  **landing pads**: solid across the bottom `springs.pad_height` px of
-  their tile (matching the inactive sprite's pad, so bodies stand on it
-  instead of hovering), with `resolve_y` landing bodies on the pad
-  surface — and the pad FIRES ITSELF on the landing edge: every landing
+- **Doors and springs own their 16px art blocks** (a 2x2 run of 8px
+  cells). A door's state alone decides its block's solidity; a closed
+  door is also a bouncy surface like a sticky wall (`World.sticky_at`
+  answers for doors), so arrows never embed in one and hang in a
+  doorway after a switch opens it; springs are **landing pads**: solid
+  across the bottom `springs.pad_height` px of their art block
+  (matching the inactive sprite's pad, so bodies stand on it instead of
+  hovering), with `resolve_y` landing bodies on the pad surface — and the pad FIRES ITSELF on the landing edge: every landing
   that touches a spring pad extends it and vaults the body
   (`Interactables.spring_vault`). Switch strikes no longer touch
-  springs. Switch tiles are recessed (arrows fly in, bodies don't).
+  springs. Switch blocks are recessed (arrows fly in, bodies don't).
   Switches that drive doors stay momentary-free: every strike flips a
   switch on<->off and re-evaluates its group's doors; only switches
   flagged `phase` flip the blocks.
-- **Phase tiles flip with phase-switch strikes.** Tiles flagged `phase`
-  on the tileset (one designated tile per level, e.g. the platform ring,
-  tile 135) all toggle solid<->non-solid together on a strike of a
+- **Phase tiles flip with phase-switch strikes.** Cells flagged `phase`
+  on the tileset (one designated art cell per level, e.g. the platform ring,
+  art cell 135) all toggle solid<->non-solid together on a strike of a
   switch carrying the bool `phase` property (the level's `switch_pform`
   trio), regardless of that switch's group; door switches never touch
   the blocks. While non-solid they collide with
@@ -254,13 +255,13 @@ which is what keeps the trace baseline stable.
   `World.phase_solid` is the single state flag, checked in
   `solid_at` and the map draw; spring pop-backs don't flip it (springs
   don't answer switches any more) — only arrow strikes do.
-- **One-way platforms.** Tiles flagged `oneway` (the blue thin slat,
-  tile 64; tileset property, gff bit 5) are standable from above only:
+- **One-way platforms.** Cells flagged `oneway` (the blue thin slat,
+  art 64; tileset property, gff bit 5) are standable from above only:
   `resolve_y`'s downward pass runs `World:oneway_catch` — the feet's
   SWEPT span (previous feet from the render-stamp `_py`; a full-speed
-  9px/step fall can cross a whole tile in two steps, so the swept span
-  is what counts) crossing into an oneway tile's row snaps the body to
-  the tile's top edge. Everything else passes through: the tile is not
+  9px/step fall can cross a whole 8px tile in two steps, so the swept span
+  is what counts) crossing into an oneway cell's row snaps the body to
+  the cell's top edge. Everything else passes through: the cell is not
   `solid`, so rising bodies jump through from below, arrows fly through
   (`solid_for_arrow`), enemy sight and laser beams see past it, and
   enemies treat it as open air (their ledge probes read `solid_at`).
@@ -268,7 +269,7 @@ which is what keeps the trace baseline stable.
   friction quirk).
 - **The archer brain** (below) runs archers; melee enemies just patrol.
 - **Patrols are bounded.** Every enemy patrols at most
-  `enemies.roam_tiles` (10) tiles from its spawn anchor (`home_x`,
+  `enemies.roam_tiles` (10 art tiles) from its spawn anchor (`home_x`,
   snapped at scan time) — on long flat ground it turns around at the
   roam limit instead of drifting away. Investigate walks are deliberate
   and exempt from the limit.
@@ -316,7 +317,7 @@ which is what keeps the trace baseline stable.
   remains, and laser spots spark without smoking.
 - **Stuck arrows are perches** (embedded in vertical walls only; see
   the arrow-perch bullet below), not ground, and arrows substep their
-  flight so fast shots never skip a tile. Rope arrows are exempt (they
+  flight so fast shots never skip a cell. Rope arrows are exempt (they
   anchor instead).
 - **Rope attach is range-checked.** A stuck rope arrow only attaches
   when the player sits within `rope.max_length` of the anchor at attach
@@ -417,8 +418,9 @@ which is what keeps the trace baseline stable.
   and stick both fall under the count.
 - **The wall-run.** A tile flagged `runnable` (the checkered box; the
   tileset's property, packed as flag bit 4) marks a wall-run lane: a
-  maximal horizontal line of consecutive runnable tiles in one row, at
-  least two tiles long (`World:runnable_line` scans it). Runnable tiles
+  maximal horizontal band where both 8px rows of a 16px art row are
+  runnable, at least two art tiles long (`World:runnable_band_line`
+  scans it). Runnable tiles
   block nothing — players, enemies and arrows all pass through — so a
   body can only ride the lane via the run. The trigger (`Player.wallrun_check`,
   at the top of `Player.physics` each step) fires when the player's body
@@ -507,7 +509,7 @@ which is what keeps the trace baseline stable.
   (quiver slot, gravity arc, the aim preview — which rings the blast's
   catch radius at the predicted contact point) except keys (rope and
   bomb arrows never carry or pick up them: a blast must not eat a
-  puzzle key) and sticking: terrain, slopes, sticky surfaces (which
+  puzzle key) and sticking: terrain, sticky surfaces (which
   would bounce other arrows), enemies and closed doors all **detonate**
   it at the contact. A direct enemy hit kills the touched enemy (blood,
   instant) and then blasts — a bomb jump off an enemy.
@@ -536,7 +538,7 @@ which is what keeps the trace baseline stable.
 
 Movers (`src/movers.lua`, scanned in `src/level.lua` from `mover` /
 `mover_trigger` Tiled objects) are the ride puzzle device: a solid block
-of 1..3 tiles a way — explicit `tiles_w`/`tiles_h` (int tiles)
+of 1..3 art tiles a way — explicit `tiles_w`/`tiles_h` (int art tiles)
 properties win, otherwise the object's own placed size rounds to tiles;
 both clamp to `config.mover.max_tiles` — that travels back and forth
 along a tile-aligned line for the required `distance` tiles from its
@@ -575,7 +577,7 @@ a 1x1 horizontal cycler, and `mover_lift`, a 1x2 vertical lift).
   Landing uses
   `World:mover_stand_y` in `resolve_y`'s stand chain: bodies land on
   the block's FRACTIONAL top face (the exact surface they ride, not
-  the tile's top edge).
+  the block's top edge).
 - **Riding is ground.** Only the player rides (enemies are left for
   their patrol logic). A block is solid ground to the body passes
   (`p.gr`, friction, the walk motor, jump buffering, coyote time all
@@ -627,8 +629,8 @@ a 1x1 horizontal cycler, and `mover_lift`, a 1x2 vertical lift).
 ## The pusher (updraft / outdraft)
 
 The pusher family (`pusher_01`-style objects placed with the Class
-`Updraft` or `Outdraft`; shared sprite tile 86 in `twang.tsx`) is the
-launcher puzzle device: a solid one-tile block standing on the ground
+`Updraft` or `Outdraft`; shared sprite art 86 in `twang.tsx`) is the
+launcher puzzle device: a solid one-art-tile block standing on the ground
 that you hop over — and that flings you skyward when you shoot it. The
 kind IS the variant: the **updraft** launches everything over it
 straight up, the **outdraft** drains a cone above it up-and-away.
@@ -637,7 +639,7 @@ straight up, the **outdraft** drains a cone above it up-and-away.
   object owns its tile like a door does — always solid to bodies (you
   bump it walking, stand on its top, jump over it), and recessed to
   arrows (`solid_for_arrow` answers false) so a player arrow's tip flies
-  INTO the tile and strikes. Every variant shares the tile-86 sprite
+  INTO the block and strikes. Every variant shares the art-86 sprite
   (a per-variant tick overlay in `src/render/world.lua` shows the flow
   direction: vertical ticks for the updraft, a splayed fan for the
   outdraft).
@@ -659,14 +661,14 @@ straight up, the **outdraft** drains a cone above it up-and-away.
   winch reel) loose and ending a mid-launch wall-run. Enemies are
   shoved along the flow and never killed by the push; rockets, thrown
   bombs and darts are knocked off course.
-  - **Updraft zone**: a box over the device's tile column plus
-    `config.pusher.up.side` tiles to either side (2: a 5-tile pad
+  - **Updraft zone**: a box over the device's 16px block plus
+    `config.pusher.up.side` art tiles to either side (2: a 5-tile pad
     band), from the device's top edge up to `config.pusher.up.reach`
-    (64px — 4 tiles) above it; caught targets launch straight up no
-    matter where they sit in the box. A legacy `pusher`-kind object
-    defaults to this variant.
+    (64px) above it; caught targets launch straight up no matter where
+    they sit in the box. A legacy `pusher`-kind object defaults to
+    this variant.
   - **Outdraft zone**: everything within `config.pusher.out.radius`
-    (64px — 4 tiles) of the device's tile centre whose radial points
+    (64px) of the device's block centre whose radial points
     inside the `config.pusher.out.cone` half-angle (45°) around
     straight up is shoved along the radial (up-and-away); anyone
     beside or below the device feels nothing.
@@ -687,8 +689,8 @@ after sight breaks aims at the freshest known spot.
 - **Senses** (`Enemies.sees`): the player must be within
   `enemies.detect_distance`, in front of the archer (a back-turned
   archer is blind) and in clear line of sight — the eye -> player ray is
-  sampled every `enemies.sight_step` px and terrain (solid tiles and
-  slope wedges) blocks vision. No x-ray vision.
+  sampled every `enemies.sight_step` px and terrain (solid tiles)
+  blocks vision. No x-ray vision.
 - **Arrow senses** (`Enemies.arrow_spot`): a flying PLAYER arrow the
   enemy can see (in front, in range, clear sight) marks its position as
   the tracked spot — patrol switches to an investigate, an existing
@@ -754,7 +756,7 @@ a beam weapon instead of a ballistic volley.
 - **Beam**: when the telegraph lapses the beam fires along the last
   solved direction, marched out (`enemies.laser_ray_step` sampling) to
   the first wall — anything arrows cannot fly through (doors included,
-  arrow slits excluded) or a slope wedge — or to the world's edge. **A
+  arrow slits excluded) or to the world's edge. **A
   beam that would reach the player stops dead at them instead**: the
   slab test's entry distance caps the beam's length, so it never draws
   through them. The whole flash lives for `enemies.laser_beam_steps`
@@ -816,7 +818,7 @@ and shooting the rocket down is the counterplay.
   turns never skip a wall. A rocket detonates when it gets within
   `rocket_proximity` (12px) of the player's centre (a player who jumps
   into a hovering rocket pops it too), touches terrain
-  (`solid_for_arrow`/slopes — just short of the wall, not inside it), or
+  (`solid_for_arrow` — just short of the wall, not inside it), or
   reaches `rocket_lifetime`; flying off the world just removes it. A
   grey `Particles.smoke` trail puffs behind the tail.
 - **Explosion** (`Rockets.explode`): an expanding flash ring
@@ -876,7 +878,7 @@ hard to pin.
   burst point.
 - **Bounce**: flight is substepped (`bomb_substep` sampling) so a fast
   throw never skips a tile. Terrain contact (anything arrows cannot fly
-  through, plus slopes) **bounces the grenade body instead of
+  through) **bounces the grenade body instead of
   detonating** — the hit axis reflects and both axes damp by
   `bomb_bounce_damp` (0.5), a bounce slower than `bomb_rest_speed`
   rests the bomb where it lies (fuse still burning). Flying off the

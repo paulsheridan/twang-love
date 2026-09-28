@@ -5,13 +5,15 @@
 --
 -- Entities are Tiled objects (see src/tiled.lua): roles from the object's
 -- kind/class, puzzle groups from names, extra custom properties override
--- entity defaults (per-instance tuning like shoot cooldowns).
+-- entity defaults (per-instance tuning like shoot cooldowns). Entity art
+-- and hit anchors stay on the 16px art grid (config.art_size) even
+-- though the terrain grid is 8px.
 
 local Util = require("src.util")
 
 local Level = {}
 
--- Snaps an object's pixel position to the tile grid.
+-- Snaps an object's pixel position to the terrain grid (8px).
 local function snap_tile(v, tw)
   return math.floor(v / tw + 0.5) * tw
 end
@@ -80,14 +82,23 @@ function Level.build(level, config)
   -- ==== spawn points ====
   -- NOTE: the spawn may remain a marker tile in the tile layer (as in the
   -- current level); everything else is object-based. The marker scan uses
-  -- the pico-8 cart spawn tile constant (preserved cart behaviour).
+  -- the pico-8 cart spawn label constant (preserved cart behaviour) and
+  -- matches any of the marker art's four 8px sub-tiles.
   local spawn_tile = config.tiles.spawn
+  local seen = {}
   for r = 0, level.MAP_H - 1 do
     for c = 0, level.MAP_W - 1 do
       local row = level.map[r + 1]
-      local t = row and tonumber(row:sub(c*2 + 1, c*2 + 2), 16) or 0
-      if t == spawn_tile then
-        table.insert(ents.spawn_points, {x = c*tw, y = r*tw})
+      local t = row and tonumber(row:sub(c*4 + 1, c*4 + 4), 16) or 0
+      if t ~= 0
+      and math.floor((t % 32) / 2) + math.floor(t / 64) * 16 == spawn_tile then
+        -- one point per 16px marker art cell (its four sub-cells all
+        -- match; the map carries them as one subdivided marker)
+        local key = math.floor(c / 2) .. "," .. math.floor(r / 2)
+        if not seen[key] then
+          seen[key] = true
+          table.insert(ents.spawn_points, {x = c*tw, y = r*tw})
+        end
       end
     end
   end
@@ -165,8 +176,9 @@ function Level.build(level, config)
       table.insert(ents.guns, { x = wx, y = wy, g = o.g, taken = false,
         spr = o.spr, rot = o.rot })
     elseif k == "pusher" or k == "updraft" or k == "outdraft" then
-      -- the pusher family owns its tile (a solid block, like a door):
-      -- the tile column/row come from the snapped position. The kind IS
+      -- the pusher family owns its 16px block (a solid 2x2-cell run,
+      -- like a door): the cell column/row come from the snapped
+      -- position. The kind IS
       -- the variant ("updraft" launches straight up, "outdraft" drains
       -- a cone above it up-and-away); legacy "pusher" objects default
       -- to the updraft behaviour.
@@ -208,24 +220,27 @@ function Level.build(level, config)
         print("level: warning - mover '" .. tostring(o.name)
           .. "' has no usable `dir` property (up/down/left/right); skipped")
       else
-        -- footprint: explicit `tiles_w`/`tiles_h` (int tiles) properties
-        -- win; otherwise the object's own placed size (o.ow/o.oh, from
-        -- resizing it in Tiled) rounds to tiles; clamped 1..3 each way
+        -- footprint: explicit `tiles_w`/`tiles_h` (int art tiles)
+        -- properties win; otherwise the object's own placed size
+        -- (o.ow/o.oh, from resizing it in Tiled) rounds to art tiles;
+        -- clamped 1..3 each way. Art tiles are 16px cells
+        -- (config.art_size) even though the map grid is 8px.
         local cfg = config.mover
+        local art = config.art_size
         local wt = math.max(1, math.min(cfg.max_tiles,
           tonumber(o.tiles_w)
-            or math.floor((o.ow or tw) / tw + 0.5)))
+            or math.floor((o.ow or art) / art + 0.5)))
         local ht = math.max(1, math.min(cfg.max_tiles,
           tonumber(o.tiles_h)
-            or math.floor((o.oh or tw) / tw + 0.5)))
+            or math.floor((o.oh or art) / art + 0.5)))
         local dx, dy = d[1], d[2]
         local m = {
           mode = k == "mover" and "auto" or "trigger",
           ox = wx, oy = wy,   -- rest (A end) top-left, px
           dx = dx, dy = dy,   -- the line's direction (one tile step)
           len = dist_tiles * tw, -- line length, px
-          wt = wt, ht = ht,   -- footprint, tiles
-          bw = wt * tw, bh = ht * tw,
+          wt = wt, ht = ht,   -- footprint, art tiles
+          bw = wt * art, bh = ht * art,
           bx = wx, by = wy,   -- the block's current box top-left, px
           px = 0,             -- progress along the line, tiles
           dirn = 1,           -- outward (+1) / homeward (-1)

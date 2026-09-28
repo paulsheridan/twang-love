@@ -85,7 +85,7 @@ return function(ctx, alpha)
   -- aim indicator + predicted trajectory (floored: fractional line/point
   -- coords shimmer on the pixel canvas)
   if ctx.input:down("aim") then
-    local tw = config.tile_size
+    local tw = config.art_size
     local vw, vh = config.view.width, config.view.height
     local cfg = config.arrows
     local scfg = config.spirit

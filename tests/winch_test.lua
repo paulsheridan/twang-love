@@ -351,7 +351,11 @@ do
   local wcfg = g.ctx.config.winch
   local w = rig_winch(g)
   -- a ceiling for the leftover arrow to embed in (rig_winch cleared it)
-  w:set_tile(6, 8, w:tile(0, 14))
+  for dc = 0, 1 do
+    for dr = 0, 1 do
+      w:set_tile(6*2 + dc, 8*2 + dr, w:tile(0, 28))
+    end
+  end
   place_player(g, 100, 212)
   rig_rope_shot(g, 80, 168, 8, 0)
   for _ = 1, 8 do

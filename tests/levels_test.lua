@@ -69,7 +69,7 @@ for i, entry in ipairs(config.levels) do
       -- enemies spawn on solid ground (a fallen enemy drifts forever)
       for _, e in ipairs(ents.enemies) do
         local below = world:solid_at(e.x + e.w/2, e.y + e.h + 1)
-        or world:in_slope_solid(e.x + e.w/2, e.y + e.h + 1)
+
         assert_true(below,
           label .. ": " .. e.type .. " stands on solid ground")
       end

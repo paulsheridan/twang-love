@@ -90,7 +90,7 @@ end
 -- and the shared context), replacing whatever was loaded before. Used at
 -- boot and by the level select.
 function Game:load_level(path)
-  -- level: Tiled JSON map (flags/kinds/slopes come from tileset properties)
+  -- level: Tiled JSON map (flags/kinds come from tileset properties)
   local level = tiled.load(path)
   local ents, tiles = Level.build(level, config)
   self.world = World.new(level, ents, config.tile_size)
@@ -264,11 +264,11 @@ function Game:step()
   self.play_steps = self.play_steps + 1
   if #ctx.ents.exits > 0 then
     local pad = config.exits.touch_pad
-    local tw = config.tile_size
+    local art = config.art_size
     local p = ctx.player
     for _, exit in ipairs(ctx.ents.exits) do
-      if p.x < exit.x + tw + pad and p.x + p.w > exit.x - pad
-      and p.y < exit.y + tw + pad and p.y + p.h > exit.y - pad then
+      if p.x < exit.x + art + pad and p.x + p.w > exit.x - pad
+      and p.y < exit.y + art + pad and p.y + p.h > exit.y - pad then
         self:complete_level()
         break
       end
@@ -556,7 +556,7 @@ function Game:snapshot(step)
       x=a.x, y=a.y, vx=a.vx, vy=a.vy, active=a.active, stuck=a.stuck,
       bounced=a.bounced, dying=a.dying, spin=a.spin, lt=a.lt,
       grab_cd=a.grab_cd, sdx=a.sdx, sdy=a.sdy, face=a.face,
-      on_slope=a.on_slope, kind=a.kind, traveled=a.traveled,
+      kind=a.kind, traveled=a.traveled,
       rope_taken=a.rope_taken,
       key=a.key and (a.key.g or "ungrouped") or false,
     }

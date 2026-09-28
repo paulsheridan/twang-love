@@ -8,7 +8,6 @@
 -- pass's alpha (0..1) eases between the last two sim states so 60hz
 -- physics presents smoothly on any refresh rate.
 -- Pure read: nothing here mutates game state.
-
 local config = require("src.config")
 local Palette = require("src.palette")
 local Sprites = require("src.sprites")
@@ -55,7 +54,8 @@ local function draw_map(ctx)
           love.graphics.setColor(1, 1, 1, alpha)
           cur_alpha = alpha
         end
-        love.graphics.draw(Sprites.sheet(), Sprites.quad(t), c*tw, r*tw)
+        love.graphics.draw(Sprites.sheet(), Sprites.tile_quad(t),
+          c*tw, r*tw)
       end
     end
   end
@@ -72,8 +72,7 @@ end
 --   outdraft: a three-tick fan splayed 0/±45 degrees, tracing the cone
 --   the drain covers.
 local function draw_pusher_ticks(pu)
-  local tw = config.tile_size
-  local cx = math.floor(pu.x + tw/2)
+  local cx = math.floor(pu.x + config.art_size/2)
   local top = math.floor(pu.y) - 2
   love.graphics.setColor(pcol(7))
   if pu.variant == "outdraft" then
@@ -90,7 +89,6 @@ end
 -- an auto cycler; an orange dot on the face of a parked trigger mover,
 -- which lights the way it will run once struck).
 local function draw_mover_ticks(m, bx, by)
-  local tw = config.tile_size
   local cx = math.floor(bx + m.bw / 2)
   local cy = math.floor(by + m.bh / 2)
   if m.mode == "trigger" and m.state == "rest" then
@@ -149,19 +147,23 @@ local function draw_interactables(ctx)
     draw_pusher_ticks(pu)
   end
   for _, m in ipairs(ents.movers) do
-    -- the block draws one sprite per footprint cell laid out from the
-    -- block's LIVE pixel position (a 1x2 mover is two stacked cells of
-    -- the same art, glued to the fractional box as it slides) — floored
-    -- to whole pixels like every body, so the ride is smooth rather
-    -- than popping tile to tile
+    -- the block draws its art per 16px art-cell region of the footprint
+    -- (the block's box in art tiles), laid out from the block's LIVE
+    -- pixel position — floored to whole pixels like every body, so the
+    -- ride is smooth rather than popping cell to cell. A block smaller
+    -- than one art cell scales the sprite down to fit it.
     -- the block's box lives on bx/by (not x/y): ease the box origin
     local bx = m._px and Util.lerp(m._px, m.bx, alpha or 1) or m.bx
     local by = m._py and Util.lerp(m._py, m.by, alpha or 1) or m.by
     local spr = m.spr or tiles.mover
-    for r = 0, m.ht - 1 do
-      for c = 0, m.wt - 1 do
-        Sprites.draw(spr, bx + c * config.tile_size,
-          by + r * config.tile_size, false, nil)
+    local art = config.art_size
+    for gy = 0, math.ceil(m.bh / art) - 1 do
+      for gx = 0, math.ceil(m.bw / art) - 1 do
+        local wpx = math.min(art, m.bw - gx * art)
+        local hpx = math.min(art, m.bh - gy * art)
+        love.graphics.draw(Sprites.sheet(), Sprites.quad(spr),
+          math.floor(bx + gx * art), math.floor(by + gy * art),
+          0, wpx / art, hpx / art)
       end
     end
     draw_mover_ticks(m, bx, by)
@@ -490,7 +492,7 @@ local function draw_ropes(ctx, alpha)
     local w = p.winch.ent
     love.graphics.setColor(pcol(config.rope.colour))
     local px, py = Util.render_pos(p, alpha)
-    love.graphics.line(w.x + config.tile_size/2, w.y + config.tile_size/2,
+    love.graphics.line(w.x + config.art_size/2, w.y + config.art_size/2,
       math.floor(px + p.w/2), math.floor(py + p.h/2))
     return
   end
@@ -543,7 +545,8 @@ function Render.foreground(ctx)
       if t ~= 0
       and (not room or (c*tw >= room.x and c*tw < room.x + room.w
                    and r*tw >= room.y and r*tw < room.y + room.h)) then
-        love.graphics.draw(Sprites.sheet(), Sprites.quad(t), c*tw, r*tw)
+        love.graphics.draw(Sprites.sheet(), Sprites.tile_quad(t),
+          c*tw, r*tw)
       end
     end
   end

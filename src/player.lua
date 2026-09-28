@@ -209,13 +209,11 @@ function Player.rope_step(ctx)
   -- the anchor must still be embedded: the tip itself is retracted out of
   -- the wall face, so sample a few px deeper along the stuck direction
   -- (this also releases the rope when a door opens under the arrow)
-  local embedded = a.on_slope and ctx.world:in_slope_solid(a.x, a.y)
-  if not embedded then
-    for d = 4, 12, 2 do
-      if ctx.world:solid_for_arrow(a.x + (a.sdx or 0) * d, a.y + (a.sdy or 0) * d) then
-        embedded = true
-        break
-      end
+  local embedded = false
+  for d = 4, 12, 2 do
+    if ctx.world:solid_for_arrow(a.x + (a.sdx or 0) * d, a.y + (a.sdy or 0) * d) then
+      embedded = true
+      break
     end
   end
   if not a.active or not a.stuck or not embedded then
@@ -256,22 +254,25 @@ function Player.wallrun_check(ctx)
   or (p.winch_grace and p.winch_grace > 0) then return end
   local world = ctx.world
   local tw = config.tile_size
+  local art = config.art_size
   local cx = math.floor((p.x + p.w/2) / tw)
-  local r  = math.floor((p.y + p.h/2) / tw)
-  local c0, c1 = world:runnable_line(cx, r)
+  -- the wall-run band is the 16px art row containing the body's centre
+  -- (two 8px rows of runnable cells)
+  local rb = math.floor((p.y + p.h/2) / art)
+  local c0, c1 = world:runnable_band_line(cx, rb * 2)
   if not c0 then return end
   local dir
-  -- the centre tile must sit within the line's first two tiles from the
-  -- pushed end (the outermost, or one in from it), and the line must
+  -- the centre must sit within the band's first two ART tiles from the
+  -- pushed end (four 8px columns: indices 0..3), and the band must
   -- extend in the pushed direction. Right wins when both are held, like
   -- the walk motor's ax.
-  if ctx.input:down("right") and cx < c1 and cx - c0 <= 1 then
+  if ctx.input:down("right") and cx < c1 and cx - c0 <= 3 then
     dir = 1
-  elseif ctx.input:down("left") and cx > c0 and c1 - cx <= 1 then
+  elseif ctx.input:down("left") and cx > c0 and c1 - cx <= 3 then
     dir = -1
   end
   if not dir or not ctx.input:down("jump") then return end
-  p.wallrun = { dir = dir, r = r, c_end = dir > 0 and c1 or c0,
+  p.wallrun = { dir = dir, r = rb, c_end = dir > 0 and c1 or c0,
                 y0 = p.y, t = 0 }
   p.vx = dir * config.wallrun.speed
   p.vy = 0
@@ -304,9 +305,11 @@ function Player.wallrun_step(ctx)
   end
 
   -- the ride y eases onto the band's centre line over settle_steps (the
-  -- smooth transition); no gravity while pinned
+  -- smooth transition); no gravity while pinned. The band is a 16px art
+  -- row (config.art_size).
   wr.t = wr.t + dt
-  local pin_y = wr.r * tw + (tw - p.h) / 2
+  local art = config.art_size
+  local pin_y = wr.r * art + (art - p.h) / 2
   p.y = wr.y0 + (pin_y - wr.y0) * math.min(1, wr.t / cfg.settle_steps)
   p.vy = 0
 
@@ -365,7 +368,7 @@ function Player.physics(ctx)
   local ents = ctx.ents
   local world = ctx.world
   local cfg = config.player
-  local tw = config.tile_size
+  local art = config.art_size
   local dt = ctx.dt
 
   if p.invuln > 0 then p.invuln = math.max(0, p.invuln - dt) end
@@ -549,7 +552,7 @@ function Player.physics(ctx)
     -- release can never invert it if the last step overshoots the centre.
     if p.winch then
       local w = p.winch.ent
-      local wcx, wcy = w.x + tw/2, w.y + tw/2
+      local wcx, wcy = w.x + art/2, w.y + art/2
       local px, py = p.x + p.w/2, p.y + p.h/2
       local rx, ry = wcx - px, wcy - py
       local dist = math.sqrt(rx*rx + ry*ry)
@@ -579,7 +582,6 @@ function Player.physics(ctx)
     p.fr = 1.0
     p.y = p.y + p.vy * dt
     world:resolve_y(p)
-    world:resolve_slopes(p)
     Arrows.check_platforms(ctx)
 
     -- rope position clamp: after collision, never let the player drift
@@ -602,7 +604,6 @@ function Player.physics(ctx)
         -- keep the resolved position out of solid tiles
         world:resolve_x(p)
         world:resolve_y(p)
-        world:resolve_slopes(p)
       end
     end
 
@@ -615,7 +616,7 @@ function Player.physics(ctx)
     -- overshooting the centre must not invert the throw.
     if p.winch then
       local w = p.winch.ent
-      local wcx, wcy = w.x + tw/2, w.y + tw/2
+      local wcx, wcy = w.x + art/2, w.y + art/2
       local px, py = p.x + p.w/2, p.y + p.h/2
       local rx, ry = wcx - px, wcy - py
       local dist = math.sqrt(rx*rx + ry*ry)
@@ -698,8 +699,8 @@ function Player.physics(ctx)
     local kpad = config.keys.pickup_pad
     for _, k in ipairs(ctx.ents.keys) do
       if not k.taken
-      and p.x < k.x+tw+kpad and p.x+p.w > k.x-kpad
-      and p.y < k.y+tw+kpad and p.y+p.h > k.y-kpad then
+      and p.x < k.x+art+kpad and p.x+p.w > k.x-kpad
+      and p.y < k.y+art+kpad and p.y+p.h > k.y-kpad then
         k.taken = true
         p.key   = k
         break
@@ -722,8 +723,8 @@ function Player.physics(ctx)
     for _, lock in ipairs(ctx.ents.locks) do
       if not lock.triggered
       and Interactables.key_fits_lock(p.key, lock)
-      and p.x < lock.x+tw+lpad and p.x+p.w > lock.x-lpad
-      and p.y < lock.y+tw+lpad and p.y+p.h > lock.y-lpad then
+      and p.x < lock.x+art+lpad and p.x+p.w > lock.x-lpad
+      and p.y < lock.y+art+lpad and p.y+p.h > lock.y-lpad then
         Interactables.trigger_lock(ctx.ents, lock)
         p.key.used = true  -- consumed; not released on death
         p.key      = nil
@@ -737,11 +738,11 @@ function Player.physics(ctx)
   if #ctx.ents.checkpoints > 0 then
     local cpad = config.checkpoints.touch_pad
     for _, cp in ipairs(ctx.ents.checkpoints) do
-      if p.x < cp.x+tw+cpad and p.x+p.w > cp.x-cpad
-      and p.y < cp.y+tw+cpad and p.y+p.h > cp.y-cpad
+      if p.x < cp.x+art+cpad and p.x+p.w > cp.x-cpad
+      and p.y < cp.y+art+cpad and p.y+p.h > cp.y-cpad
       and ctx.checkpoint ~= cp then
         ctx.checkpoint = cp
-        Particles.poof(ctx.ents, cp.x + tw/2, cp.y + tw/2)
+        Particles.poof(ctx.ents, cp.x + art/2, cp.y + art/2)
         break
       end
     end
@@ -751,13 +752,13 @@ function Player.physics(ctx)
   -- (the bow's next normal firing launches the gun itself)
   for _, g in ipairs(ctx.ents.guns) do
     if not g.taken
-    and p.x < g.x+tw+config.gun.pickup_pad
+    and p.x < g.x+art+config.gun.pickup_pad
     and p.x+p.w > g.x-config.gun.pickup_pad
-    and p.y < g.y+tw+config.gun.pickup_pad
+    and p.y < g.y+art+config.gun.pickup_pad
     and p.y+p.h > g.y-config.gun.pickup_pad then
       g.taken = true
       p.guns = (p.guns or 0) + 1
-      Particles.poof(ctx.ents, g.x + tw/2, g.y + tw/2)
+      Particles.poof(ctx.ents, g.x + art/2, g.y + art/2)
       break
     end
   end

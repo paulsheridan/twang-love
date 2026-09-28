@@ -25,7 +25,13 @@ local Config = {
     max_accumulator = 0.25, -- seconds; tab-through never produces a huge catchup
   },
 
-  tile_size = 16,
+  tile_size = 8,
+
+  -- The entity art cell (px): sprites, entity hit boxes and tile-count
+  -- tunings stay anchored to the 16px art grid even though the terrain
+  -- grid is 8px (the terrain tileset subdivides each art cell into four
+  -- 8px sub-tiles; entity art never subdivides).
+  art_size = 16,
 
   -- The Tiled map driving the level (see src/tiled.lua for the format).
   -- The headless harness boots this level; a real launch boots the
@@ -341,10 +347,10 @@ local Config = {
     shove_grace = 12,  -- world-steps the player's launch plays out untouched;
                        -- ends early once the player lands
     up = {
-      side = 2,        -- tiles either side of the device's column the
-                       -- updraft still catches (the 5-tile pad band)
+      side = 2,        -- art tiles either side of the device's column
+                       -- the updraft still catches (the 5-tile pad band)
       reach = 64,      -- px above the device's top edge the column
-                       -- drags (4 tiles: fairly close, by design)
+                       -- drags (4 art tiles: fairly close, by design)
     },
     out = {
       cone = 45,       -- half-angle (degrees) of the sector above the
@@ -381,8 +387,8 @@ local Config = {
                         -- (1.2 hops 2px every 5th step, which reads as
                         -- stutter)
     pause_steps = 30,   -- wait at each end of the line (1s)
-    max_tiles = 3,      -- footprint cap each way (from the object's
-                        -- width/height, rounded to tiles, clamped here)
+    max_tiles = 3,      -- footprint cap each way (art tiles, 16px, from
+                        -- the object's width/height, clamped here)
     ride_margin = 8,    -- px the block's top face may travel out from
                         -- under a rider's feet before they are no
                         -- longer carried (riders trail slightly the
@@ -399,7 +405,8 @@ local Config = {
     air_drag = 0.85,          -- horizontal damping while airborne (per world-step)
     detect_distance = 160,    -- archer sight range (px)
     shoot_cooldown = 90,
-    roam_tiles = 10,          -- max tiles an enemy patrols from its spawn point
+    roam_tiles = 10,          -- max art tiles (16px) an enemy patrols
+                              -- from its spawn point
 
     -- archer senses and shooting
     sight_step = 8,           -- px between samples along the vision ray
@@ -410,7 +417,8 @@ local Config = {
     volley_stagger = 8,      -- world-steps between the volley's arrows (one at a time)
     rapid_min = 20,           -- minimum wait between follow-up volleys (world-steps)
     rapid_extra = 20,         -- extra randomized wait on top of rapid_min
-    max_drop_tiles = 4,       -- investigating archer won't step off deeper drops
+    max_drop_tiles = 4,       -- investigating archer won't step off drops
+                              -- deeper than this (art tiles, 16px)
     investigate_timeout = 240, -- max world-steps spent walking to the last known spot
     investigate_reach = 16,   -- px from the last known spot before giving up
 
@@ -506,8 +514,8 @@ local Config = {
   springs = {
     launch_velocity = -12,
     extension_frames = 12,
-    pad_height = 8,  -- solid band at the tile's bottom (px): the inactive
-                     -- spring sprite only fills the tile's lower half, so
+    pad_height = 8,  -- solid band at the spring block's bottom (px): the
+                     -- inactive sprite fills the block's lower half, so
                      -- bodies stand on the pad instead of hovering
   },
 
@@ -597,7 +605,7 @@ local Config = {
     door = 72,
     switch = 171,
     spring = 16,
-    spring_ext = 32,  -- the extended spring's art (tile 32, the windswept block)
+    spring_ext = 32,  -- the extended spring's art (art cell 32)
     archer = 90,
     melee = 105,
     laser = 138,  -- aiming rifleman (kind also defined in maps/twang.tsx)

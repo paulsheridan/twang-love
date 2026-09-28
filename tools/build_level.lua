@@ -2,6 +2,12 @@
 -- Not part of the game; the authoring tool behind the 8-level ladder
 -- (docs/gameplan.md). Run from the project root: luajit tools/build_level.lua
 --
+-- STALE: this generator predates the 8px tile migration — it emits
+-- 16px-grid maps against the old tile layout. Its committed output
+-- (maps/meadow.json etc.) has been migrated in place by
+-- tools/migrate_maps_8px.py; regenerating will not work until this DSL
+-- is updated to the 8px grid and the new sub-tile id space.
+--
 -- Terrain sits on one tile grid ("Ground") over a full backdrop layer
 -- ("Background", the pink pebble the committed farmhouse uses). Entities
 -- are plain 16x16 rectangle objects (top-left anchored) except spawns,

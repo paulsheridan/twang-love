@@ -51,12 +51,17 @@ local function place_player(g, x, y)
   p.x, p.y, p.vx, p.vy = x, y, 0, 0
 end
 
--- Builds a ceiling block (tile column 6, row 8 -> x=96..112, y=128..144)
--- in the open area right of the spawn wall and returns the world.
+-- Builds a ceiling block (art column 6, art row 8 -> x=96..112,
+-- y=128..144; its four 8px sub-cells) in the open area right of the
+-- spawn wall and returns the world.
 local function rig_ceiling(g)
   local w = g.ctx.world
-  local solid_id = w:tile(0, 14)  -- the spawn-area wall/floor tile id
-  w:set_tile(6, 8, solid_id)
+  local solid_id = w:tile(0, 28)  -- the spawn-area wall/floor sub-tile id
+  for dc = 0, 1 do
+    for dr = 0, 1 do
+      w:set_tile(6*2 + dc, 8*2 + dr, solid_id)
+    end
+  end
   return w
 end
 
@@ -309,7 +314,10 @@ do
   place_player(g, 100, 192)
   run_steps(env, 2)
   assert_true(p.rope ~= nil, "attached for the wall-open test")
-  w:set_tile(6, 8, 0)
+  w:set_tile(12, 16, 0)
+  w:set_tile(13, 16, 0)
+  w:set_tile(12, 17, 0)
+  w:set_tile(13, 17, 0)
   run_steps(env, 1)
   assert_true(p.rope == nil, "opening the wall under the anchor releases the rope")
 end
