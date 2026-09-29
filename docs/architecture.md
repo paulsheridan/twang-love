@@ -54,8 +54,9 @@ src/
    particles.lua          poofs, blood, sparks, smoke, explosion bursts,
                           heavy-hit debris shards, scorch chunks and the
                           burning aftermath anchored at impact sites
-   camera.lua             smooth follow, clamped to the world, with a
-                          decaying random shake for explosions
+    camera.lua             smooth follow, clamped to the world, with a
+                           decaying random shake for explosions (never
+                           the player's own shots)
    sprites.lua            spritesheet quads + draw helper (flip/rot) --
                           16x16 art cells; 8px terrain sub-tile quads
   palette.lua            the 16-colour pico-8 palette
@@ -300,11 +301,15 @@ which is what keeps the trace baseline stable.
   deliberately spawn nothing when they hit terrain — their hits stay
   small and quiet against the enemies' carnage (the game never damages
   level geometry either; the chunks are pure dressing). Every
-  detonation (rockets, grenades, the bow's bomb arrows — anything that
-  appends to `ents.booms`) also kicks a **decaying camera shake**
-  (`Camera.shake`, strength scaled to the blast's radius, decaying over
-  `camera.shake_steps`; the jitter rides the clamped follow so the
-  shake self-corrects, and a room-wipe snap clears it).
+  detonation that appends to `ents.booms` (rockets, grenades, the bow's
+  bomb arrows, the pusher's flash ring) also kicks a **decaying camera
+  shake** (`Camera.shake`, strength scaled to the blast's radius,
+  decaying over `camera.shake_steps`; the jitter rides the clamped
+  follow so the shake self-corrects, and a room-wipe snap clears it) —
+  unless the boom opts out with `no_shake`, which the bow's own work
+  always does: firing is silent, and neither a bomb arrow's blast nor a
+  pusher's flash ring moves the frame. Only the enemies' explosives
+  shake.
 - **Burning aftermath.** A laser's wall end — or any blast anchored
   close to terrain (the `ents.burns` probe checks the eight surrounding
   directions for the nearest surface within 24px) — leaves a short-lived
@@ -315,10 +320,41 @@ which is what keeps the trace baseline stable.
   dark grey with near-black mix). These are stand-ins for the impact
   art to come, like the boom flash; a blast in open air leaves no
   remains, and laser spots spark without smoking.
-- **Stuck arrows are perches** (embedded in vertical walls only; see
-  the arrow-perch bullet below), not ground, and arrows substep their
+- **Stuck arrows bury their tip, and the terrain buries them back.**
+  On a stick the tip is set `arrows.embed_px` (2px, a quarter tile) *into*
+  the surface it struck, so the arrow reads as driven into the world
+  rather than resting against it, and `draw_stuck_arrows` runs before
+  `draw_map` so the tiles paint over that buried length. The recorded
+  face (`a.face` for walls) is unchanged by the embed, so the perch
+  below still measures against the tile edge. A rope anchored to a
+  buried arrow starts its line at the surface (`tip - heading *
+  embed_px`), not at the tip, so the rope never lies across the wall.
+- **Impact leaves the shaft buckled.** The drawn shaft of an embedded
+  arrow is two segments meeting at a kink a little way back from the
+  tip: the kick scales with the impact speed
+  (`min(bend_max_px, max(0, speed - bend_speed) * bend_scale)`, so a
+  soft tap lands dead straight and a full-power hit visibly buckles) and
+  is capped at a couple of pixels. It is pure render geometry off the
+  arrow's own retained `sdx`/`sdy` heading and impact velocity — no new
+  sim field, and no `math.random` call (which would shift the traced RNG
+  stream and every enemy decision downstream of it); which way it kinks
+  rides the tile the arrow sits in.
+- **Stuck arrows in walls are perches** (see the arrow-perch bullet
+  below), not ground, and arrows substep their
   flight so fast shots never skip a cell. Rope arrows are exempt (they
   anchor instead).
+- **A shot out the far side bleeds too.** A direct arrow hit on an
+  enemy throws blood **twice**: the existing `Particles.blood` spray at
+  the entry wound, thrown back out the way the arrow came in, and
+  `Particles.blood_exit` at the point the shot *leaves* the body, thrown
+  **along** the travel — the same cone, the same `blood_count`, 180
+  degrees apart. The exit point comes from an analytic slab walk of the
+  arrow's AABB along its **live** heading (the arc has turned since the
+  bow released it, so the launch heading is not the heading that
+  matters), and both sprays share one emitter, so the entry spray's
+  distribution is untouched. The two together read as *the shot went
+  through* rather than stopping at the near edge. Applies to every arrow
+  kind that takes the enemy branch.
 - **Rope attach is range-checked.** A stuck rope arrow only attaches
   when the player sits within `rope.max_length` of the anchor at attach
   time — farther anchors are ignored (the pendulum length-clamp used to
@@ -375,15 +411,20 @@ which is what keeps the trace baseline stable.
   the wall at `player.walljump_push`. Blocked while a rope, winch,
   wall-run or arrow perch owns the body.
 - **Arrow perches catch falls, not ground.** A stuck (non-rope) arrow
-  in a vertical wall stops a falling player as a PERCH (`p.
-  arrow_stand`): the feet pin to the arrow's band and vy is zeroed,
-  but `p.gr` stays false — no coyote, no walk (the walk motor stands
-  down), no wall-run trigger, no spirit recharge. The perch is
-  something to stop a fall and nothing else: the exits are a jump (a
-  buffered press launches a normal jump), the arrow's destruction, a
-  shove, a rope attach, a winch capture or death. While perched the
-  AIM is clamped to the 180 degrees away from the wall the arrow sits
-  in (`Util.clamp_aim_away`): the stick, the keyboard nudge and the
+  catches a falling player as a PERCH (`p.arrow_stand`) only when it is
+  genuinely embedded in a wall — it recorded a `face` (only a
+  horizontal-tile hit records one, so floor and ceiling arrows never
+  qualify) and the tile just past that face is still solid, re-checked
+  every step. A shallow shot lying in the floor is walked over, and open
+  the wall under a perch and the body drops off it. When it does hold,
+  the feet pin to the arrow's band and vy is zeroed, but `p.gr` stays
+  false — no coyote, no walk (the walk motor stands down), no wall-run
+  trigger, no spirit recharge. The perch is something to stop a fall and
+  nothing else: the exits are a jump (a buffered press launches a
+  normal jump), the arrow's destruction, a shove, a rope attach, a
+  winch capture or death. While perched the AIM is clamped to the 180
+  degrees away from the wall the arrow sits in
+  (`Util.clamp_aim_away`): the stick, the keyboard nudge and the
   entering angle all pass through — you cannot fire back into the wall
   you lean against.
 - **The gun.** Laser riflemen drop their gun at their death spot
@@ -392,8 +433,8 @@ which is what keeps the trace baseline stable.
   firing launches the GUN itself as the projectile (kind "gun"): it
   flies an arrow's arc a touch heavier (`gun.speed_scale`), carries no
   key, and detonates on ANY contact through `Arrows.detonate_bomb` —
-  the shared red boom ring, camera shake and proximity-falloff shove
-  exactly like the bomb arrow (the "red bang on contact"). Placeholder
+  the shared red boom ring and proximity-falloff shove exactly like the
+  bomb arrow (the "red bang on contact"), and equally silent. Placeholder
   art: a dark slab with a red tip (pickup held/rendered in
   render/world.lua + render/player.lua).
 - **Hitstop.** `ctx.freeze` counts world-steps the simulation hangs:
@@ -405,9 +446,10 @@ which is what keeps the trace baseline stable.
   death (`Player.die`) and level load.
 - **Juice: thuds and dust.** `Camera.thud` is Camera.shake's little
   sibling (random jitter on the clamped follow, own decay length
-  `camera.thud_steps`): jumps, hard landings (scaled by fall speed),
-  bow releases and gun shots kick one; a live blast shake is never
-  overridden by a thud. `Particles.dust` throws grey footfall puffs on
+  `camera.thud_steps`): jumps and hard landings (scaled by fall speed)
+  kick one; a live blast shake is never overridden by a thud. The bow
+  is not a thud source at all — releasing it, gun shot or not, is
+  deliberately steady. `Particles.dust` throws grey footfall puffs on
   jumps, landings and wall leaps (strength-scaled), and
   `Particles.fire_puff` blows a small report along the aim on every
   bow release.
@@ -511,8 +553,8 @@ which is what keeps the trace baseline stable.
   bomb arrows never carry or pick up them: a blast must not eat a
   puzzle key) and sticking: terrain, sticky surfaces (which
   would bounce other arrows), enemies and closed doors all **detonate**
-  it at the contact. A direct enemy hit kills the touched enemy (blood,
-  instant) and then blasts — a bomb jump off an enemy.
+  it at the contact. A direct enemy hit kills the touched enemy (blood
+  out both sides, instant) and then blasts — a bomb jump off an enemy.
   `Arrows.detonate_bomb` runs the blast: the shared boom flash
   (`ents.booms`, sized to `bomb_arrow.blast_radius`), the spark/poof
   burst, and a hard radial shove with **linear proximity falloff** from
@@ -652,7 +694,8 @@ straight up, the **outdraft** drains a cone above it up-and-away.
   fires the push again.
 - **The push** (`Arrows.trigger_pusher` through the shared zone-driven
   `Arrows.shove`, also used by `detonate_bomb`): the flash ring sized to
-  the variant's catch radius (the camera shake rides ents.booms) plus a
+  the variant's catch radius (it flags `no_shake`, so striking the
+  device never shakes the camera) plus a
   spark burst, then a shove on everything the variant's catch zone
   accepts, at CONSTANT strength (a predictable launcher). The player's
   knock is ADDED to their velocity — it stacks with jump and swing
@@ -958,17 +1001,27 @@ luajit tests/trace_diff.lua tests/trace_baseline.txt /tmp/trace.txt
    with the blast's enemy kill, the 2-bomb burst cadence, the airborne
    cap and the toggle disarm); `tests/player_test.lua` covers
    the hearts system (i-frame-gated melee drain, arrow hits, fatal
-   refill, void death);    `tests/rope_test.lua` covers the rope arrow
+   refill, void death) and the steady bow (no camera shake on any
+   arrow kind or gun shot, while a jump still thuds);    `tests/rope_test.lua` covers the rope arrow
    (attach + hang, pendulum swing bounds, detach-preserving-velocity,
    winching, max-range expiry, platform exemption, swap, anchor loss)
-   and the spirit arrow (opposite-of-aim flings — airborne, grounded
+   and the arrow perch (rope arrows give no platform, only wall arrows
+   catch a fall, a floor arrow is walked over, opening the wall drops
+   the perch), `tests/arrows_test.lua` covers how an arrow reads once
+   it has struck terrain (the tip buried `embed_px` inside a wall and
+   under a floor, the recorded face unchanged so the perch still
+   catches, the shaft drawn buckled on a full-power hit and straight on
+   a soft one, and a struck enemy bleeding at the entry wound and again
+   out of the far face along the shot), and the spirit arrow
+   (opposite-of-aim flings — airborne, grounded
    and additive, the power/force scaling, the ghost tint window, the
    rope cut and the quiver bypass); `tests/bomb_arrow_test.lua` covers the bomb
    arrow (the swap cycle, contact detonation on terrain and sticky
    surfaces, the blast's enemy shove with out-of-radius sparing, the
    direct-hit kill plus blast, the additive proximity-falloff shove,
    the harmless self-blast, the grace window and rope cuts at fire and
-   blast, rocket/bomb/dart knocks, and the key-carry exclusion);
+   blast, rocket/bomb/dart knocks, the key-carry exclusion, and the
+   silent blast ring against a shaking enemy rocket blast);
    `tests/results_test.lua` covers the completion flow (exit touch ->
    results, grade thresholds, best time/grade recording, results-panel
    inputs, next-level/replay flow, death counting):

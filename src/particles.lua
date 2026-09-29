@@ -28,6 +28,22 @@ function Particles.poof(ents, x, y)
   end
 end
 
+-- The shared cone emitter: `count` dots thrown from (x, y) around
+-- `base` (the cone's central angle, radians) within ±`spread`/2, at
+-- `speed`-capped px/step, living `life` world-steps, with the target's
+-- own motion (bvx/bvy) carried onto every one so a spray never lags a
+-- moving body. The two blood sprays below are the same cone pointing
+-- opposite ways.
+local function spray(ents, x, y, base, count, spread, speed, life, col,
+                     bvx, bvy)
+  for _ = 1, count do
+    local a   = base + math.random()*spread - spread/2
+    local spd = math.random()*speed + 1
+    add(ents.particles, x, y, math.cos(a)*spd + (bvx or 0),
+      math.sin(a)*spd + (bvy or 0), col, math.random(life[1], life[2]))
+  end
+end
+
 -- Blood spray in the direction opposite to the arrow's travel. `bvx`,
 -- `bvy` is an optional base velocity added onto every particle (the
 -- hit body's motion, so the spray doesn't lag behind a moving target).
@@ -35,14 +51,21 @@ function Particles.blood(ents, x, y, avx, avy, bvx, bvy)
   local cfg = config.particles
   local len = math.sqrt(avx*avx + avy*avy)
   if len == 0 then len = 1 end
-  local base = math.atan2(-avy/len, -avx/len)
-  for _ = 1, cfg.blood_count do
-    local a   = base + math.random()*0.25 - 0.125
-    local spd = math.random() * 3 + 1
-    add(ents.particles, x, y, math.cos(a)*spd + (bvx or 0),
-      math.sin(a)*spd + (bvy or 0),
-      cfg.blood_colour, math.random(cfg.blood_life[1], cfg.blood_life[2]))
-  end
+  spray(ents, x, y, math.atan2(-avy/len, -avx/len), cfg.blood_count,
+    0.25, 3, cfg.blood_life, cfg.blood_colour, bvx, bvy)
+end
+
+-- The far side of the same spray: the identical blood cone leaving the
+-- OTHER face of a pierced body, thrown ALONG the shot's travel — a full
+-- 180 degrees from Particles.blood, which comes back out the way the
+-- arrow came in. The two together say the shot went through. Called at
+-- the point the arrow exits the body, not at the entry wound.
+function Particles.blood_exit(ents, x, y, avx, avy, bvx, bvy)
+  local cfg = config.particles
+  local len = math.sqrt(avx*avx + avy*avy)
+  if len == 0 then len = 1 end
+  spray(ents, x, y, math.atan2(avy/len, avx/len), cfg.blood_count,
+    0.25, 3, cfg.blood_life, cfg.blood_colour, bvx, bvy)
 end
 
 -- Sparks thrown off a laser beam's impact with the player: hot flecks

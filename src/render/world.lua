@@ -1,6 +1,6 @@
 -- World rendering (everything except the player, which is drawn last):
--- map tiles, interactables, particles, enemies, enemy arrows and the
--- player's arrows.
+-- embedded arrows, map tiles, interactables, particles, enemies, enemy
+-- arrows and the player's arrows.
 --
 -- All functions read shared state through ctx: {config, world, ents, cam}.
 -- Movable entities draw at their eased position (Util.render_pos): the
@@ -423,55 +423,101 @@ local function arrow_tip(x, y)
 end
 
 local ARROW_SHAFT = 9
+local STUCK_SHAFT = 12
+
+-- The embedded arrow's shaft, drawn BUCKLED: the impact leaves it kinked
+-- a little way back from the buried tip, so it draws as two segments
+-- meeting at a point nudged sideways off the flight line. The kick
+-- scales with how fast the arrow arrived (a soft tap lands dead
+-- straight, a full-power shot visibly buckles) and is capped at
+-- `arrows.bend_max_px` — a couple of pixels, just enough to read as
+-- "struck hard", never a snapped shaft. Pure geometry off the arrow's
+-- own state: `sdx`/`sdy` are its frozen heading and `vx`/`vy` are still
+-- the impact velocity, so the sim never grows a field for this. Which
+-- way it buckles rides the tile the arrow sits in, so neighbours kink
+-- differently without the sim spending a random draw.
+local function bent_shaft(x, y, a)
+  local cfg = config.arrows
+  local spd = math.sqrt(a.vx*a.vx + a.vy*a.vy)
+  local kick = math.min(cfg.bend_max_px,
+    math.max(0, spd - cfg.bend_speed) * cfg.bend_scale)
+  local tw = config.tile_size
+  local sign = (math.floor(a.x / tw) + math.floor(a.y / tw)) % 2 == 0
+    and 1 or -1
+  -- the kink: most of the way back down the shaft, offset along the
+  -- heading's perpendicular
+  local kx = x - a.sdx * STUCK_SHAFT * 0.6 - a.sdy * kick * sign
+  local ky = y - a.sdy * STUCK_SHAFT * 0.6 + a.sdx * kick * sign
+  love.graphics.line(math.floor(kx), math.floor(ky),
+    math.floor(x - a.sdx*STUCK_SHAFT), math.floor(y - a.sdy*STUCK_SHAFT))
+  love.graphics.line(math.floor(x), math.floor(y),
+    math.floor(kx), math.floor(ky))
+end
+
+-- Embedded arrows get their own pass, drawn BEFORE the terrain (see
+-- Render.world): the tip is buried in the surface, so the tiles have to
+-- paint over that buried length and the arrow must not be visible in
+-- front of the wall it is stuck into. Only the shaft shows, emerging.
+local function draw_stuck_arrows(ctx, alpha)
+  for _, a in ipairs(ctx.ents.arrows) do
+    if a.active and a.stuck then
+      local ax, ay = Util.render_pos(a, alpha)
+      local x, y = math.floor(ax), math.floor(ay)
+      love.graphics.setColor(pcol(7))
+      arrow_tip(x, y)
+      love.graphics.setColor(pcol(config.arrows.colour))
+      bent_shaft(x, y, a)
+    end
+  end
+end
 
 local function draw_arrows(ctx, alpha)
   for _, a in ipairs(ctx.ents.arrows) do
     if a.active then
       local ax, ay = Util.render_pos(a, alpha)
       local x, y = math.floor(ax), math.floor(ay)
-      if a.stuck then
-        love.graphics.setColor(pcol(7))
-        arrow_tip(x, y)
-        love.graphics.setColor(pcol(config.arrows.colour))
-        love.graphics.line(x, y,
-          x - math.floor(a.sdx*12), y - math.floor(a.sdy*12))
-      elseif a.dying then
-        -- spin-out: shaft whirling around its centre, tip leading
-        local ca = math.floor(math.cos(a.spin) * 5)
-        local sa = math.floor(math.sin(a.spin) * 5)
-        love.graphics.setColor(pcol(config.arrows.colour))
-        love.graphics.line(x - ca, y - sa, x + ca, y + sa)
-        love.graphics.setColor(pcol(7))
-        arrow_tip(x + ca, y + sa)
-      else
-        local len = math.sqrt(a.vx*a.vx + a.vy*a.vy)
-        if len > 0 then
-          local hx, hy = a.vx/len, a.vy/len
+      -- a stuck arrow's shaft already drew, under the terrain; all that
+      -- is left of it here is the key it carries, which must stay
+      -- readable against the wall
+      if not a.stuck then
+        if a.dying then
+          -- spin-out: shaft whirling around its centre, tip leading
+          local ca = math.floor(math.cos(a.spin) * 5)
+          local sa = math.floor(math.sin(a.spin) * 5)
           love.graphics.setColor(pcol(config.arrows.colour))
-          love.graphics.line(x, y,
-            x - math.floor((a.vx/len)*ARROW_SHAFT),
-            y - math.floor((a.vy/len)*ARROW_SHAFT))
-          if a.kind == "bomb" then
-            -- bomb arrows trade the white tip for a red bulb with a
-            -- blinking fuse spark riding just behind it
-            love.graphics.setColor(pcol(8))
-            love.graphics.circle("fill",
-              x + math.floor(hx*2), y + math.floor(hy*2), 3)
-            if math.floor(a.traveled / 2) % 2 == 0 then
+          love.graphics.line(x - ca, y - sa, x + ca, y + sa)
+          love.graphics.setColor(pcol(7))
+          arrow_tip(x + ca, y + sa)
+        else
+          local len = math.sqrt(a.vx*a.vx + a.vy*a.vy)
+          if len > 0 then
+            local hx, hy = a.vx/len, a.vy/len
+            love.graphics.setColor(pcol(config.arrows.colour))
+            love.graphics.line(x, y,
+              x - math.floor((a.vx/len)*ARROW_SHAFT),
+              y - math.floor((a.vy/len)*ARROW_SHAFT))
+            if a.kind == "bomb" then
+              -- bomb arrows trade the white tip for a red bulb with a
+              -- blinking fuse spark riding just behind it
+              love.graphics.setColor(pcol(8))
+              love.graphics.circle("fill",
+                x + math.floor(hx*2), y + math.floor(hy*2), 3)
+              if math.floor(a.traveled / 2) % 2 == 0 then
+                love.graphics.setColor(pcol(7))
+                dot(x + math.floor(hx*6), y + math.floor(hy*6))
+              end
+            elseif a.kind == "gun" then
+              -- the gun in flight: a chunky dark shell with a red tip
+              -- (placeholder art, like the dropped pickup)
+              love.graphics.setColor(pcol(1))
+              love.graphics.rectangle("fill",
+                x + math.floor(hx*3) - 2, y + math.floor(hy*3) - 2, 4, 4)
+              love.graphics.setColor(pcol(8))
+              dot(x + math.floor(hx*4), y + math.floor(hy*4))
+            else
               love.graphics.setColor(pcol(7))
-              dot(x + math.floor(hx*6), y + math.floor(hy*6))
+              arrow_tip(x, y)
             end
-          elseif a.kind == "gun" then
-            -- the gun in flight: a chunky dark shell with a red tip
-            -- (placeholder art, like the dropped pickup)
-            love.graphics.setColor(pcol(1))
-            love.graphics.rectangle("fill",
-              x + math.floor(hx*3) - 2, y + math.floor(hy*3) - 2, 4, 4)
-            love.graphics.setColor(pcol(8))
-            dot(x + math.floor(hx*4), y + math.floor(hy*4))
-          else
-            love.graphics.setColor(pcol(7))
-            arrow_tip(x, y)
           end
         end
       end
@@ -501,14 +547,23 @@ local function draw_ropes(ctx, alpha)
   local a = rope.arrow
   love.graphics.setColor(pcol(config.rope.colour))
   local px, py = Util.render_pos(ctx.player, alpha)
-  love.graphics.line(a.x, a.y,
+  -- the line starts at the anchor's SURFACE, not at its buried tip: the
+  -- rope draws over the terrain, so anchoring at the tip would lay the
+  -- first few px of line across the wall
+  local e = config.arrows.embed_px
+  love.graphics.line(a.x - (a.sdx or 0)*e, a.y - (a.sdy or 0)*e,
     math.floor(px + ctx.player.w/2),
     math.floor(py + ctx.player.h/2))
 end
 
 -- The full world pass, in draw order (player drawn separately on top;
 -- the foreground overlay renders after them, see render/blit.lua).
+-- Embedded arrows draw FIRST, under the terrain: their tips sink into
+-- the surface they struck, so the tiles have to paint over the buried
+-- length and the arrow must never read as floating in front of the wall
+-- it is stuck into.
 function Render.world(ctx, alpha)
+  draw_stuck_arrows(ctx, alpha)
   draw_map(ctx)
   draw_interactables(ctx, alpha)
   draw_particles(ctx, alpha)

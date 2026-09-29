@@ -8,7 +8,9 @@
 --   3. jump detaches and preserves velocity (no buffered jump)
 --   4. winching: up shortens, down lengthens, within the clamps
 --   5. rope arrows poof at max_range in flight; normal arrows do not
---   6. rope arrows are not platforms; normal stuck arrows still are
+--   6. rope arrows are not platforms; only arrows embedded in a wall
+--      are (a floor arrow is walked over, and an opened wall drops
+--      the perch); normal wall arrows still catch the fall
 --   7. the swap button cycles arrow types and firing produces the kind
 --   8. losing the anchor (arrow removed / wall opened) releases the rope
 --   9. spirit shots fling the player opposite the aim (a burst of
@@ -76,6 +78,19 @@ local function rig_rope_arrow(g)
   }
   table.insert(g.ctx.ents.arrows, a)
   return a
+end
+
+-- Builds a solid wall column (x=88..96, y=176..223; its 8px sub-cells)
+-- in the open area right of the spawn wall. A perch only exists where
+-- there really is a wall, so the wall-arrow scenarios stand one up
+-- rather than perching off a face hanging in thin air.
+local function rig_wall(g)
+  local w = g.ctx.world
+  local solid_id = w:tile(0, 28)  -- the spawn-area wall/floor sub-tile id
+  for dr = 22, 27 do
+    w:set_tile(11, dr, solid_id)
+  end
+  return w
 end
 
 local function rope_dist(g)
@@ -219,9 +234,11 @@ do
     "a normal arrow flies past the rope's max range unaffected")
 end
 
--- ==== 6. rope arrows are not platforms; normal arrows still are ====
--- (both scenarios sit the player clear of the spawn area's left wall:
--- an automatic wall-slide now catches falls against solid walls)
+-- ==== 6. rope arrows are not platforms; only arrows in a wall are ====
+-- (the scenarios sit the player clear of the spawn area's left wall:
+-- an automatic wall-slide now catches falls against solid walls. A
+-- perch requires a real wall behind the arrow, so the wall cases rig
+-- one -- a face hanging in thin air is not a perch)
 do
   -- rope variant: the player falls straight past the stuck arrow
   local env = Harness.boot()
@@ -240,10 +257,12 @@ do
 end
 do
   -- normal variant: the stuck arrow catches the falling player as a
-  -- PERCH (not ground): feet pinned to the arrow, no coyote, no walk
+  -- PERCH (not ground): feet pinned to the arrow, no coyote, no walk.
+  -- The wall it leans on is real -- a perch only exists in a wall.
   local env = Harness.boot()
   local g = env.TWANG_TEST.game
   local p = g.ctx.player
+  rig_wall(g)
   table.insert(g.ctx.ents.arrows, {
     x = 80, y = 200, vx = 0, vy = 0, active = true, stuck = true,
     bounced = 0, sdx = 2, sdy = 0, spin = 0, lt = 30000,
@@ -256,6 +275,52 @@ do
     "a normal stuck arrow still catches the fall as a perch (y " .. p.y .. ")")
   assert_true(not p.gr and p.vy == 0,
     "a perch is not ground: no coyote, no walk, the fall just stops")
+end
+do
+  -- a shallow downward shot buried in the FLOOR is not a platform: it
+  -- has no wall face (only a horizontal hit records one) and there is
+  -- no wall to hug, so the player walks straight over it. This is the
+  -- arrow level 1's own opening shot leaves lying on the floor.
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local p = g.ctx.player
+  table.insert(g.ctx.ents.arrows, {
+    x = 127.7, y = 224, vx = -18, vy = 2.2, active = true, stuck = true,
+    bounced = 0, sdx = -0.992, sdy = 0.122, spin = 0, lt = 30000,
+    kind = "normal", traveled = 0,
+  })
+  place_player(g, 118, 212)  -- standing on the spawn-area floor
+  env.TWANG_TEST.keys_down.right = true
+  run_steps(env, 20)
+  assert_true(p.arrow_stand == nil,
+    "a floor-buried arrow gave no perch (x " .. p.x .. ", stand set)")
+  assert_true(p.gr and p.x > 132,
+    "the player walked over the floor arrow (x " .. p.x .. ", gr "
+      .. tostring(p.gr) .. ")")
+end
+do
+  -- the wall going away under a perch ends it: the arrow keeps its
+  -- face, but with nothing solid behind it there is no wall to hug, so
+  -- the body drops off instead of hanging in the gap
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local p = g.ctx.player
+  local w = rig_wall(g)
+  table.insert(g.ctx.ents.arrows, {
+    x = 80, y = 200, vx = 0, vy = 0, active = true, stuck = true,
+    bounced = 0, sdx = 2, sdy = 0, spin = 0, lt = 30000,
+    kind = "normal", face = 86,
+  })
+  place_player(g, 80, 180)
+  p.vy = 6
+  run_steps(env, 6)
+  assert_true(p.arrow_stand ~= nil, "the rigged wall held the perch")
+  w:set_tile(11, 25, 0)  -- open the doorway the arrow was shot into
+  run_steps(env, 2)
+  assert_true(p.arrow_stand == nil,
+    "opening the wall under the arrow dropped the perch")
+  assert_true(p.vy > 0, "the body fell once the wall was gone (vy "
+    .. p.vy .. ")")
 end
 
 -- ==== 7. the swap button cycles arrow kind; firing honours it ====

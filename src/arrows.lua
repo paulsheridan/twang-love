@@ -1,20 +1,22 @@
 -- Arrows: the player's arrows (flight, bounce, stick, key carrying,
 -- switch/lock/enemy hits) and the enemies' arrows.
 --
--- Player arrows act as one-tile-wide platforms when embedded in vertical
--- walls (see check_platforms), can carry keys to locks, and bounce off
--- sticky surfaces a limited number of times before spinning out. The
--- bow's third arrow kind, the spirit, is not an arrow at all: fire()
--- hands it to src/spirit.lua, a ghostly recoil-launch that flings the
--- player along the OPPOSITE of the aim direction (a burst of particles
--- marks the force) instead of sticking or killing. The fourth kind, the bomb
--- arrow, flies like a normal arrow but detonates on any contact
--- (Arrows.detonate_bomb): a direct enemy hit kills the touched enemy,
--- then the blast shoves the player, nearby enemies and enemy
--- projectiles radially away from the blast centre with proximity
+-- Player arrows act as one-tile-wide platforms ONLY when embedded in a
+-- vertical wall (see check_platforms), can carry keys to locks, and
+-- bounce off sticky surfaces a limited number of times before spinning
+-- out. The bow's third arrow kind, the spirit, is not an arrow at all:
+-- fire() hands it to src/spirit.lua, a ghostly recoil-launch that
+-- flings the player along the OPPOSITE of the aim direction (a burst
+-- of particles marks the force) instead of sticking or killing. The
+-- fourth kind, the bomb arrow, flies like a normal arrow but detonates
+-- on any contact (Arrows.detonate_bomb): a direct enemy hit kills the
+-- touched enemy, then the blast shoves the player, nearby enemies and
+-- enemy projectiles radially away from the blast centre with proximity
 -- falloff -- the bow's movement bomb. The shared zone-driven shove
 -- (Arrows.shove) also powers the pusher device's two variants: the
 -- updraft's straight-up column and the outdraft's up-and-away cone.
+-- None of the bow's own work moves the camera: the blasts and the
+-- pusher's flash ring flag their boom no_shake (see Game:step).
 
 local config = require("src.config")
 local Util   = require("src.util")
@@ -103,6 +105,22 @@ local function notify_arrow_contact(ctx, a, x, y)
   end
 end
 
+-- Where a shot leaves a body: the point on box `b`'s boundary reached by
+-- walking from (x, y) along the shot's unit heading (dx, dy) — the far
+-- face of the wall of meat the arrow pierced, for the exit blood spray
+-- (Particles.blood_exit). An axis the shot is not travelling down never
+-- bounds the walk; a degenerate shot starting on the boundary exits
+-- where it entered.
+local function exit_point(b, x, y, dx, dy)
+  local tx, ty = math.huge, math.huge
+  if dx > 0 then tx = (b.x + b.w - x) / dx
+  elseif dx < 0 then tx = (b.x - x) / dx end
+  if dy > 0 then ty = (b.y + b.h - y) / dy
+  elseif dy < 0 then ty = (b.y - y) / dy end
+  local t = math.min(tx, ty)
+  return x + dx * t, y + dy * t
+end
+
 -- The shared shove: everything whose position a `zone(bx, by)` sample
 -- accepts is knocked along the unit vector the zone returns --
 --
@@ -189,7 +207,8 @@ function Arrows.detonate_bomb(ctx, x, y)
   local ents = ctx.ents
   local cfg = ctx.config.bomb_arrow
   table.insert(ents.booms, { x = x, y = y,
-    t = ctx.config.enemies.boom_frames, r = cfg.blast_radius })
+    t = ctx.config.enemies.boom_frames, r = cfg.blast_radius,
+    no_shake = true })
   Particles.boom(ents, x, y)
   Particles.poof(ents, x, y)
   -- the burnt remains: the bomb arrow always detonates against a
@@ -207,9 +226,10 @@ end
 
 -- The pusher's strike (a player arrow's tip entered the device's tile;
 -- the arrow is consumed by the strike site): the shared flash ring --
--- sized to the variant's catch radius, so the camera shake rides
--- ents.booms -- and a spark burst, then the variant's shove at CONSTANT
--- strength everywhere in its catch zone: a predictable launcher.
+-- sized to the variant's catch radius -- and a spark burst, then the
+-- variant's shove at CONSTANT strength everywhere in its catch zone: a
+-- predictable launcher. The ring flags no_shake: striking a device
+-- never shakes the camera.
 --
 --   updraft: everything inside the box over the device's column plus
 --   `side` tiles to either side, from the device's top edge up to
@@ -226,7 +246,7 @@ function Arrows.trigger_pusher(ctx, pu)
   local push = pu.push or cfg.push
   local cx, cy = pu.x + ctx.config.art_size/2, pu.y + ctx.config.art_size/2
 
-  local zone, joy -- joy: the flash ring's radius, for the camera shake
+  local zone, joy -- joy: the flash ring's radius
   if variant == "updraft" then
     local side  = (pu.side  or cfg.up.side)  * ctx.config.art_size
     local top   = pu.y - (pu.reach or cfg.up.reach)
@@ -260,7 +280,7 @@ function Arrows.trigger_pusher(ctx, pu)
   end
 
   table.insert(ents.booms, { x = cx, y = cy,
-    t = ctx.config.enemies.boom_frames, r = joy })
+    t = ctx.config.enemies.boom_frames, r = joy, no_shake = true })
   Particles.boom(ents, cx, cy)
   Particles.poof(ents, cx, cy)
   Arrows.shove(ctx, zone, grace)
@@ -426,23 +446,28 @@ function Arrows.step_one(ctx, a)
         a.sdy = spd > 0 and (a.vy/spd) or a.sdy
         a.stuck = true
         a.lt = cfg.stuck_lifetime
+        -- the tip goes IN: embed_px past the face, so the arrow reads as
+        -- buried in the surface (the terrain pass draws over that buried
+        -- length) instead of resting a few px clear of it
+        local embed = cfg.embed_px
         if hx then
-          -- stick with the tip AT the wall face, pulled a little further
-          -- out, so the shaft and a carried key stay in the player's reach
+          -- the wall face is still recorded exactly as before: the perch
+          -- and its hug read it, and the tip no longer sits at it
           a.face = a.vx > 0 and math.floor(nx / tw) * tw
                            or (math.floor(nx / tw) + 1) * tw
-          a.x = a.face - (a.vx > 0 and 6 or -6)
+          a.x = a.face + (a.vx > 0 and embed or -embed)
         else
           a.x = nx
         end
         if hy then
-          a.y = (a.vy > 0) and (math.floor(ny / tw) * tw)
-                            or ((math.floor(ny / tw) + 1) * tw)
+          a.y = (a.vy > 0) and (math.floor(ny / tw) * tw + embed)
+                            or ((math.floor(ny / tw) + 1) * tw - embed)
         else
           a.y = ny
         end
         if a.kind == "rope" then
-          -- the rope anchors here: the tip freezes at the wall face
+          -- the rope anchors here: the tip freezes in the surface it
+          -- struck
           a.anchored = true
         end
         if not hx and a.key and not a.key.used then
@@ -615,6 +640,15 @@ function Arrows.step_one(ctx, a)
     for i, e in ipairs(ents.enemies) do
       if nx >= e.x and nx < e.x+e.w and ny >= e.y and ny < e.y+e.h then
         Particles.blood(ents, nx, ny, a.vx, a.vy)
+        -- ...and the same blood leaves the far side, thrown along the
+        -- shot: the entry spray above comes back out the way the arrow
+        -- came in, this one says it went THROUGH. The walk out follows
+        -- the arrow's LIVE heading (its arc has turned since the bow
+        -- released it), not the launch line it froze on.
+        local sh = math.sqrt(a.vx*a.vx + a.vy*a.vy)
+        if sh == 0 then sh = 1 end
+        local ex, ey = exit_point(e, nx, ny, a.vx / sh, a.vy / sh)
+        Particles.blood_exit(ents, ex, ey, a.vx, a.vy)
         table.remove(ents.enemies, i)
         -- the laser rifleman drops its gun at the death spot: the
         -- late-game pickup (walk into it to carry one explosive shot)
@@ -705,6 +739,20 @@ function Arrows.update(ctx)
   end
 end
 
+-- The perch's precondition: the arrow really is embedded in a vertical
+-- wall. Only a horizontal hit records `a.face` at stick time (see
+-- step_one), so the face alone rules out floor and ceiling arrows --
+-- including the shallow downward shots that used to snag a player
+-- walking over them and invent a wall face out of their own x. The
+-- wall must also still be standing: a few px past the face, the same
+-- embedding test a rope anchor gets (Player.rope_step), so a door
+-- opening under an arrow drops the perch instead of leaving it
+-- hanging in the gap.
+local function wall_perch(a, world)
+  if not a.face then return false end
+  return world:solid_for_arrow(a.face + (a.sdx > 0 and 4 or -4), a.y)
+end
+
 -- Stuck arrows in vertical walls catch the player's fall: an arrow
 -- stand is a PERCH, not ground. Landing on one enters `p.arrow_stand`:
 -- the feet pin to the arrow's band AND the body is pulled flush against
@@ -712,22 +760,25 @@ end
 -- against it, so the perch only exists as a wall-hug), but `p.gr` stays
 -- false and movement input is ignored (src/player.lua). The perch is
 -- the wall's rest state; the only exits are a jump (the wall leap, the
--- same buffered launch as a ground jump), the arrow's destruction, or a
--- shove knocking the body loose. A catch requires the body to sit
--- within a tile of the wall face -- land farther out and the fall
--- passes the arrow by (no perch away from the wall). Aim is clamped
--- away from the wall while perched (Player.aim_step).
+-- same buffered launch as a ground jump), the arrow's destruction, the
+-- wall going away under it, or a shove knocking the body loose. A
+-- catch requires the body to sit within a tile of the wall face --
+-- land farther out and the fall passes the arrow by (no perch away
+-- from the wall). Aim is clamped away from the wall while perched
+-- (Player.aim_step).
 --
--- Arrows stuck in floors or ceilings (vertical travel, |sdy| >= |sdx|)
--- are never platforms: the body passes straight through them.
+-- Only arrows embedded in a vertical wall are platforms at all
+-- (wall_perch): an arrow buried in a floor or a ceiling is never one,
+-- so the body walks straight over it.
 function Arrows.check_platforms(ctx)
-  local p, ents = ctx.player, ctx.ents
+  local p, ents, world = ctx.player, ctx.ents, ctx.world
   local tw = ctx.config.tile_size
   if p.vy < 0 then return end
-  -- maintain an existing perch first (the arrow may have been removed)
+  -- maintain an existing perch first (the arrow may have been removed,
+  -- or the wall it leaned on may have opened)
   if p.arrow_stand then
     local a = p.arrow_stand.arrow
-    if not a or not a.active or not a.stuck then
+    if not a or not a.active or not a.stuck or not wall_perch(a, world) then
       p.arrow_stand = nil
     else
       local by = p.y + p.h
@@ -742,19 +793,14 @@ function Arrows.check_platforms(ctx)
   end
   for _, a in ipairs(ents.arrows) do
     if a.stuck and a.active and a.kind ~= "rope"
-    and math.abs(a.sdx) > math.abs(a.sdy) then
-      -- only arrows embedded in vertical walls (horizontal travel) act
-      -- as perch platforms; the wall face was recorded at stick time
-      -- (the retracted tip no longer sits inside the wall tile)
+    and wall_perch(a, world) then
+      -- the wall face was recorded at stick time (the retracted tip no
+      -- longer sits inside the wall tile)
       local ay = a.y
       local by = p.y + p.h
       if by >= ay - 2 and by <= ay + 8 then
         local ax1, ax2
         local wx = a.face
-        if not wx then
-          wx = a.sdx > 0 and math.floor(a.x/tw)*tw
-                        or (math.floor(a.x/tw)+1)*tw
-        end
         if a.sdx > 0 then
           ax1, ax2 = wx - 14, wx + 4
         else

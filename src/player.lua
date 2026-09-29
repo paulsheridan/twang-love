@@ -881,16 +881,11 @@ function Player.aim_step(ctx)
       -- recoil-launch rides its own grace window instead.
       if p.arrow_kind ~= "spirit" then
         ctx.input:ignore_stick(cfg.stick_ignore_frames)
-        -- juice: the shot's report -- a small puff along the aim plus a
-        -- tiny camera thud (the gun's is chunkier, see Arrows.fire)
-        local is_gun = false
-        for _, a in ipairs(ctx.ents.arrows) do
-          if a.kind == "gun" then is_gun = true break end
-        end
+        -- juice: the shot's report -- a small puff along the aim. The
+        -- bow deliberately does not shake the camera (the bow hand
+        -- stays steady; only explosions move the frame)
         Particles.fire_puff(ctx.ents, p.x + p.w/2, p.y + p.h/2,
           Util.p8cos(p.aim_angle), Util.p8sin(p.aim_angle))
-        Camera.thud(ctx.cam, is_gun and config.camera.thud_gun
-          or config.camera.thud_fire)
       end
       p.was_aiming = false
     end

@@ -25,6 +25,8 @@
 --   8. enemies in range are shoved along the flow and never killed
 --   9. a bomb arrow striking it detonates its own blast AND fires the
 --      device (two flashes, the shoves stack)
+--  10. a plain strike fires the device's flash ring without shaking
+--      the camera
 --
 -- Usage (from the project root): luajit tests/pusher_test.lua
 
@@ -339,6 +341,28 @@ do
     .. booms .. " live)")
   assert_true(p.vy < -config.pusher.push,
     "the two shoves stack for a bigger launch (vy " .. p.vy .. ")")
+end
+
+-- ==== 9. the strike fires the device without shaking the camera ====
+-- The flash ring is the device's own light, not a blast: it flags
+-- no_shake, so an arrow striking the device leaves the frame steady.
+do
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local ctx = g.ctx
+  local pu = test_device(g)
+  ctx.player.x, ctx.player.y = pu.x + 4, pu.y - 13
+  run_steps(env, 2)
+  ctx.ents.booms = {}
+  g.cam.shake_t = nil
+  local a = rig_arrow(g, "normal", 0, 6)
+  run_until_consumed(env, a, 5)
+  local b = ctx.ents.booms[1]
+  assert_true(b ~= nil, "the strike still spawns the device's flash ring")
+  assert_true(b.no_shake == true, "the strike boom opts out of the shake")
+  assert_true(g.cam.shake_t == nil,
+    "striking the device left the camera steady (shake_t "
+      .. tostring(g.cam.shake_t) .. ")")
 end
 
 print("pusher tests: " .. PASS .. " passed, " .. FAIL .. " failed")

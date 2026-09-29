@@ -121,10 +121,12 @@ a monitor with a different resolution, so it stays crisp everywhere.
 - **Wall slide**: falling against a wall presses you to it
   automatically and slows the descent; push away to release, or jump to
   wall-leap away from the wall. No grab, no climb — pure fall-breaker.
-- **Arrows catch your fall**: standing on a stuck arrow (vertical walls)
-  is a perch, not ground — it stops the fall and nothing else (no
-  walk, no spirit charge), and your aim is clamped to the 180° away
-  from the wall while perched. Jump off as usual.
+- **Arrows catch your fall**: standing on a stuck arrow is a perch, not
+  ground — it stops the fall and nothing else (no walk, no spirit
+  charge), and your aim is clamped to the 180° away from the wall while
+  perched. Only arrows genuinely in a wall count: one shot into the floor
+  or ceiling is walked over or ducked under, and open the wall under a
+  perch and you drop off it. Jump off as usual.
 - **Wall-run** across lanes of checkered boxes: jump into either of the
   two end-most squares of a line of them while holding jump and pushing
   toward the line, and you're carried through the band at a constant
@@ -134,15 +136,23 @@ a monitor with a different resolution, so it stays crisp everywhere.
 - **Impacts read as set pieces**: enemy arrows, rockets and grenades
   slamming into terrain throw scorched chunks off platforms, walls,
   ceilings and floors, a laser beam blasts grit off whatever stops it,
-  and every detonation shakes the camera (harder for bigger booms).
+  and every enemy detonation shakes the camera (harder for bigger booms).
   The carnage lingers, too: a laser's wall end keeps throwing sparks
   for a second or so, and blasts near terrain leave a burnt face
   crackling with embers under a column of rising black smoke — simple
   dots standing in for the burnt-wall art. Your own arrows stay
-  deliberately small and quiet when they hit surfaces — no chunks, no
-  shake: you're the calm one in the fight.
+  deliberately small and quiet when they hit surfaces — no chunks, and
+  no shake at all: neither the bow's release nor anything it lands on
+  moves the frame, not even a bomb arrow's blast or a pusher's flash
+  ring. You're the calm one in the fight; only the enemies' explosions
+  shake.
 - Arrows stick into walls and bounce off sticky surfaces and closed
   doors (nothing is left embedded in a doorway once a switch opens it).
+  A stuck arrow buries its tip a couple of pixels in the surface and the
+  terrain paints over that length, so it reads as driven into the world;
+  a hard hit leaves the shaft buckled a little, a soft tap dead straight.
+  Arrow tips kill on contact, and a body shot through bleeds at the
+  entry wound and again out the far side, thrown along the shot.
 - **Springs are landing pads**: step onto one (no switch needed) and
   the pad launches you skyward — strong enough to scale a 5-tile wall.
 - **One-way platforms** (the blue slat, tile 64): standable from above,
@@ -213,10 +223,10 @@ a monitor with a different resolution, so it stays crisp everywhere.
   tiles — each system reacts to its own switches alone. Springs no
   longer answer switches: they fire on landing (see above).
 - **Juice**: every hit freezes the world for a few frames (hitstop —
-  you feel arrow kills and take damage as a stuck beat), jumps,
-  landings and shots kick up dust and tiny camera thuds (bigger booms
-  shake harder), and the bow's release throws a small report along the
-  aim.
+  you feel arrow kills and take damage as a stuck beat), jumps and
+  landings kick up dust and tiny camera thuds (bigger enemy booms shake
+  harder), and the bow's release throws a small report along the aim —
+  a report, not a shake: firing never moves the frame.
 - **Rooms**: a level may be split into camera-framed rooms (rectangles
   flagged `room` in Tiled — see `docs/tiled-format.md` for the full
   step-by-step authoring walkthrough; `maps/rooms_demo.json`, the level
@@ -312,6 +322,7 @@ luajit tests/aftermath_test.lua
 luajit tests/wallrun_test.lua
 luajit tests/pusher_test.lua
 luajit tests/mover_test.lua
+luajit tests/arrows_test.lua
 ```
 
 The trace diff must be empty. After an *intentional* gameplay change,

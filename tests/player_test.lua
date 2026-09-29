@@ -29,6 +29,9 @@
 --      movement lurch, no aim reading), then it wakes up again
 --  15. one press, one jump: holding jump never re-jumps on landing
 --  16. one press, one cycle: holding swap never spins the arrow cycle
+-- plus the camera:
+--  17. the bow never shakes the camera (every arrow kind, gun shots
+--      included), while a jump still thuds
 --
 -- Usage (from the project root): luajit tests/player_test.lua
 
@@ -601,6 +604,49 @@ do
   assert_true(changes == 1,
     "holding swap cycles the arrow kind exactly once (cycled "
     .. changes .. " times)")
+end
+
+-- ==== 17. the bow never shakes the camera ====
+-- The bow is deliberately steady: firing (every kind, gun shots
+-- included) leaves no shake on the frame. A jump still thuds, so the
+-- guard is not vacuous -- the thud machinery is alive, the bow just
+-- no longer uses it.
+do
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local cam = g.cam
+  g.ctx.config.enemies.enabled = false
+  local p = g.ctx.player
+  local keys = env.TWANG_TEST.keys_down
+  place_player(g, 720, 148)
+  run_steps(env, 4)
+  for _, kind in ipairs({ "normal", "rope", "bomb" }) do
+    cam.shake_t = nil
+    keys.z = true
+    run_steps(env, 2)
+    keys.z = nil
+    run_steps(env, 1)
+    assert_true(cam.shake_t == nil,
+      "firing a " .. kind .. " arrow left the camera steady")
+  end
+  -- the spirit fires through Spirit.fire, which never touched the
+  -- camera either; a gun shot (thud_gun's old home) is the same branch
+  g.settings.no_special = false
+  p.guns = 1
+  p.arrow_kind = "normal"
+  cam.shake_t = nil
+  keys.z = true
+  run_steps(env, 2)
+  keys.z = nil
+  run_steps(env, 1)
+  assert_true(cam.shake_t == nil, "firing a gun shot left the camera steady")
+  -- and the jump thud the bow used to share a decay length with
+  cam.shake_t = nil
+  keys.x = true
+  run_steps(env, 1)
+  keys.x = nil
+  assert_true(cam.shake_t ~= nil,
+    "a jump still thuds (shake_t " .. tostring(cam.shake_t) .. ")")
 end
 
 print(("player tests: %d passed, %d failed"):format(PASS, FAIL))

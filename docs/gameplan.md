@@ -101,8 +101,9 @@ results, and quit the game feeling like you finished it.
 - Par-time tuning against real playthroughs.
 
 ### M3 — juice & feel — partially DONE
-- ~~Screen shake on rocket blast~~ (Camera.shake) and the small stuff:
-  landing/jump dust, camera thuds on jump/land/fire, hitstop freezes
+- ~~Screen shake on rocket blast~~ (Camera.shake, enemies' explosives
+  only — the player's own shots are deliberately steady) and the small
+  stuff: landing/jump dust, camera thuds on jump/land, hitstop freezes
   on hits and arrow kills (config.player.freeze_steps)
 - Exit fanfare (particles exist; add a short jingle if audio comes in)
 - Room-wipe polish, results-panel animation

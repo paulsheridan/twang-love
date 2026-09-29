@@ -107,9 +107,13 @@ do
   local first = ws[1]
   -- the map is the author's to rearrange: assert the scan's guarantees
   -- (grid-snapped, grouped from the name, sprite from the placed tile)
-  -- rather than a hardcoded tile
-  assert_true(first.x % 16 == 0 and first.y % 16 == 0,
-    "winch_01 is grid-snapped (got " .. first.x .. "," .. first.y .. ")")
+  -- rather than a hardcoded tile. The grid is the terrain grid
+  -- (config.tile_size: 8px since the sprite-size migration), not the
+  -- 16px art cell.
+  local grid = g.ctx.config.tile_size
+  assert_true(first.x % grid == 0 and first.y % grid == 0,
+    "winch_01 is grid-snapped to " .. grid .. "px (got "
+      .. first.x .. "," .. first.y .. ")")
   assert_true(first.g == "01", "the name's suffix became the group")
   assert_true(first.spr == 133, "the sprite came from the placed tile")
 end

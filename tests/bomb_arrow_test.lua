@@ -19,6 +19,9 @@
 --      cannot clamp it) and cuts an attached rope, at blast and at fire
 --  10. the blast knocks rockets, bombs and darts off course
 --  11. bomb arrows never carry or pick up keys
+--  12. a bomb arrow and its boom render without error
+--  13. the blast's flash ring draws but never shakes the camera (an
+--      enemy rocket blast through the same booms list still does)
 --
 -- Usage (from the project root): luajit tests/bomb_arrow_test.lua
 
@@ -432,6 +435,42 @@ do
   Arrows.detonate_bomb(g.ctx, p.x + 60, p.y)
   step(env)
   assert_true(true, "the draw path survives a bomb arrow and boom")
+end
+
+-- ==== 13. the bomb arrow's blast draws, but never shakes the camera ====
+-- The bow is the calm one in the fight: the boom entry carries
+-- no_shake, so Game:step leaves the frame alone. Enemy explosives go
+-- through Rockets.blast instead and keep their shake.
+do
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local p = settle(env, 200, 100)
+  g.ctx.ents.booms = {}
+  g.cam.shake_t = nil
+  local Arrows = env.require("src.arrows")
+  Arrows.detonate_bomb(g.ctx, p.x + 60, p.y)
+  step(env)
+  local b = g.ctx.ents.booms[1]
+  assert_true(b ~= nil, "the blast still appends its flash ring")
+  assert_true(b.no_shake == true, "the bow's boom opts out of the shake")
+  assert_true(g.cam.shake_t == nil,
+    "the bow's detonation left the camera steady (shake_t "
+      .. tostring(g.cam.shake_t) .. ")")
+end
+do
+  -- the control: an enemy rocket blast through the shared blast still
+  -- shakes, so the guard above is pinning the bow's silence and not
+  -- the shake machinery itself
+  local env = Harness.boot()
+  local g = env.TWANG_TEST.game
+  local p = settle(env, 200, 100)
+  g.ctx.ents.booms = {}
+  g.cam.shake_t = nil
+  env.require("src.rockets").blast(g.ctx, p.x + 300, p.y, 24, 1)
+  step(env)
+  assert_true(g.cam.shake_t ~= nil,
+    "an enemy blast still shakes the camera (shake_t "
+      .. tostring(g.cam.shake_t) .. ")")
 end
 
 print(("bomb arrow tests: %d passed, %d failed"):format(PASS, FAIL))

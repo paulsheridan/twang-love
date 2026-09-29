@@ -250,9 +250,12 @@ function Game:step()
   end
   -- explosions shake the camera: any detonation this step (rockets,
   -- grenades, the bow's bomb arrows all append to the booms list) kicks
-  -- a decaying shake scaled to its blast radius
+  -- a decaying shake scaled to its blast radius. The bow's own blasts
+  -- opt out with no_shake: the red bang on contact and the pusher's
+  -- flash ring still draw, but the player's arrows never move the frame
+  -- (you are the calm one in the fight -- see README.md)
   for _, b in ipairs(ctx.ents.booms) do
-    if not b.shaken then
+    if not b.shaken and not b.no_shake then
       b.shaken = true
       Camera.shake(ctx.cam, b.r or config.enemies.rocket_blast_radius)
     end

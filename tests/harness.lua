@@ -44,6 +44,11 @@ function Harness.new_env(keys_down, quit_flag)
     end
   end
   local graphics = {}
+  -- Optional line capture, for tests that assert on drawn geometry
+  -- (tests/arrows_test.lua reads the stuck arrow's shaft). Off unless a
+  -- test hands TWANG_TEST.record_lines a sink table, so the long
+  -- scripted trace runs pay nothing for it.
+  local line_sink = nil
   graphics.newImage = function() return dummy_image() end
   graphics.newCanvas = function() return dummy_image() end
   graphics.newQuad = function() return {} end
@@ -58,6 +63,7 @@ function Harness.new_env(keys_down, quit_flag)
   end
   graphics.line = function(x1, y1, x2, y2)
     expect_numbers("line", x1, y1, x2, y2)
+    if line_sink then line_sink[#line_sink + 1] = {x1, y1, x2, y2} end
   end
   graphics.points = function(x, y) expect_numbers("points", x, y) end
   graphics.print = function(text, x, y)
@@ -162,6 +168,7 @@ function Harness.new_env(keys_down, quit_flag)
     },
     graphics = graphics,
   }
+  env.TWANG_TEST.record_lines = function(sink) line_sink = sink end
 
   return env
 end

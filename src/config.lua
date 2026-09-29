@@ -70,13 +70,11 @@ local Config = {
                    -- (while the player rides a moving block, the camera
                    -- also feed-forwards their motion -- see src/camera.lua)
     shake_steps = 8, -- world-steps a detonation's shake decays over
-    -- small "thud" shakes: jump/land/fire feedback — a short, tiny
+    -- small "thud" shakes: jump/land feedback — a short, tiny
     -- decaying offset distinct from the big blast shakes
     thud_steps = 3,   -- world-steps a thud decays over
     thud_jump = 1.5,  -- strength of a jump thud (px)
     thud_land = 3.0,  -- strength of a landing thud at full fall speed (px)
-    thud_fire = 1.5,  -- strength of a bow-release thud (px)
-    thud_gun = 2.5,   -- strength of a gun-fire thud (px, chunkier)
   },
 
   -- Rooms: camera-framed regions authored as "room" rectangles in the
@@ -208,6 +206,19 @@ local Config = {
     spin_out_speed = 0.45,       -- spin-out rotation, radians per world-step
     grab_cooldown = 8,          -- world-steps before the player can re-grab a key
     substep_pixels = 8,          -- collision sample spacing along the flight path
+    -- an embedded arrow is IN the surface, not resting against it: the
+    -- tip buries embed_px past the wall/floor face, and the terrain
+    -- draws over that buried length (see render/world.lua), so only
+    -- the shaft reads, coming out of the wall
+    embed_px = 2,
+    -- ...and the impact leaves the shaft buckled: the renderer kinks it
+    -- off the flight line (drawn in render/world.lua), scaled by how
+    -- hard the arrow arrived. Below bend_speed (a soft tap's whole
+    -- speed range) the arrow lands dead straight; bend_max_px keeps the
+    -- kink to a couple of pixels so it never reads as a snapped shaft
+    bend_speed = 12,     -- impact speed (px/world-step) the buckle starts at
+    bend_scale = 0.25,   -- px of kink per px/step past bend_speed
+    bend_max_px = 2,     -- cap on the kink (px)
     player_stick_frames = 12,    -- world-steps an arrow rests at a player hit
                                  -- before vanishing (visible impact point)
     preview_steps = 14,          -- aim trajectory preview dots (each spans

@@ -41,11 +41,12 @@ function Camera.shake(cam, radius)
   cam.shake_s = math.max(3, math.min(9, radius * 0.15))
 end
 
--- A small "thud" shake: jump/land/fire feedback. Same decay mechanics
+-- A small "thud" shake: jump/land feedback. Same decay mechanics
 -- as the blast shake (random jitter re-rolled per step on top of the
 -- clamped follow), but a shorter decay and a much smaller offset.
 -- Calling while a blast shake is live keeps the blast (the stronger
--- read wins; thuds never override one).
+-- read wins; thuds never override one). The bow is deliberately not a
+-- thud source — firing and striking stay steady (see Game:step).
 function Camera.thud(cam, strength)
   if strength <= 0 then return end
   if cam.shake_t and cam.shake_t > 0 then return end
