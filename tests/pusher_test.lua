@@ -83,7 +83,13 @@ do
     "the Class Outdraft object resolves the outdraft variant (got "
     .. tostring(pu and pu.variant) .. ")")
   assert_true(pu.g == "01", "pusher_01 resolves its group from the name")
-  assert_true(pu.spr == 86, "the pusher draws its placed sprite (86)")
+  -- The pusher is placed as a tile object, so the author chose its look:
+  -- the entity carries the record for the tile they placed.
+  local art = pu.art
+  assert_true(art ~= nil, "the pusher carries the art for its placed tile")
+  assert_true(art.sx ~= nil and art.sy ~= nil and art.image ~= nil,
+    "the placed art is a full tileset record (image " .. tostring(art.image)
+      .. " at " .. tostring(art.sx) .. "," .. tostring(art.sy) .. ")")
   local n_updraft = 0
   local n_outdraft = 0
   for _, pu2 in ipairs(pus) do

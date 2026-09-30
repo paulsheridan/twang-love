@@ -3,19 +3,22 @@
 -- Editing conventions (tile properties, entity objects, puzzle groups)
 -- are documented in docs/tiled-format.md. In brief:
 --
--- * 8x8 orthogonal map: the twang.tsx terrain tileset (32 columns of
---   8px cells over the untouched 256x256 spritesheet; firstgid 1 in
---   maps). Old 16px cell O became the four 8px sub-tiles at Tiled's
---   linear ids (O//16)*64 + (O%16)*2 + {0, 1, 32, 33} (TL, TR, BL, BR);
---   external tilesets are resolved from .tsx files next to the map
--- * maps that place sprite art (the characters/numbers cells) also
---   reference chars16.tsx, a 16x16 tileset at firstgid 1025:
---   art label = 96 + (gid - 1025). Cells 96-103 and 128-170 are
---   RESERVED there (135 exempt: the phase platform is real terrain);
---   the loader rejects their use in tile layers
--- * per-tile custom properties drive the game: solid, sticky,
---   friction, arrow_pass, runnable, oneway, phase (switch-flipped
---   platforms) and kind (entity role)
+-- * 8x8 orthogonal map referencing any number of tilesets, each with
+--   its own image and column count. A 8x8 tileset is TERRAIN (its tiles
+--   carry gameplay flags and paint the collision grid); a 16x16
+--   tileset is CHARACTER ART (its tiles are placed as objects).
+--   External tilesets (.tsx) are resolved from files next to the map
+-- * every referenced gid resolves to a self-contained tile record
+--   (source rect in its own image + its own flags), so two levels may
+--   use entirely different art without any shared id space
+-- * per-tile custom properties drive the game: solid, bounce (arrows
+--   reflect off it instead of embedding), friction, arrow_pass,
+--   runnable, oneway, phase (switch-flipped platforms) and kind (entity
+--   role). "sticky" is a legacy spelling of "bounce" kept for the old
+--   spritesheet tileset: either name makes arrows reflect.
+-- * a 16x16 tile with a "kind" property supplies that role's art by
+--   name (level.art[kind]); "on_id"/"ext_id" name a sibling tile in the
+--   same tileset for the switch-on / spring-extended states
 -- * entities (spawn/key/lock/door/archer/melee/switch/spring) live as
 --   tile objects on Object Layers, anchored at their 16px art box
 -- * any number of visible tile layers; layers named "background" /
@@ -30,24 +33,24 @@
 
 local json = require("lib.json")
 
-local CHARS_BASE = 96  -- art label of chars16.tsx's local tile 0
-local ART = 16         -- entity art cell (px): object anchors & hit boxes
+local ART = 16  -- entity art cell (px): object anchors & hit boxes
 
--- pico-8 cart defaults (sprite label ids in the sheet), used when no
--- tileset defines the matching property
-local DEFAULT_KINDS = {
-  spawn = 63, key = 70, lock = 71, door = 72, archer = 112, melee = 116,
-  laser = 138, rocketeer = 138, bomber = 138, switch = 171, spring = 16,
-  spring_ext = 33,   winch = 133, exit = 172, checkpoint = 173,
-  pusher = 86, updraft = 86, outdraft = 86,
-  mover = 17, mover_trigger = 17, movertrigger = 17,
-  gun = 138,  -- a placed gun pickup (same cell art as the ranged enemies)
+-- The vocabulary of entity roles an object may claim, by "kind"
+-- property or Class field. This is the game's vocabulary, not art: what
+-- each role LOOKS like comes from the tileset tile that carries the
+-- kind, so the two are free to change independently.
+local KINDS = {
+  "spawn", "key", "lock", "door", "switch", "spring", "winch", "gun",
+  "pusher", "updraft", "outdraft", "mover", "mover_trigger", "movertrigger",
+  "exit", "checkpoint",
+  "archer", "melee", "laser", "rocketeer", "bomber",
 }
+local KIND_NAMES = {}
+for _, name in ipairs(KINDS) do KIND_NAMES[name] = true end
 
 local tiled = {
-  DEFAULT_KINDS  = DEFAULT_KINDS,   -- exported for tools (kind -> label)
-  ART            = ART,             -- exported for tools
-  CHARS_BASE     = CHARS_BASE,      -- exported for tools
+  KINDS  = KINDS,   -- exported for tools (the role vocabulary)
+  ART    = ART,     -- exported for tools
 }
 
 local function read_file(path)
@@ -69,7 +72,10 @@ local function xml_unescape(s)
 end
 
 -- minimal .tsx reader: header attributes, the image reference and the
--- per-tile custom properties; everything else in the file is ignored
+-- per-tile custom properties; everything else in the file is ignored.
+-- Tiled has two shapes: a SHEET (one <image>, tiles cut from it by
+-- source rect) and a COLLECTION (each <tile> carries its own <image>).
+-- Both are supported; `tsx.collection` tells them apart.
 local function parse_tsx(xml)
   local tsx = {}
   local head = xml:match("<tileset[^>]*>")
@@ -112,7 +118,18 @@ local function parse_tsx(xml)
       end
     end
     local n = tonumber(id)
-    tsx.tiles[n + 1] = { id = n, properties = props }
+    local tile = { id = n, properties = props }
+    -- a collection tileset: this tile has an image of its own
+    local timg = body:match("<image[^>]*>")
+    if timg then
+      local a = {}
+      for k, v in timg:gmatch('([%w_]+)%s*=%s*"([^"]*)"') do a[k] = v end
+      tile.image = xml_unescape(a.source or "")
+      tile.imagewidth = tonumber(a.width)
+      tile.imageheight = tonumber(a.height)
+      tsx.collection = true
+    end
+    tsx.tiles[n + 1] = tile
   end
   return tsx
 end
@@ -130,18 +147,64 @@ local function prop_map(props)
   return props
 end
 
--- Sprite labels reserved for chars16 (NOT terrain; 135 exempt: the
--- phase platform is a real tile).
-
--- The 16px art label of a terrain sub-tile id t (the sheet's 16-column
--- art row-major layout recovered from the tileset's 32-column 8px grid:
--- art col = (t % 32) // 2, art row = (t // 32) // 2).
-local function sub_label(t)
-  return math.floor((t % 32) / 2) + math.floor(t / 64) * 16
+-- The source rect of a tile within its tileset image. `columns` is the
+-- tileset's own column count, so this works for any geometry; margin
+-- and spacing are honoured for hand-authored sheets.
+local function source_rect(ts, id)
+  local m, sp = ts.margin or 0, ts.spacing or 0
+  local col = id % ts.columns
+  local row = math.floor(id / ts.columns)
+  return m + col * (ts.tilewidth + sp), m + row * (ts.tileheight + sp)
 end
-local function reserved_label(label)
-  if label == 135 then return false end
-  return (label >= 96 and label <= 103) or (label >= 128 and label <= 170)
+
+-- A .tsx names its image relative to ITSELF, but love.filesystem and
+-- newImage want it relative to the game root. Join the two and collapse
+-- "." and ".." so "maps/" + "../sheet.png" becomes "sheet.png".
+local function rooted_path(dir, source)
+  if source == nil then return nil end
+  if source:match("^%a:[/\\]") or source:sub(1, 1) == "/" then
+    return source  -- already absolute
+  end
+  local parts = {}
+  for part in (dir .. source):gmatch("[^/\\]+") do
+    if part == ".." then
+      parts[#parts] = nil
+    elseif part ~= "." then
+      parts[#parts + 1] = part
+    end
+  end
+  return table.concat(parts, "/")
+end
+
+-- Loads a standalone 16x16 art tileset (no map) and returns its tiles
+-- keyed by their "kind" property. This is the global character art: the
+-- player animation frames and HUD icons, which are the same across
+-- levels. A level restyles any of these roles by declaring the same
+-- kind in one of its own tilesets.
+function tiled.load_artset(path)
+  local ts = parse_tsx(read_file(path))
+  local dir = path:match("^(.-)[^/\\]*$") or ""
+  assert(ts.tilewidth == ART and ts.tileheight == ART,
+    "tiled: the character art tileset must be " .. ART .. "x" .. ART
+    .. " (got " .. tostring(ts.tilewidth) .. "x" .. tostring(ts.tileheight)
+    .. ") in " .. path)
+  if not ts.columns then
+    ts.columns = math.floor((ts.imagewidth - 2 * (ts.margin or 0))
+                            / ts.tilewidth)
+  end
+  ts.image = rooted_path(dir, ts.image)
+  local art = {}
+  for _, tt in pairs(ts.tiles or {}) do
+    local p = prop_map(tt.properties)
+    if p.kind then
+      local sx, sy = source_rect(ts, tt.id)
+      art[p.kind] = {
+        image = ts.image, columns = ts.columns, id = tt.id, sx = sx, sy = sy,
+        w = ART, h = ART, kind = p.kind,
+      }
+    end
+  end
+  return art
 end
 
 function tiled.load(path)
@@ -154,83 +217,168 @@ function tiled.load(path)
   assert(m.orientation == "orthogonal",
     "tiled: only orthogonal maps are supported")
 
-  -- tilesets: the 8px terrain tileset is required; the 16px sprite
-  -- tileset (chars16) is optional and routed by firstgid
+  -- Tilesets: any number, each with its own image and geometry. An 8px
+  -- tileset is TERRAIN (paints the collision grid, carries the gameplay
+  -- flags); a 16px tileset is CHARACTER ART (placed as objects). Gids
+  -- are dispatched to whichever tileset's firstgid range they fall in.
   assert(m.tilesets and #m.tilesets >= 1,
-    "tiled: the map must reference the twang.tsx tileset")
-  local terrain, chars
+    "tiled: the map must reference at least one tileset")
+  local sets = {}
+  -- the map's own directory, for resolving a .tsx's relative image
+  local dir = path:match("^(.-)[^/\\]*$") or ""
   for _, ref in ipairs(m.tilesets) do
     local ts = ref
     if ref.source then
       -- external tileset (.tsx next to the map)
-      local dir = path:match("^(.-)[^/\\]*$") or ""
       ts = parse_tsx(read_file(dir .. ref.source))
       ts.firstgid = ref.firstgid
     end
+    assert(ts.tilewidth and ts.tileheight,
+      "tiled: a tileset in " .. path .. " declares no tile size")
     if ts.tilewidth == 8 and ts.tileheight == 8 then
-      assert(not terrain, "tiled: two 8px terrain tilesets in " .. path)
-      terrain = ts
-    elseif ts.tilewidth == 16 and ts.tileheight == 16 then
-      assert(not chars, "tiled: two 16px sprite tilesets in " .. path)
-      chars = ts
+      ts.terrain = true
+    elseif ts.tilewidth == ART and ts.tileheight == ART then
+      ts.terrain = false
     else
       error("tiled: unsupported tileset geometry "
         .. tostring(ts.tilewidth) .. "x" .. tostring(ts.tileheight)
-        .. " in " .. path)
+        .. " in " .. path .. " (expected 8x8 terrain or 16x16 art)")
+    end
+    -- Tiled omits `columns` only for a single-row sheet tileset; derive
+    -- it from the image otherwise so hand-written .tsx files still load.
+    -- A COLLECTION has no sheet at all: every tile brings its own image.
+    if ts.collection then
+      ts.columns = ts.columns or 1
+      ts.tilecount = ts.tilecount or #ts.tiles
+      ts.image = nil
+    else
+      if not ts.columns then
+        assert(ts.imagewidth and ts.imageheight and ts.image,
+          "tiled: tileset " .. tostring(ts.name or ts.firstgid)
+          .. " in " .. path .. " has neither columns nor an image size")
+        ts.columns = math.floor((ts.imagewidth - 2 * (ts.margin or 0))
+                                / ts.tilewidth)
+      end
+      assert(ts.image, "tiled: tileset " .. tostring(ts.name or ts.firstgid)
+        .. " in " .. path .. " has no <image> and is not a collection of "
+        .. "per-tile images")
+      local n = ts.tilecount or math.floor(
+        (ts.imageheight - 2 * (ts.margin or 0)) / ts.tileheight) * ts.columns
+      assert(n and n > 0,
+        "tiled: tileset " .. tostring(ts.name or ts.firstgid)
+        .. " in " .. path .. " has no tiles (needs tilecount or an image)")
+      ts.tilecount = n
+      ts.image = rooted_path(dir, ts.image)
+    end
+    if ts.collection then
+      -- each tile's own image, resolved against the .tsx
+      for _, tt in pairs(ts.tiles) do
+        if tt.image then tt.image = rooted_path(dir, tt.image) end
+      end
+    end
+    sets[#sets + 1] = ts
+  end
+  -- sort by firstgid so gid dispatch is a single ordered scan
+  table.sort(sets, function(a, b) return a.firstgid < b.firstgid end)
+
+  -- The resolved tile table: one entry per distinct (tileset, local id)
+  -- the map actually references, flattened into a dense array. Each
+  -- entry carries its own source rect and flags, so nothing downstream
+  -- needs to know which tileset or sheet a tile came from.
+  local tiles, gid_to_tile = {}, {}
+
+  -- Resolves a gid to a tile record, or nil (with a warning) when it
+  -- falls in no tileset or names a tile the set does not contain.
+  local function resolve(gid, ctx)
+    local set
+    for _, s in ipairs(sets) do
+      if gid >= s.firstgid and gid < s.firstgid + s.tilecount then
+        set = s
+        break
+      end
+    end
+    if not set then
+      print("tiled: warning - " .. ctx .. " GID " .. tostring(gid)
+        .. " falls in no tileset; ignored")
+      return nil
+    end
+    local id = gid - set.firstgid
+    local key = set.firstgid + id
+    local rec = gid_to_tile[key]
+    if rec then return rec end
+    local sx, sy = source_rect(set, id)
+    local tile_img = set.image
+    if set.collection then
+      -- a collection tile is its own image: no source rect to cut
+      for _, tt in pairs(set.tiles or {}) do
+        if tt.id == id and tt.image then tile_img = tt.image end
+      end
+      sx, sy = 0, 0
+    end
+    rec = {
+      image   = tile_img,
+      columns = set.columns,
+      id      = id,
+      sx      = sx,
+      sy      = sy,
+      w = set.tilewidth, h = set.tileheight,
+      terrain = set.terrain or nil,
+      key     = key,
+    }
+    -- (pairs: the tiles array is sparse -- one slot per local tile id)
+    for _, tt in pairs(set.tiles or {}) do
+      if tt.id == id then
+        local p = prop_map(tt.properties)
+        if p.solid      then rec.solid = true end
+        -- "bounce" is the name levels author; "sticky" is the legacy
+        -- spelling the old spritesheet tileset uses for the same thing.
+        -- Both land on one flag, so arrows reflect either way.
+        if p.bounce or p.sticky then rec.bounce = true end
+        if p.friction   then rec.friction = true end
+        if p.arrow_pass then rec.arrow_pass = true end
+        if p.runnable   then rec.runnable = true end
+        if p.oneway     then rec.oneway = true end
+        if p.phase      then rec.phase = true end
+        rec.kind    = p.kind
+        rec.on_id   = p.on_id
+        rec.ext_id  = p.ext_id
+      end
+    end
+    tiles[#tiles + 1] = rec
+    gid_to_tile[key] = rec
+    return rec
+  end
+
+  -- Art by role name, gathered from every tileset that declares a
+  -- "kind" property. A role's art is simply the tile carrying it, so a
+  -- level swaps its whole cast by swapping tilesets.
+  local art = {}
+  for _, set in ipairs(sets) do
+    if not set.terrain then
+      for _, tt in pairs(set.tiles or {}) do
+        local p = prop_map(tt.properties)
+        if p.kind and KIND_NAMES[p.kind] then
+          local rec = resolve(set.firstgid + tt.id, "tileset " ..
+            tostring(set.name or set.firstgid) .. " art")
+          art[p.kind] = rec
+          -- the switch-on / spring-extended states are sibling tiles in
+          -- the same set, named by id so the pair travels together
+          if p.on_id then
+            art[p.kind .. "_on"] = resolve(set.firstgid + tonumber(p.on_id),
+              "tileset art " .. p.kind .. " on_id")
+          end
+          if p.ext_id then
+            art[p.kind .. "_ext"] = resolve(set.firstgid + tonumber(p.ext_id),
+              "tileset art " .. p.kind .. " ext_id")
+          end
+        end
+      end
     end
   end
-  assert(terrain, "tiled: no 8px terrain tileset in " .. path)
-  assert(terrain.columns == 32,
-    "tiled: the terrain tileset must be 32 columns of 8x8 spritesheet cells")
-  local n_tiles = tonumber(terrain.tilecount)
-    or (terrain.columns
-        * math.floor((terrain.imageheight or 0) / terrain.tileheight))
-  assert(n_tiles and n_tiles <= 1024,
-    "tiled: the terrain tileset must cover the 256x256 spritesheet")
-  if chars then
-    assert(chars.columns == 16,
-      "tiled: the sprite tileset must be 16 columns of 16x16 cells")
-  end
-  local chars_first = chars and chars.firstgid or math.huge
 
-  -- per-tile flags/kinds from the terrain tileset's records, keyed by
-  -- 8px sub-tile id; kinds resolve back to their 16px art label
-  local gff = {}
-  for i = 1, n_tiles do gff[i] = 0 end
-  local kinds_by_sub, phase_by_sub = {}, {}
-  -- (pairs: the tiles array is sparse -- one slot per local tile id)
-  for _, tt in pairs(terrain.tiles or {}) do
-    local t = tt.id
-    if t >= 0 and t < n_tiles then
-      local p = prop_map(tt.properties)
-      if p.solid    then gff[t + 1] = gff[t + 1] + 1 end
-      if p.sticky   then gff[t + 1] = gff[t + 1] + 2 end
-      if p.friction then gff[t + 1] = gff[t + 1] + 4 end
-      if p.arrow_pass then gff[t + 1] = gff[t + 1] + 8 end
-      if p.runnable then gff[t + 1] = gff[t + 1] + 16 end
-      if p.oneway   then gff[t + 1] = gff[t + 1] + 32 end
-      if p.kind     then kinds_by_sub[t]  = p.kind end
-      if p.phase    then phase_by_sub[t]  = true end
-    end
-  end
-
-  -- kinds from the sprite tileset (chars16): label = CHARS_BASE + local
-  local kinds_by_chars = {}
-  if chars then
-    for _, tt in pairs(chars.tiles or {}) do
-      local t = tt.id
-      local p = prop_map(tt.properties)
-      if p.kind then kinds_by_chars[t] = p.kind end
-    end
-  end
-
-  -- kinds: tileset wins, cart defaults fill the gaps (all label ids)
-  local special = {}
-  for name, id in pairs(DEFAULT_KINDS) do special[name] = id end
-  for t, name in pairs(kinds_by_sub) do special[name] = sub_label(t) end
-  for t, name in pairs(kinds_by_chars) do
-    special[name] = CHARS_BASE + t
-  end
+  local has_terrain = false
+  for _, s in ipairs(sets) do if s.terrain then has_terrain = true end end
+  assert(has_terrain, "tiled: the map has no 8px terrain tileset in " .. path)
 
   -- tile layers by role: named "background"/"foreground" (case-insensitive)
   -- are purely visual layers, kept out of the collision grid entirely --
@@ -244,24 +392,14 @@ function tiled.load(path)
     for i = 1, W * H do
       local gid = data[i] or 0
       if gid > 0 then
-        if gid >= chars_first then
-          print("tiled: warning - sprite art gid " .. gid
-            .. " used in a terrain layer (reserved for object layers); "
-            .. "ignored")
-        else
-          local t = gid - terrain.firstgid
-          if t < 0 or t >= n_tiles then
-            print("tiled: warning - GID " .. gid .. " is outside the "
-              .. "terrain tileset (tile " .. tostring(t) .. "); ignored")
-          else
-            local label = sub_label(t)
-            if reserved_label(label) then
-              print("tiled: warning - terrain cell " .. t
-                .. " is reserved sprite art (label " .. label .. "); ignored")
-            elseif t > 0 then
-              into[i] = t
-            end
-          end
+        local rec = resolve(gid, "terrain cell")
+        -- only terrain tiles may paint the collision grid; a 16px art
+        -- tile dropped in a tile layer has no meaning here
+        if rec and not rec.terrain then
+          print("tiled: warning - terrain cell uses 16x16 art gid " .. gid
+            .. " (terrain layers take 8x8 tiles only); ignored")
+        elseif rec then
+          into[i] = rec.key
         end
       end
     end
@@ -282,11 +420,47 @@ function tiled.load(path)
   end
   assert(n_layers > 0, "tiled: map has no visible tile layers")
 
+  -- A level whose terrain carries no gameplay flags at all is worth saying
+  -- out loud: every tile in it is pure paint, so nothing is solid, nothing
+  -- bounces, and the player walks straight through all of it. The usual
+  -- cause is a tileset edit that was never saved -- Tiled writes per-tile
+  -- properties into the TILESET file, which for an external .tsx is a
+  -- separate save from the map (docs/tiled-format.md).
+  do
+    local placed, flagged, sample = 0, 0
+    for i = 1, W * H do
+      local key = cells[i]
+      if key and key ~= 0 then
+        placed = placed + 1
+        local rec = gid_to_tile[key]
+        if rec and (rec.solid or rec.bounce or rec.friction or rec.arrow_pass
+                    or rec.runnable or rec.oneway or rec.phase) then
+          flagged = flagged + 1
+        elseif rec and not sample then
+          sample = key
+        end
+      end
+    end
+    if placed > 0 and flagged == 0 then
+      local names = {}
+      for _, ref in ipairs(m.tilesets or {}) do
+        names[#names + 1] = ref.source or ("embedded tileset at firstgid "
+          .. tostring(ref.firstgid))
+      end
+      print("tiled: note - " .. path .. ": all " .. placed
+        .. " terrain cells carry no tile properties, so nothing here is "
+        .. "solid (or bounce) and the player passes through everything. "
+        .. "If you just flagged tiles solid in Tiled, the tileset ("
+        .. table.concat(names, ", ")
+        .. ") still has no <properties> saved -- it is a separate file from "
+        .. "the map, save it too. An unflagged tile, for reference: gid "
+        .. tostring(sample))
+    end
+  end
+
   -- object layers hold all entities: tile objects whose role comes from
   -- a kind property / the placed tile's kind / the Class field, grouped
   -- by name (with a "<kind>_" prefix stripped) or a "group" property
-  local KIND_NAMES = {}
-  for name in pairs(DEFAULT_KINDS) do KIND_NAMES[name] = true end
   local objects = {}
   local rooms = {}
   for _, layer in ipairs(m.layers or {}) do
@@ -301,7 +475,7 @@ function tiled.load(path)
             print("tiled: warning - room '" .. tostring(o.name)
               .. "' is rotated; rotation ignored")
           end
-          local tw, th = terrain.tilewidth, terrain.tileheight
+          local tw, th = m.tilewidth, m.tileheight
           local rx = math.floor((o.x or 0) / tw + 0.5) * tw
           local ry = math.floor((o.y or 0) / th + 0.5) * th
           local rw = math.max(tw,
@@ -316,22 +490,15 @@ function tiled.load(path)
           end
           rooms[#rooms + 1] = { name = o.name, x = rx, y = ry, w = rw, h = rh }
         else
-          -- object art: sprite tileset by firstgid range, else the
-          -- terrain tileset's sub-0 marker cell (floor(sub/4) = label)
+          -- object art: the placed tile IS the art (any tileset, 8px or
+          -- 16px); its "kind" property names the role. A plain object
+          -- with no gid falls back to the role's art by name.
           local gid = o.gid
-          local label, kind
+          local tile, kind
           if gid then
-            if gid >= chars_first then
-              local local_id = gid - chars_first
-              label = CHARS_BASE + local_id
-              kind = kinds_by_chars[local_id]
-            else
-              local sub = gid - terrain.firstgid
-              label = (sub >= 0 and sub < n_tiles) and sub_label(sub)
-                or nil
-              kind = (sub >= 0 and sub < n_tiles) and kinds_by_sub[sub]
-                or nil
-            end
+            -- Tiled flips the high bit of gid for y-flipped objects
+            tile = resolve(gid % 0x20000000, "object '" .. tostring(o.name) .. "'")
+            kind = tile and tile.kind
           end
           if not kind and o.type then
             -- Class field: "Door"/"Key"/... (case-insensitive)
@@ -387,7 +554,9 @@ function tiled.load(path)
             end
             local ent = {
               kind = kind, x = wx, y = wy, g = g, name = o.name,
-              spr = label,
+              -- the placed tile if it had one, else the role's art by
+              -- name: either way the entity draws from this record
+              art = tile or art[kind] or art[kind .. "_on"] or art[kind .. "_ext"],
               rot = rot ~= 0 and rot or nil,
               -- the placed object's size rides along (tile objects are
               -- 16px art cells by default; a mover sizes its block
@@ -416,7 +585,6 @@ function tiled.load(path)
   -- everything simulates there.
   for i, room in ipairs(rooms) do room.i = i end
   if #rooms > 0 then
-    local th = terrain.tileheight
     for a = 1, #rooms do
       for b = a + 1, #rooms do
         local ra, rb = rooms[a], rooms[b]
@@ -429,14 +597,15 @@ function tiled.load(path)
     end
     local covered = 0
     for _, room in ipairs(rooms) do covered = covered + room.w * room.h end
-    if covered < W * H * terrain.tilewidth * th then
+    if covered < W * H * m.tilewidth * m.tileheight then
       print("tiled: note - rooms do not cover the whole map; uncovered "
         .. "areas clamp the camera to the whole map")
     end
   end
 
-  -- serialize to the game's map format: four hex digits per 8px tile
-  -- (16-bit tile ids; the 8px grid addresses 1024 sub-tiles), row-major
+  -- serialize to the game's map format: four hex digits per 8px tile,
+  -- row-major. The value is the tile's key -- its gid, unique across
+  -- every tileset the map references -- which indexes `tiles_by_key`.
   local function hex_rows(grid)
     local rows = {}
     for r = 0, H - 1 do
@@ -455,14 +624,25 @@ function tiled.load(path)
     map   = hex_rows(cells), -- terrain grid (game's mget format)
     background = next(bg_cells) and hex_rows(bg_cells) or nil,
     foreground = next(fg_cells) and hex_rows(fg_cells) or nil,
-    gff   = gff,           -- per-sub-tile flag bytes (bit0 solid, 1 sticky,
-                           -- 2 friction, 3 arrow_pass, 4 runnable, 5 oneway)
-    special = special,     -- kind name -> sprite label id
-    phase_tiles = phase_by_sub, -- sub-tile ids flagged "phase"
+    -- gid -> tile record. Every grid value, phase query and solidity
+    -- check resolves through this table; a nil entry means empty.
+    tiles_by_key = gid_to_tile,
+    art   = art,           -- role name -> art tile record
     objects = objects,     -- entities placed as objects on object layers
     rooms = #rooms > 0 and rooms or nil, -- "room" rectangles (camera frames)
     map_layers = m.layers, -- raw layer list (tools/tests may inspect it)
-    tileset_image = terrain.image,
+    -- every image this level's art lives in, de-duplicated: the renderer
+    -- preloads these once per level load
+    images = (function()
+      local seen, list = {}, {}
+      for _, rec in pairs(gid_to_tile) do
+        if rec.image and not seen[rec.image] then
+          seen[rec.image] = true
+          list[#list + 1] = rec.image
+        end
+      end
+      return list
+    end)(),
   }
 end
 

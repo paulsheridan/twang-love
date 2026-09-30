@@ -35,29 +35,23 @@ love .
 | fullscreen | f11 | — |
 | quit | escape | back |
 
-The game opens on a **level select**: the v1 ladder (see
-`config.levels`) — eight handcrafted levels, one new idea each:
-**meadow** (walk/jump/keys), **battlements** (archers + the first
-switch-shot gate), **the crossing** (the rope swing), **springside**
-(landing-pad spring vaults + phase tiles), **arrowslit** (laser snipers
-behind arrow slits — they can't see you through them, your arrows fly
-through, and their guns drop on death), **winchyard** (rope arrows
-into winches
-zip you across the voids), **the vault** (multi-group keys; a bomb ride
-up to a floating key) and **the keep** (rocketeers, bombers, everything
-at once). All levels play against a plain sky-blue backdrop — no level
-carries backdrop sprites. The select also ends with two debug rows —
-**level 1**, the original workshop map (every enemy type, winches, the
-full puzzle kit, plus one-way platform slats to jump on) — and
-**rooms demo**, the two-room camera-frame walkthrough — both always
-unlocked and outside the ladder, kept as sandboxes for testing
-gameplay changes. Levels are gated on progress — a level opens once
-the previous one is cleared (best time/grade recorded in the save
-directory), with the test menu's *unlock all* row lifting the gate for
-testing. Touching a level's **exit flag** clears it: the results panel
-shows the run's time, deaths and grade (gold ≤ the level's `gold`
-time, silver ≤ `par`, bronze for the rest), then continues to the next
-level — the level select after the last one. Swap replays.
+The game opens on a **level select** with a single row for now (see
+`config.levels`): **room grid**, a 5x5 grid of screen-sized rooms
+(bottom-left spawn, top-right exit, no terrain) for exercising camera
+framing and room wipes. All levels play against a plain sky-blue
+backdrop — no level carries backdrop sprites. The original 14 maps —
+the eight-level v1 ladder (meadow, battlements, the crossing, springside,
+arrowslit, winchyard, the vault, the keep) plus the workshop sandboxes
+(level 1, rooms demo) — now live in `maps/legacy/` and stay out of the
+menu; the test suite still boots them as fixtures (the headless harness
+defaults to the entity-rich `maps/legacy/level1.json`). Levels are gated
+on progress — a level opens once the previous one is cleared (best
+time/grade recorded in the save directory), with the test menu's
+*unlock all* row lifting the gate for testing. Touching a level's
+**exit flag** clears it: the results panel shows the run's time, deaths
+and grade (gold ≤ the level's `gold` time, silver ≤ `par`, bronze for the
+rest), then continues to the next level — the level select after the last
+one. Swap replays.
 
 ## Test menu
 
@@ -229,8 +223,8 @@ a monitor with a different resolution, so it stays crisp everywhere.
   a report, not a shake: firing never moves the frame.
 - **Rooms**: a level may be split into camera-framed rooms (rectangles
   flagged `room` in Tiled — see `docs/tiled-format.md` for the full
-  step-by-step authoring walkthrough; `maps/rooms_demo.json`, the level
-  select's visible *rooms demo* row, is the worked two-room example).
+  step-by-step authoring walkthrough; `maps/legacy/rooms_demo.json`, a
+  legacy workshop map, is the worked two-room example).
   Crossing a border wipes the screen and re-frames the camera on the new room;
   only the room you're in simulates, so nothing acts on you from
   off-screen, and everything (keys, opened doors, switches) persists
@@ -323,6 +317,7 @@ luajit tests/wallrun_test.lua
 luajit tests/pusher_test.lua
 luajit tests/mover_test.lua
 luajit tests/arrows_test.lua
+luajit tests/bounce_test.lua
 ```
 
 The trace diff must be empty. After an *intentional* gameplay change,
@@ -332,13 +327,17 @@ rebase the baseline first (see docs/architecture.md). Requires LuaJIT
 ## Tools
 
 - `tools/render_map.py` — renders any Tiled map to a sprite-accurate PNG
-  (`python3 tools/render_map.py maps/meadow.json /tmp/meadow.png`)
+  (`python3 tools/render_map.py maps/roomgrid.json /tmp/roomgrid.png`)
+- `tools/check_tiles.lua` — reports every tile's custom properties *and* the
+  behaviour the game derives from them (solid / bounce / walk-through),
+  through the real loader; pass tile ids to check just those
+  (`luajit tools/check_tiles.lua maps/roomgrid.json 2 3 4 5`)
 - `tools/migrate_maps_8px.py` — the 16px -> 8px tile migration (applied
   to every map; kept for reference)
-- `tools/build_tsx_8px.py` — rebuilt `maps/twang.tsx` in place as the
-  8px terrain tileset (one-shot; refuses to run twice)
+- `tools/build_tsx_8px.py` — rebuilt `maps/legacy/twang.tsx` in place as
+  the 8px terrain tileset (one-shot; refuses to run twice)
 - `tools/make_chars16.py` — generated `chars16.png` + the 16px sprite
-  tileset `maps/chars16.tsx` (one-shot)
+  tileset `maps/legacy/chars16.tsx` (one-shot)
 - `tools/fill_slopes_16px.py` — pre-migration slope fill (slopes are
   removed from the game)
 - `tools/build_level.lua` — STALE: the 16px-era ladder DSL; its

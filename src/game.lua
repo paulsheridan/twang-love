@@ -67,7 +67,10 @@ end
 
 function Game:load()
   math.randomseed(os.time())
-  Sprites.init(love.graphics.newImage("spritesheet.png"))
+  -- The global character art (player frames, HUD icons): one tileset
+  -- loaded once, resolvable by role name. Levels override any of these
+  -- roles by declaring the same kinds in their own tilesets.
+  self.global_art = tiled.load_artset(config.art_file)
   Blit.init()
 
   -- best times/grades gate the level select
@@ -92,10 +95,10 @@ end
 function Game:load_level(path)
   -- level: Tiled JSON map (flags/kinds come from tileset properties)
   local level = tiled.load(path)
-  local ents, tiles = Level.build(level, config)
+  local ents, art = Level.build(level, config, self.global_art)
   self.world = World.new(level, ents, config.tile_size)
   self.ents  = ents
-  self.tiles = tiles
+  self.art   = art
   self.cam   = Camera.new()
   self.map_file = path
   self.room_fade = nil
@@ -116,7 +119,7 @@ function Game:load_level(path)
     input  = self.input,
     world  = self.world,
     ents   = ents,
-    tiles  = tiles,
+    art    = art,
     cam    = self.cam,
     player = self.player,
     settings = self.settings,  -- test-menu toggles (see menu_step)

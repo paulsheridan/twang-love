@@ -9,7 +9,7 @@
 -- pair puzzles.
 --
 -- usage: luajit tools/p8_to_tiled.lua <cart.p8> <out.json>
---   e.g. luajit tools/p8_to_tiled.lua ../twang.p8 maps/level1.json
+--   e.g. luajit tools/p8_to_tiled.lua ../twang.p8 maps/legacy/level1.json
 
 local here = (arg and arg[0]:match("^(.*[/\\])")) or "./"
 package.path = here .. "../?.lua;" .. package.path

@@ -42,23 +42,29 @@ return function(ctx, alpha)
     tint = { r, g, b, scfg.tint_alpha }
   end
 
+  -- Frames are named roles in the level's art (config.art merged with
+  -- the level's tilesets): "player_run_0..n" is a cycle and
+  -- "player_run" is its fallback, so a level can restyle the player by
+  -- declaring the same kinds in its own character tileset.
+  local A = ctx.art or {}
+  local function frame(base, i)
+    return A[base .. "_" .. tostring(i)] or A[base]
+  end
   local s
   if p.wallrun then
-    -- the wall-run's own cycle (sprite_base points at the ground-run
-    -- frames until dedicated wall-run art lands)
-    s = config.wallrun.sprite_base + (Player.wallrun_state())
+    s = frame(config.wallrun.art, Player.wallrun_state())
   elseif not p.gr then
-    s = 97
+    s = A.player_air
   elseif p.vx ~= 0 and not ctx.input:down("aim") then
-    s = 100 + (Player.run_state())
+    s = frame(config.player.art_run, Player.run_state())
   else
-    s = 96
+    s = A.player_idle
   end
   local threshold = config.aiming.downward_sin_threshold
-  if p.land_frames > 0 then s = 99
+  if p.land_frames > 0 then s = A.player_land
   elseif not p.gr and ctx.input:down("aim")
-  and Util.p8sin(p.aim_angle) > threshold then s = 98
-  elseif p.aimed_down and not p.gr then s = 98
+  and Util.p8sin(p.aim_angle) > threshold then s = A.player_aim_down
+  elseif p.aimed_down and not p.gr then s = A.player_aim_down
   end
 
   local draw_facing = p.facing
@@ -70,7 +76,7 @@ return function(ctx, alpha)
   Sprites.draw(s, px - 4, py - 4, draw_facing < 0, nil, tint)
   -- a carried key rides centred on the player
   if p.key then
-    Sprites.draw(ctx.tiles.key, px - 4, py - 2)
+    Sprites.draw(ctx.art and ctx.art.key, px - 4, py - 2)
   end
   -- a held gun reads at the hip: a chunky dark slab (the placeholder
   -- art; the pickup and the fired shell share it) until real art lands
@@ -117,7 +123,7 @@ return function(ctx, alpha)
       local tvx  = Util.p8cos(p.aim_angle) * spd
       local tvy  = Util.p8sin(p.aim_angle) * spd
       local tx, ty = cx, cy
-      -- bounce-aware preview: reflects off sticky surfaces exactly like a
+      -- bounce-aware preview: reflects off bounce surfaces exactly like a
       -- flying arrow, and stops where the arrow would stick. dots every
       -- step, preview_steps total: a shorter, tighter line now that arrows
       -- fly faster. A bomb arrow detonates at that contact instead of
@@ -130,10 +136,10 @@ return function(ctx, alpha)
         if world:solid_for_arrow(nx, ny) then
           local hx = world:solid_for_arrow(nx, ty)
           local hy = world:solid_for_arrow(tx, ny)
-          local sticky = (hx and world:sticky_at(nx, ty))
+          local bouncy = (hx and world:sticky_at(nx, ty))
                       or (hy and world:sticky_at(tx, ny))
                       or (not hx and not hy and world:sticky_at(nx, ny))
-          if sticky then
+          if bouncy then
             if hx then tvx = -tvx end
             if hy then tvy = -tvy end
             if not hx and not hy then tvx, tvy = -tvx, -tvy end

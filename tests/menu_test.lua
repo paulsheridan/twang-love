@@ -220,6 +220,9 @@ do
   local env = Harness.boot()
   local g = env.TWANG_TEST.game
   local keys = env.TWANG_TEST.keys_down
+  -- the shipped menu has one row; append a synthetic second so the gate
+  -- (row N needs row N-1 cleared) is exercised
+  g.select_levels[2] = { file = "maps/legacy/meadow.json", name = "fake" }
   local entry = g.select_levels[2]
   assert_true(not g:level_unlocked(entry),
     "with no save, the second level is locked")
@@ -258,15 +261,13 @@ do
   env.love.keypressed("c")
   step(env)
   assert_true(g.mode == "select" and not g.menu_open,
-    "row 5 opens the level select and closes the panel")
+    "row 6 opens the level select and closes the panel")
   -- the select screen is its own mode: the panel can't be opened there
   env.love.keypressed("m")
   step(env)
   assert_true(g.mode == "select" and not g.menu_open,
     "m does nothing while the level select is open")
-  -- the cursor sits on the booted level (locked with an empty save):
-  -- unlock-all lets jump start the highlighted level again (fresh load)
-  g.unlocked_all = true
+  -- the only row is always open, so jump starts it again (a fresh load)
   env.love.keypressed("x")
   step(env)
   assert_true(g.mode == "play", "jump starts the selected level")

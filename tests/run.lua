@@ -86,6 +86,13 @@ local keys_down = {}
 local quit_flag = { false }
 local env = Harness.new_env(keys_down, quit_flag)
 
+-- The game boots config.map_file. The shipped level (the room grid) is an
+-- empty camera sandbox, so the trace would barely exercise the simulation;
+-- pin the entity-rich legacy level1 instead (the same fixture the shared
+-- harness boots by default). Use the sandbox loader so this is the config
+-- table the game itself will read.
+env.require("src.config").map_file = "maps/legacy/level1.json"
+
 local chunk = assert(loadfile(entry_path))
 setfenv(chunk, env)
 chunk()

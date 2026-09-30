@@ -27,32 +27,28 @@ local function apply_object_props(e, o)
   end
 end
 
---- Scans a Tiled level into live entity lists and resolves the special
---- tile ids (level tileset overrides, pico-8 cart fallbacks).
---- Returns ents, tiles.
-function Level.build(level, config)
+--- Scans a Tiled level into live entity lists and resolves each role's
+--- art from the level's tilesets over the global character art.
+--- Returns ents, art.
+function Level.build(level, config, global_art)
   local tw = config.tile_size
   local cfg = config.enemies
 
-  -- tile ids: the level tileset's kinds win over the cart fallbacks
-  local tiles = {
-    key        = level.special.key        or config.tiles.key,
-    lock       = level.special.lock       or config.tiles.lock,
-    door       = level.special.door       or config.tiles.door,
-    switch     = level.special.switch     or config.tiles.switch,
-    spring     = level.special.spring     or config.tiles.spring,
-    spring_ext = level.special.spring_ext or config.tiles.spring_ext,
-    winch      = level.special.winch      or config.tiles.winch,
-    pusher     = level.special.pusher     or config.tiles.pusher,
-    mover      = level.special.mover      or config.tiles.mover,
-    exit       = level.special.exit       or config.tiles.exit,
-    checkpoint = level.special.checkpoint or config.tiles.checkpoint,
-    archer     = level.special.archer     or config.tiles.archer,
-    melee      = level.special.melee      or config.tiles.melee,
-    laser      = level.special.laser      or config.tiles.laser,
-    rocketeer  = level.special.rocketeer  or config.tiles.rocketeer,
-    bomber     = level.special.bomber     or config.tiles.bomber,
-  }
+  -- Role -> art. Each object already carries the tile it was placed
+  -- with as `o.art`; when it has none (a plain Class rectangle), the
+  -- role's art is taken by name. The level's own tilesets are merged
+  -- over the global character art (config.art), so a level can restyle
+  -- any role -- entities, the player, the HUD -- by declaring the kind.
+  local art = {}
+  for kind, rec in pairs(global_art or {}) do art[kind] = rec end
+  for kind, rec in pairs(level.art or {}) do art[kind] = rec end
+
+  -- The art record for an entity: the tile the author placed, else the
+  -- role's art by name; nil is fine (Sprites.draw skips a missing tile,
+  -- and the loader has already warned about unresolvable gids).
+  local function pick(o, kind)
+    return o.art or art[kind]
+  end
 
   local ents = {
     arrows       = {},
@@ -80,20 +76,17 @@ function Level.build(level, config)
   }
 
   -- ==== spawn points ====
-  -- NOTE: the spawn may remain a marker tile in the tile layer (as in the
-  -- current level); everything else is object-based. The marker scan uses
-  -- the pico-8 cart spawn label constant (preserved cart behaviour) and
-  -- matches any of the marker art's four 8px sub-tiles.
-  local spawn_tile = config.tiles.spawn
+  -- A spawn is an object of kind "spawn", or a terrain tile whose
+  -- tileset tile carries kind="spawn" (a marker the author paints into
+  -- the layer). A marker's art may cover a 2x2 block of 8px cells; one
+  -- point is emitted per marker, deduplicated on the 16px art cell.
   local seen = {}
   for r = 0, level.MAP_H - 1 do
     for c = 0, level.MAP_W - 1 do
       local row = level.map[r + 1]
       local t = row and tonumber(row:sub(c*4 + 1, c*4 + 4), 16) or 0
-      if t ~= 0
-      and math.floor((t % 32) / 2) + math.floor(t / 64) * 16 == spawn_tile then
-        -- one point per 16px marker art cell (its four sub-cells all
-        -- match; the map carries them as one subdivided marker)
+      local rec = t ~= 0 and level.tiles_by_key[t] or nil
+      if rec and rec.kind == "spawn" then
         local key = math.floor(c / 2) .. "," .. math.floor(r / 2)
         if not seen[key] then
           seen[key] = true
@@ -119,10 +112,7 @@ function Level.build(level, config)
         vx = 0, vy = 0, w = cfg.width, h = cfg.height,
         gr = false, facing = 1, type = o.kind,
         shoot_cd = cfg.shoot_cooldown,
-        spr = o.spr or ((o.kind == "melee") and tiles.melee
-          or (o.kind == "laser") and tiles.laser
-          or (o.kind == "rocketeer") and tiles.rocketeer
-          or (o.kind == "bomber") and tiles.bomber or tiles.archer),
+        art = pick(o, o.kind),
         rot = o.rot,
       }
       -- every brain starts on patrol with nothing tracked yet; the
@@ -146,35 +136,35 @@ function Level.build(level, config)
       local wx, wy = snap_tile(o.x, tw), snap_tile(o.y, tw)
       if k == "key" then
         table.insert(ents.keys, {x = wx, y = wy, g = o.g, taken = false,
-          spr = o.spr or tiles.key, rot = o.rot})
+          art = pick(o, "key"), rot = o.rot})
       elseif k == "lock" then
         table.insert(ents.locks, {x = wx, y = wy, g = o.g, triggered = false,
-          spr = o.spr or tiles.lock, rot = o.rot})
+          art = pick(o, "lock"), rot = o.rot})
       elseif k == "door" then
         table.insert(ents.doors, {x = wx, y = wy, g = o.g, open = false,
           tc = math.floor(wx/tw), tr = math.floor(wy/tw),
-          spr = o.spr or tiles.door, rot = o.rot})
+          art = pick(o, "door"), rot = o.rot})
       elseif k == "switch" then
         table.insert(ents.switches, {x = wx, y = wy, g = o.g, on = false,
-          spr = o.spr or tiles.switch, rot = o.rot,
+          art = pick(o, "switch"), art_on = art.switch_on, rot = o.rot,
           -- switches flagged "phase" drive the level's phase tiles; other
           -- switches leave the blocks alone (only their group's doors
           -- and springs react to them)
           phase = o.phase and true or nil})
       else
         table.insert(ents.springs, {x = wx, y = wy, g = o.g, ext = nil,
-          spr = o.spr or tiles.spring, rot = o.rot})
+          art = pick(o, "spring"), art_ext = art.spring_ext, rot = o.rot})
       end
     elseif k == "winch" then
       local wx, wy = snap_tile(o.x, tw), snap_tile(o.y, tw)
       table.insert(ents.winches, {x = wx, y = wy, g = o.g,
-        spr = o.spr or tiles.winch, rot = o.rot})
+        art = pick(o, "winch"), rot = o.rot})
     elseif k == "gun" then
       -- a placed gun pickup (an authoring tool for tests/demo maps):
       -- acts exactly like a dropped one
       local wx, wy = snap_tile(o.x, tw), snap_tile(o.y, tw)
       table.insert(ents.guns, { x = wx, y = wy, g = o.g, taken = false,
-        spr = o.spr, rot = o.rot })
+        art = pick(o, "gun"), rot = o.rot })
     elseif k == "pusher" or k == "updraft" or k == "outdraft" then
       -- the pusher family owns its 16px block (a solid 2x2-cell run,
       -- like a door): the cell column/row come from the snapped
@@ -186,7 +176,7 @@ function Level.build(level, config)
       local e = {x = wx, y = wy, g = o.g,
         tc = math.floor(wx/tw), tr = math.floor(wy/tw),
         variant = k == "pusher" and "updraft" or k,
-        spr = o.spr or tiles.pusher, rot = o.rot}
+        art = pick(o, "pusher"), rot = o.rot}
       -- per-instance overrides (push, reach, side, cone, radius,
       -- shove_grace) ride the object props
       for _, prop in ipairs({"push", "radius", "shove_grace",
@@ -248,7 +238,7 @@ function Level.build(level, config)
           vel = 0,            -- the block's live world x-velocity, px/step
           t = 0, f = 0,       -- timers: pause steps, whole-pixel bank
           g = o.g, name = o.name,
-          spr = o.spr or tiles.mover, rot = o.rot,
+          art = pick(o, "mover"), rot = o.rot,
         }
         for _, prop in ipairs({"speed", "pause", "pause_steps"}) do
           if o[prop] ~= nil then m[prop] = o[prop] end
@@ -262,15 +252,16 @@ function Level.build(level, config)
     elseif k == "exit" then
       local wx, wy = snap_tile(o.x, tw), snap_tile(o.y, tw)
       table.insert(ents.exits, {x = wx, y = wy,
-        spr = o.spr or tiles.exit, rot = o.rot})
+        art = pick(o, "exit"), rot = o.rot})
     elseif k == "checkpoint" then
       local wx, wy = snap_tile(o.x, tw), snap_tile(o.y, tw)
       table.insert(ents.checkpoints, {x = wx, y = wy,
-        spr = o.spr or tiles.checkpoint, rot = o.rot})
+        art = pick(o, "checkpoint"), rot = o.rot})
     end
   end
 
-  return ents, tiles
+  -- the player and HUD roles resolve through the same artifact map
+  return ents, art
 end
 
 return Level

@@ -177,9 +177,19 @@ end
 -- the sandbox env; the live game instance is at env.TWANG_TEST.game and
 -- the driver-owned key map at env.TWANG_TEST.keys_down (tests that need
 -- to simulate held/pressed input mutate it between steps).
-function Harness.boot()
+--
+-- The game ships a single level now (the room grid, a no-entity camera
+-- sandbox), but most suites exercise a level full of entities. So the
+-- harness boots a legacy map by default; pass a `map_file` to boot
+-- another (`config.map_file` for the shipped level).
+function Harness.boot(map_file)
   local keys_down, quit_flag = {}, { false }
   local env = Harness.new_env(keys_down, quit_flag)
+  -- the game's skip_select path boots config.map_file, so pinning it is
+  -- all it takes to choose the boot level (the suites that assert on the
+  -- shipped level pass "maps/roomgrid.json"). Use the sandbox loader so
+  -- this is the same config table the game will read.
+  env.require("src.config").map_file = map_file or "maps/legacy/level1.json"
   local chunk = assert(loadfile("main.lua"))
   setfenv(chunk, env)
   chunk()

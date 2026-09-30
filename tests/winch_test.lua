@@ -24,7 +24,10 @@
 --
 -- Usage (from the project root): luajit tests/winch_test.lua
 
+package.path = "src/?.lua;lib/?.lua;?.lua;" .. package.path
+
 local Harness = dofile("tests/harness.lua")
+local config = require("src.config")
 
 local PASS, FAIL = 0, 0
 local function assert_true(cond, msg)
@@ -115,7 +118,19 @@ do
     "winch_01 is grid-snapped to " .. grid .. "px (got "
       .. first.x .. "," .. first.y .. ")")
   assert_true(first.g == "01", "the name's suffix became the group")
-  assert_true(first.spr == 133, "the sprite came from the placed tile")
+  -- A winch is a plain object with no placed tile, so its art is resolved
+  -- by role name: the character tileset declares a "winch" tile and the
+  -- entity carries that record (16x16, its own image).
+  local art = first.art
+  assert_true(art ~= nil and art.kind == "winch",
+    "the winch resolved its art by role (got "
+      .. tostring(art and art.kind) .. ")")
+  assert_true(art.w == 16 and art.h == 16,
+    "the winch's art is a 16x16 cell (got " .. tostring(art.w) .. "x"
+      .. tostring(art.h) .. ")")
+  assert_true(art.image == config.art_file:gsub("%.tsx$", ".png"),
+    "the winch's art came from the character art tileset (got "
+      .. tostring(art.image) .. ")")
 end
 
 -- ==== 2. capture consumes the rope arrow and starts the pull ====

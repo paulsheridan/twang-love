@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Builds the 16px sprite tileset (characters & numbers).
 
-The terrain tileset (maps/twang.tsx, rebuilt at 8x8 by
+The terrain tileset (maps/legacy/twang.tsx, rebuilt at 8x8 by
 tools/build_tsx_8px.py) keeps only real-tile art: cells 96-103 (player
 animation) and 128-170 (other characters and numbers) are never placed
 as tiles, so they move out of the terrain vocabulary into their own
@@ -20,7 +20,7 @@ Map objects reference this tileset at firstgid 1025 (right after the
 terrain tileset's 1024 grid cells); art label = 96 + (gid - 1025).
 
 usage:
-    python3 tools/make_chars16.py     # writes chars16.png + maps/chars16.tsx
+    python3 tools/make_chars16.py     # writes maps/legacy/chars16.png + .tsx
 """
 import json
 import os
@@ -31,9 +31,9 @@ import zlib
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
-SHEET = os.path.join(ROOT, "spritesheet.png")
-ATLAS = os.path.join(ROOT, "chars16.png")
-TSX = os.path.join(ROOT, "maps", "chars16.tsx")
+SHEET = os.path.join(ROOT, "maps", "legacy", "spritesheet.png")
+ATLAS = os.path.join(ROOT, "maps", "legacy", "chars16.png")
+TSX = os.path.join(ROOT, "maps", "legacy", "chars16.tsx")
 
 ROWS = range(6, 11)          # sheet rows 96..175
 CHARS_BASE = 96              # art label of chars16 local id 0
@@ -135,7 +135,7 @@ def main():
         '     kinds whose art moved out of the terrain tileset. -->\n'
         '<tileset version="1.10" tiledversion="1.11.0" name="twang-sprites"'
         ' tilewidth="16" tileheight="16" tilecount="80" columns="16">\n'
-        ' <image source="../chars16.png" width="256" height="80"/>\n'
+        ' <image source="chars16.png" width="256" height="80"/>\n'
     ) + "".join(recs) + "</tileset>\n"
     with open(TSX, "w") as f:
         f.write(tsx)

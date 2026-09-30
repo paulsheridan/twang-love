@@ -83,9 +83,9 @@ do
   for _, entry in ipairs(config.levels) do
     if not entry.hidden then visible[#visible + 1] = entry end
   end
-  assert_true(#visible >= 4, "the v1 ladder has four levels")
-  assert_true(visible[1].file == "maps/meadow.json",
-    "the ladder opens on the meadow")
+  assert_true(#visible >= 1, "the menu lists at least one level")
+  assert_true(visible[1].file == "maps/roomgrid.json",
+    "the ladder opens on the room grid")
   for _, entry in ipairs(visible) do
     assert_true(entry.gold ~= nil and entry.par ~= nil,
       entry.name .. ": grade thresholds authored")

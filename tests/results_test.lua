@@ -53,7 +53,8 @@ end
 
 -- ==== 2. touching an exit completes and records ====
 do
-  local env = Harness.boot()
+  -- boot the shipped level so the run is graded against real thresholds
+  local env = Harness.boot("maps/roomgrid.json")
   local g = env.TWANG_TEST.game
   assert_true(g.deaths == 0 and g.play_steps == 0,
     "run state starts at zero")
@@ -115,45 +116,15 @@ end
 
 -- ==== 5. results-panel inputs ====
 do
-  -- jump continues to the next level
-  local env = Harness.boot()
+  -- the shipped menu has a single level: completing it and pressing jump
+  -- rolls straight to the launch level select (there is no next level)
+  local env = Harness.boot("maps/roomgrid.json")
   local g = env.TWANG_TEST.game
-  g:start_level(config.levels[1])  -- the ladder's first level
-  local p = g.ctx.player
-  table.insert(g.ctx.ents.exits, { x = p.x, y = p.y })
+  g:start_level(config.levels[1])  -- the only level in the menu
+  touch_exit_with_player(env)
   step(env)
-  assert_true(g.mode == "complete", "the meadow completed")
-  env.love.keypressed("x")
-  step(env)
-  assert_true(g.mode == "play", "jump leaves the results panel")
-  assert_true(g.map_file == config.levels[2].file,
-    "the next level in the list loads")
-  assert_true(g.ctx.ents.exits ~= nil and #g.ctx.ents.exits >= 1,
-    "the new level is a fresh load (with its own exit)")
-  assert_true(g.play_steps == 0, "the new level's clock restarts at zero")
-  step(env)
-  -- one harness call feeds 1/30s of real time: rate/30 sim ticks
-  assert_true(g.play_steps == config.sim.rate / 30,
-    "the new level's clock runs again")
-
-  -- completing the last visible level sends jump to the level select
-  local p2 = g.ctx.player
-  table.insert(g.ctx.ents.exits, { x = p2.x, y = p2.y })
-  step(env)
-  assert_true(g.mode == "complete", "the second level completed")
-  -- make it the final run: point the game at the ladder's last level
-  -- (debug rows sit outside the ladder)
-  local last = nil
-  for _, entry in ipairs(config.levels) do
-    if not entry.hidden and not entry.debug then last = entry end
-  end
-  g:load_level(last.file)
-  g.mode = "play"
-  local p3 = g.ctx.player
-  table.insert(g.ctx.ents.exits, { x = p3.x, y = p3.y })
-  step(env)
-  assert_true(g.mode == "complete" and g.result.last,
-    "the final level's results know it is last")
+  assert_true(g.mode == "complete", "the only level completed")
+  assert_true(g.result.last, "its results know it is last")
   env.love.keypressed("x")
   step(env)
   assert_true(g.mode == "select", "after the last level: the level select")
@@ -167,7 +138,7 @@ do
   assert_true(g.mode == "complete", "level 1 completed")
   env.love.keypressed("c")
   step(env)
-  assert_true(g.mode == "play" and g.map_file == "maps/level1.json",
+  assert_true(g.mode == "play" and g.map_file == "maps/legacy/level1.json",
     "swap replays the same level")
   assert_true(g.play_steps == 0 and g.deaths == 0 and g.result == nil,
     "the replay resets the run state")

@@ -1,67 +1,70 @@
--- Spritesheet access: quad caching and the sprite draw helper.
+-- Tile and sprite art: image loading and quad construction.
 --
--- The sheet is the pico-8 spritesheet layout: 16 columns of 16x16 art
--- cells (2x2 upscales of the original 8x8 art), indexed 0..255. Terrain
--- rendering draws 8x8 sub-tiles instead: the 8px tileset re-indexes the
--- same image as 32 columns of 8px cells (old art cell O = the four
--- sub-tiles at (O//16)*64 + (O%16)*2 + {0,1,32,33}; see
--- Sprites.tile_quad). Rotated sprites pivot about the
--- corner that keeps them filling their cell (90 -> top-right,
--- 180 -> bottom-right, 270 -> bottom-left).
-
-local config = require("src.config")
+-- Art comes from per-level tilesets, so there is no single global
+-- spritesheet any more. Each tile record built by src/tiled.lua names
+-- the image it lives in, its source rect within it, and its cell size
+-- (8x8 for terrain, 16x16 for characters); this module turns that into
+-- a drawable quad, caching both the loaded images and the quads so a
+-- tile drawn a thousand times a frame costs one lookup.
+--
+-- Two levels may use different images freely: the image cache is keyed
+-- by path, and quads are cached per tile record, so swapping tilesets
+-- between levels changes nothing else.
 
 local Sprites = {}
 
-local sheet = nil
-local quads = {}
-local tile_quads = {}
+-- image path -> love Image. Quads are cached on the tile records
+-- themselves (see Sprites.quad), since a record already knows its rect.
+local images = {}
 
-function Sprites.init(image)
-  sheet = image
-  quads = {}
-  tile_quads = {}
-end
-
--- The loaded spritesheet image (needed by code that draws tiles directly).
-function Sprites.sheet()
-  return sheet
-end
-
--- The quad for a 16px art cell (entity/sprite label id 0..255).
-function Sprites.quad(s)
-  if not quads[s] then
-    quads[s] = love.graphics.newQuad(
-      (s % 16) * 16, math.floor(s / 16) * 16, 16, 16,
-      sheet:getWidth(), sheet:getHeight())
+-- Loads (or returns the already-loaded) image for a path. Missing art
+-- must not take the game down: a level can reference a tileset whose
+-- image is not in the build, and the error belongs in the log, not on
+-- the player's screen.
+function Sprites.image(path)
+  local img = images[path]
+  if img == nil then
+    local ok, res = pcall(love.graphics.newImage, path)
+    if ok then
+      img = res
+    else
+      print("sprites: warning - cannot load image '" .. tostring(path)
+        .. "' (" .. tostring(res) .. "); its tiles will not draw")
+      img = false
+    end
+    images[path] = img
   end
-  return quads[s]
+  return img or nil
 end
 
--- The quad for an 8px terrain sub-tile (0..1023): the tileset's 32
--- columns of 8px cells over the same image.
-function Sprites.tile_quad(t)
-  if not tile_quads[t] then
-    local tw = config.tile_size
-    tile_quads[t] = love.graphics.newQuad(
-      (t % 32) * tw, math.floor(t / 32) * tw, tw, tw,
-      sheet:getWidth(), sheet:getHeight())
+-- The drawable quad for a tile record (see src/tiled.lua): its source
+-- rect in its own image, cached on the record's geometry so two tiles
+-- sharing a rect share a quad.
+function Sprites.quad(rec)
+  if rec == nil then return nil end
+  if rec.quad == nil then
+    local img = Sprites.image(rec.image)
+    if img == nil then return nil end
+    rec.quad = love.graphics.newQuad(rec.sx, rec.sy, rec.w, rec.h,
+      img:getWidth(), img:getHeight())
   end
-  return tile_quads[t]
+  return rec.quad
 end
 
--- Draws the 16px sprite s at world position x/y; `flip` mirrors
--- horizontally, `rot` is a multiple of 90 (degrees, from the Tiled
--- object). Positions are floored: bodies move at fractional speeds, and
--- drawing at fractional coords rasterizes unevenly on the pixel canvas
--- (the sprite's edges wobble between 8 and 9 px), which reads as jitter.
--- `tint` is an optional {r, g, b, a} overlay: the sprite is drawn a
--- second time in the tint colour (the texture's own alpha masks it to
--- the sprite's pixels), so e.g. the i-frame shield reads as a red
+-- Draws the tile record `rec` at world position x/y. `flip` mirrors it
+-- horizontally, `rot` is a multiple of 90 degrees (from the Tiled
+-- object). Positions are floored: bodies move at fractional speeds,
+-- and drawing at fractional coords rasterizes unevenly on the pixel
+-- canvas (a sprite's edges wobble between 8 and 9 px), which reads as
+-- jitter. `tint` is an optional {r, g, b, a} overlay: the sprite is
+-- drawn a second time in the tint colour (the texture's own alpha masks
+-- it to the sprite's pixels), so e.g. the i-frame shield reads as a red
 -- silhouette that never hides the art.
-function Sprites.draw(s, x, y, flip, rot, tint)
-  local q = Sprites.quad(s)
-  local tw = 16
+function Sprites.draw(rec, x, y, flip, rot, tint)
+  local q = Sprites.quad(rec)
+  if q == nil then return end
+  local img = images[rec.image]
+  local w, h = rec.w, rec.h
   x, y = math.floor(x), math.floor(y)
   love.graphics.setColor(1, 1, 1, 1)
   local function blit(dx, dy, sx, sy)
@@ -70,14 +73,14 @@ function Sprites.draw(s, x, y, flip, rot, tint)
       -- rotated: pivot the sprite's corner so it still fills its cell
       local rad = math.rad(rot)
       local ox, oy = 0, 0
-      if rot == 90 then ox, oy = tw, 0
-      elseif rot == 180 then ox, oy = tw, tw
-      elseif rot == 270 then ox, oy = 0, tw end
-      love.graphics.draw(sheet, q, x + dx + ox, y + dy + oy, rad)
+      if rot == 90 then ox, oy = w, 0
+      elseif rot == 180 then ox, oy = w, h
+      elseif rot == 270 then ox, oy = 0, h end
+      love.graphics.draw(img, q, x + dx + ox, y + dy + oy, rad)
     elseif flip then
-      love.graphics.draw(sheet, q, x + dx + tw, y + dy, 0, -sx, sy)
+      love.graphics.draw(img, q, x + dx + w, y + dy, 0, -sx, sy)
     else
-      love.graphics.draw(sheet, q, x + dx, y + dy)
+      love.graphics.draw(img, q, x + dx, y + dy)
     end
   end
   blit()
@@ -86,6 +89,17 @@ function Sprites.draw(s, x, y, flip, rot, tint)
     blit()
     love.graphics.setColor(1, 1, 1, 1)
   end
+end
+
+-- Drops the quad cached on a tile record, so a reloaded tileset picks
+-- up new art without a process restart.
+function Sprites.forget(rec)
+  if rec then rec.quad = nil end
+end
+
+-- Test seam: forget every cached image and quad.
+function Sprites.reset()
+  images = {}
 end
 
 return Sprites

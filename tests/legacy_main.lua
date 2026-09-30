@@ -19,7 +19,7 @@ local TW      = 8
 
 -- view / world (world size comes from the Tiled map at load time)
 local VW, VH  = 240, 160
-local MAP_FILE = "maps/level1.json"
+local MAP_FILE = "maps/legacy/level1.json"
 local MAP_W, MAP_H = 128, 30
 local ww, wh  = MAP_W * TW, MAP_H * TW
 

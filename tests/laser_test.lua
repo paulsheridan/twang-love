@@ -38,15 +38,8 @@ local function assert_true(cond, msg)
   end
 end
 
-local function fresh_game()
-  local keys, quit = {}, { false }
-  local env = Harness.new_env(keys, quit)
-  local chunk = assert(loadfile("main.lua"))
-  setfenv(chunk, env)
-  chunk()
-  env.love.load()
-  return env
-end
+-- boot a full level1 fixture (the shared harness pins the legacy map)
+local fresh_game = Harness.boot
 
 local function run_steps(env, n)
   for _ = 1, n do

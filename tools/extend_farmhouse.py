@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-shot migration: extend maps/farmhouse.json with a second room.
+"""One-shot migration: extend maps/legacy/farmhouse.json with a second room.
 
 Adds 60 tile columns (960x640 px, one "field" room) to the right of the
 farmhouse, continues the terrain/backdrop into it, and adds the object
@@ -12,7 +12,7 @@ Run from the project root:  python3 tools/extend_farmhouse.py
 
 import json
 
-MAP = "maps/farmhouse.json"
+MAP = "maps/legacy/farmhouse.json"
 NEW_COLS = 60          # the field room's width in tiles (960px, 640 tall)
 GROUND_TILE = 4        # gid of solid tile id 3
 BACKGROUND_TILE = 29   # gid of backdrop tile id 28

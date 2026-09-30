@@ -5,7 +5,7 @@
      these at firstgid 1025. Property records only on the object
      kinds whose art moved out of the terrain tileset. -->
 <tileset version="1.10" tiledversion="1.11.0" name="twang-sprites" tilewidth="16" tileheight="16" tilecount="80" columns="16">
- <image source="../chars16.png" width="256" height="80"/>
+ <image source="chars16.png" width="256" height="80"/>
  <tile id="41">
   <properties>
    <property name="kind" value="archer"/>

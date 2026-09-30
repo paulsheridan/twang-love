@@ -1,49 +1,141 @@
 # Tiled level format for twang
 
 Levels are Tiled (mapeditor.org) JSON maps in `maps/`, loaded by
-`src/tiled.lua`. Open them in Tiled as an **8x8 orthogonal map** with the
-`twang.tsx` terrain tileset (32 columns of 8px cells over the untouched
-256x256 spritesheet; firstgid 1). The old 16px cell O became four 8px
-sub-tiles at Tiled's linear ids (O//16)*64 + (O%16)*2 + {0,1,32,33}
-(TL, TR, BL, BR) over the same image. External
-tilesets are resolved from `.tsx` files next to the map.
+`src/tiled.lua`. Open them in Tiled as an **8x8 orthogonal map**.
 
-A map that places sprite art (the characters/numbers cells) also
-references `chars16.tsx`, a **16x16 sprite tileset at firstgid 1025**
-(right after the terrain tileset's 1024 grid cells) backed by
-`chars16.png` (a byte-exact copy of spritesheet.png rows 6-10 = art
-96-175): art label = 96 + (gid - 1025). Terrain cells must come from the
-8px tileset; sprite-art gids in a tile layer are rejected with a
-warning.
+## Tilesets: any number, either size
 
-Reserved sprite art (NOT terrain — placeable only from chars16.tsx):
-art cells 96-103 (player animation) and 128-170 (other characters and
-numbers). Cell 135 is the one exception: the phase platform is real
-terrain and stays in the 8px tileset. The loader also rejects any
-terrain use of the reserved cells.
+A map may reference **N tilesets** (`m.tilesets`), each with its own
+image and its own geometry. Tiled dispatches a gid to whichever
+tileset's `firstgid` range it falls in, so you can add, drop or
+re-cut tilesets without touching the game.
 
-The game is driven entirely by per-tile custom properties set on the
-tilesets — no flags are hardcoded in level data. Entity art and hit
-anchors stay on the 16px art grid (`config.art_size` = 16) even though
-the terrain grid is 8px.
+| tile size | role | what it is for                                        |
+|-----------|------|-------------------------------------------------------|
+| 8x8       | **terrain** | paints the collision grid and carries the gameplay flags |
+| 16x16     | **art** | characters, objects and numbers: placed as objects, or as tile objects, never as terrain |
+
+Both of Tiled's tileset shapes work:
+
+- a **sheet** — one `<image>`, tiles cut out of it by source rect
+  (honouring `columns`, `margin` and `spacing`);
+- a **collection** — every `<tile>` carries its own `<image>`, and
+  there is no sheet at all. This is what Tiled produces for
+  hand-painted terrain, and it is what `maps/roomgrid.json` uses.
+
+An image `source` inside a `.tsx` is resolved **relative to that
+`.tsx`**, so `"../sheet.png"` in `maps/foo.tsx` means
+`spritesheet.png` at the project root. Both absolute and relative
+paths work.
+
+> **Properties live in the tileset, not the map.** Flagging a tile
+> `solid`/`bounce`/etc. writes a `<properties>` block into the **tileset**
+> file. When a map references an external `.tsx` (which every level here
+> does), that is a *different file* from the map: saving the map does not
+> save the tileset, and a level saved without it loads with unflagged
+> tiles — everything is paint, so the player walks straight through the
+> walls. If tiles you just marked are not solid, save the `.tsx` as well.
+> The loader prints a note when a level paints terrain and *not one* of
+> those tiles carries a property, so the mistake is never silent.
+
+## Tile keys and the resolved tile table
+
+A map's tile layer stores each cell as a **key**: four hex digits,
+row-major. The key is the tile's **gid** — its index across every
+tileset the map references — and it indexes `level.tiles_by_key`, a
+flat table of records the loader builds while reading the map:
+
+```lua
+{ key = 527, id = 526, image = "spritesheet.png", columns = 32,
+  sx = 112, sy = 128, w = 8, h = 8,
+  terrain = true, solid = true, bounce = true, ... }
+```
+
+Because the record carries its own image, source rect, size and flags,
+nothing downstream knows or cares which tileset a tile came from.
+`World:tile_record(key)` looks one up; `World:flag(key, "solid")` reads
+a property straight off it.
+
+## Art by role name
+
+16x16 art is resolved two ways, and the placed tile always wins:
+
+1. **the placed tile** — if you drop a 16x16 tile as a tile object, the
+   entity draws that exact cell;
+2. **the role name** — otherwise the entity takes the art whose `kind`
+   property matches its role, so you can restyle a whole level's
+   interactables from the tileset without re-placing them.
+
+`level.art` is the role table, gathered from every non-terrain tileset
+in the map. `config.art_file` (`maps/chars.tsx`) is a **global**
+character tileset, loaded once at boot, supplying the player animation
+frames and the HUD icons. `Level.build` merges the level's own art
+**over** the global art, so any level can override a role just by
+declaring the same `kind` in one of its tilesets.
+
+Player frames and HUD icons are named roles, not fixed cells:
+
+| role                                   | used for                              |
+|----------------------------------------|---------------------------------------|
+| `player_idle`, `player_air`, `player_aim_down`, `player_land` | the standing / jumping / aiming-down / landing frames |
+| `player_run_0`..`player_run_3`         | the run cycle (`player_run` is the fallback) |
+| `player_wallrun_0`..`player_wallrun_3` | the wall-run cycle                    |
+| `heart_full`, `heart_half`, `heart_empty` | the HUD heart slots                |
+
+A 16x16 entity still occupies a **2x2 block of 8x8 terrain cells** for
+its footprint (doors, springs, switches, pushers, movers). That is a
+footprint convention, not a subdivision of its art: entity art is drawn
+whole from its own 16x16 tileset and is never cut into quarters.
 
 ## Tile properties
 
 | property    | type   | meaning                                                        |
 |-------------|--------|----------------------------------------------------------------|
 | `solid`     | bool   | blocks the player, enemies and arrows                          |
-| `sticky`    | bool   | arrows bounce off these (see `config.arrows.max_bounces`)      |
+| `bounce`    | bool   | arrows reflect off these instead of embedding, and never stick (see `config.arrows.max_bounces`) |
 | `friction`  | bool   | slippery ground (low friction, like pico-8 flag 2)             |
 | `arrow_pass`| bool   | arrows (player and enemy) fly through, but it still blocks the player and enemies — arrow slits |
-| `oneway`    | bool   | thin platform: standable from above, passable from below — bodies land on it, arrows/enemies/sight pass through (tile 64, the blue slat) |
+| `oneway`    | bool   | thin platform: standable from above, passable from below — bodies land on it, arrows/enemies/sight pass through |
 | `phase`     | bool   | switch-flipped platform: every instance of a `phase` tile in the level toggles solid<->non-solid together on strikes of `phase`-flagged switches (see below) |
 | `runnable`  | bool   | wall-run lane marker: a line of these tiles is traversed by the player's wall-run (see below). Runnable tiles block nothing (players, enemies, arrows) — don't place them where a floor is needed. |
 | `kind`      | string | entity role, one of the kinds below (classifies tile objects placed on Object Layers) |
-| `slope`     | string | slope collision shape: `/floor`, `\floor`, `\ceil` or `/ceil`. Slope tiles must NOT have the `solid` property; slope collision is handled by the game. |
+
+The game is driven entirely by these per-tile custom properties — no
+flags are hardcoded in level data, and there is no built-in fallback
+table of reserved cells. A role with no art anywhere simply draws
+nothing.
+
+### Bounce surfaces (`bounce`)
+
+A tile flagged `bounce` is an arrow surface: an arrow that reaches it
+reflects off, conserving its speed, and is never embedded in it — so it
+can never become a wall perch, a rope anchor, or a key-carrying surface
+to land on. After `config.arrows.max_bounces` reflections the next one
+spins the arrow out and it vanishes (see `spin_out_frames`).
+
+`bounce` is enough on its own to catch arrows, whether or not `solid` is
+also set: the loader treats a bounce tile as solid *for arrows*, so
+marking only `bounce` still gets the reflection rather than an arrow
+sailing quietly through. What it does **not** do is stop bodies — add
+`solid` as well for a wall the player and enemies are stopped by (a
+bounce field the player can walk through but not shoot past). Pair it
+with `friction` for ice-like slides, and remember the two flags are
+independent: `solid` + no `bounce` embeds arrows (the ordinary wall).
+
+The legacy `sticky` property is a second spelling of the same flag, kept
+so the old `maps/legacy/twang.tsx` spritesheet tileset keeps working: a
+tile flagged `sticky` reflects arrows exactly like one flagged `bounce`.
+New levels should author `bounce`; the two never conflict (either one
+wins, they set the same field). Bomb arrows and gun shots are unaffected
+— they detonate on *any* contact, bounce surface or not.
+
+There is no `slope` property: slope collision is not implemented. Ramps
+and slopes have to be built out of ordinary solid tiles (which is what
+`maps/roomgrid.json` does with its 178 ramp cells).
 
 ### One-way platforms (`oneway`)
 
-A tile flagged `oneway` (the blue thin platform, art 64) is a
+A tile flagged `oneway` (the blue thin platform) is a
 standable-from-above slat: a falling body whose feet cross the tile's
 top edge lands on it (the swept fall span can't tunnel through — a
 max-speed fall is 9px/step and the catch sweeps that whole span).
@@ -261,13 +353,17 @@ objects** (no tile) on any Object Layer with the Class/kind `room`
 contiguous world: terrain, entities and puzzle state are shared across
 rooms and persist.
 
-Worked example: `maps/rooms_demo.json` (the level select's "rooms demo"
-row) — two side-by-side 480x320 rooms with a seam pit between them;
-crossing it wipes the screen into room B.
+Worked example: `maps/legacy/rooms_demo.json` (a legacy workshop map) —
+two side-by-side 480x320 rooms with a seam pit between them; crossing it
+wipes the screen into room B. `maps/roomgrid.json` (the shipped level,
+the menu's only row) is the other worked example: 25 rooms laid out as a
+5x5 grid of 480x320 cells (a 300x200 tile map), nothing but a spawn in
+the bottom-left cell and an exit in the top-right one.
 
 ### Authoring rooms in Tiled (step by step)
 
-1. Open the level (8x8, the `twang.tsx` terrain tileset).
+1. Open the level (8x8; the room grid's terrain tileset is
+   `maps/roomgrid.tsx`).
 2. **Layer menu → Add Object Layer** (name it e.g. `Rooms`).
 3. Select the **Insert Rectangle** tool (`R`). Draw a rectangle:
    - its **top-left must sit on a tile corner** — turn on the 8px grid
@@ -307,20 +403,23 @@ At runtime:
 - **Spawns/respawns** resolve the room from the spawn point (camera
   snaps, no wipe).
 
-## Cart fallbacks
+## No cart fallbacks
 
-If no tileset defines kind properties at all, the pico-8 cart defaults
-in `src/tiled.lua` apply, so a migrated level needs no manual setup.
-The per-kind sprite label ids used for fallbacks are in
-`src/config.lua` (`config.tiles`).
+There is **no built-in fallback table**. Art and roles come from the
+tilesets a map references, plus the global character tileset
+(`config.art_file`) for the player and HUD. A role that no tileset
+declares simply has no art and draws nothing — that is the intended
+signal that the tileset is missing something, rather than a silent
+substitute from a legacy sprite label.
 
-## Migration notes
+## Legacy maps
 
-The 8px tile migration was performed by `tools/migrate_maps_8px.py`
-(tile layers expand 16px cells into their four sub-tiles; kind-marker
-cells into their top-left sub-tile; object anchors re-derived at the
-old 16px snap). `tools/build_tsx_8px.py` rebuilt the terrain tileset in
-place and `tools/make_chars16.py` generated the sprite tileset.
-`maps/little.json` predates the 16px era and was never part of the
-level set — it is left as an unreferenced fixture.
+The maps in `maps/legacy/` that were built against the old single-sheet
+pipeline (`twang.tsx` over `spritesheet.png`, plus `chars16.tsx`) still
+load under the current loader, and the test suite exercises them. They
+are on the way out: nothing in the engine needs them, and a level is
+free to reference a different set of tilesets entirely. The one thing
+worth carrying over from a legacy map is its terrain — the room grid,
+the 178 ramp cells and any hand-placed geometry — re-pointed at fresh
+tilesets.
 

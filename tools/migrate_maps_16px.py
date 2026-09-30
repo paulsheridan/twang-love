@@ -17,9 +17,9 @@ through untouched. Maps are re-serialized with sorted keys off, matching
 Tiled's own field ordering as closely as practical.
 
 usage:
-    python3 tools/migrate_maps_16px.py maps/level1.json [more.json ...]
+    python3 tools/migrate_maps_16px.py maps/legacy/level1.json [more.json ...]
 
-  python3 tools/migrate_maps_16px.py maps/level1.json maps/level2.json
+  python3 tools/migrate_maps_16px.py maps/legacy/level1.json maps/legacy/level2.json
 """
 import json
 import os

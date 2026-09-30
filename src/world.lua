@@ -1,17 +1,21 @@
 -- The tile world: grid storage, per-tile flags, solidity queries.
 --
--- The grid is stored as four hex digits per 8px tile, row-major (the
--- 16-bit id space: the 8px tileset addresses 1024 sub-tiles; old 16px
--- cell O = its four sub-tiles at the tileset's linear ids, produced by
--- src/tiled.lua). Tile flags
--- come from the Tiled tileset's custom properties, packed into per-tile
--- flag bytes:
---   bit 0 solid  bit 1 sticky  bit 2 friction (slippery)  bit 3 arrow_pass
---   bit 4 runnable (wall-run lanes: pass-through tiles marked with the
---   "runnable" property; lines of them are traversed by the player's
---   wall-run)
---   bit 5 oneway (thin platforms: standable from above, passable from
---   below — bodies land on them, arrows/enemies/sight pass through)
+-- The grid is stored as four hex digits per 8px tile, row-major. Each
+-- value is a tile's key (its gid, unique across the level's tilesets)
+-- and resolves through World.tiles_by_key to the tile record built by
+-- src/tiled.lua -- which carries that tile's own source rect for
+-- rendering and its own flags for gameplay:
+--   solid       blocks bodies, arrows, sight
+--   bounce      arrows reflect off it instead of embedding
+--   friction    slippery: slows movement (config.player.slippery_friction)
+--   arrow_pass  arrows and sight pass through; bodies are still blocked
+--   runnable    wall-run lanes: pass-through tiles marked with the
+--               "runnable" property; lines of them are traversed by the
+--               player's wall-run
+--   oneway      thin platforms: standable from above, passable from
+--               below — bodies land on them, arrows/enemies/sight pass
+--               through
+--   phase       switch-flipped platforms (see World.phase_solid)
 --
 -- Doors, springs and switches own tile solidity in special ways (see
 -- solid_at / solid_for_arrow); they are referenced from the level's
@@ -39,7 +43,9 @@ function World.new(level, ents, tile_size)
   self.h         = level.MAP_H
   self.px_w      = level.MAP_W * tile_size
   self.px_h      = level.MAP_H * tile_size
-  self.gff       = level.gff
+  -- gid -> tile record (src/tiled.lua). Every solidity, flag and
+  -- rendering lookup goes through this; 0 means empty.
+  self.tiles_by_key = level.tiles_by_key
   self.tw        = tile_size
   self.art       = config.art_size
   self.doors     = ents.doors
@@ -47,7 +53,6 @@ function World.new(level, ents, tile_size)
   self.switches  = ents.switches
   self.pushers   = ents.pushers
   self.movers    = ents.movers
-  self.phase_tiles = level.phase_tiles or {}
   self.phase_solid = true  -- phase tiles start solid; phase-switch strikes flip this
   -- visual-only named Tiled layers (see docs/tiled-format.md): the
   -- backdrop draws behind everything; the foreground overlay draws on
@@ -94,17 +99,30 @@ function World:set_tile(c, r, t)
     .. self.map[r + 1]:sub(c*4 + 5)
 end
 
--- Tile flag bit f (from the Tiled tileset's custom properties).
-function World:flag(t, f)
-  if t <= 0 then return false end
-  return math.floor(self.gff[t + 1] / 2^f) % 2 == 1
+-- The tile record for a grid value (nil when the cell is empty).
+function World:tile_record(t)
+  if t == 0 then return nil end
+  return self.tiles_by_key[t]
 end
 
-function World:solid(t)        return t ~= 0 and self:flag(t, 0) end
-function World:sticky(t)       return t ~= 0 and self:flag(t, 1) end
-function World:arrow_pass(t)   return t ~= 0 and self:flag(t, 3) end
-function World:runnable(t)     return t ~= 0 and self:flag(t, 4) end
-function World:oneway(t)       return t ~= 0 and self:flag(t, 5) end
+-- Does the tile carry a named Tiled property?
+function World:flag(t, name)
+  local rec = self:tile_record(t)
+  return rec ~= nil and rec[name] == true
+end
+
+function World:solid(t)        return self:flag(t, "solid") end
+-- Arrows reflect off a bounce tile. "sticky" is the legacy name for the
+-- same flag: the old spritesheet tileset spelled it "sticky", so both
+-- resolve to the one record field (see src/tiled.lua) and a legacy map
+-- keeps bouncing arrows.
+function World:bounce(t)       return self:flag(t, "bounce") end
+-- Legacy spelling, kept because tests and tooling ask for it by that
+-- name. Answers the same question as World:bounce.
+function World:sticky(t)       return self:bounce(t) end
+function World:arrow_pass(t)   return self:flag(t, "arrow_pass") end
+function World:runnable(t)     return self:flag(t, "runnable") end
+function World:oneway(t)       return self:flag(t, "oneway") end
 
 -- The runnable line through tile (c, r): the maximal horizontal run of
 -- consecutive runnable tiles containing it, as (c0, c1). nil when the
@@ -134,15 +152,15 @@ function World:runnable_band_line(c, r8)
   return c0, c1
 end
 
--- Is this tile id one of the switch-flipped phase tiles?
+-- Is this tile one of the switch-flipped phase tiles?
 function World:is_phase(t)
-  return t ~= 0 and self.phase_tiles[t] == true
+  return self:flag(t, "phase")
 end
 
 -- Friction scale for a tile: slippery tiles slow movement, all others
 -- are normal ground.
 function World:friction(t)
-  return (t ~= 0 and self:flag(t, 2)) and config.player.slippery_friction or 1.0
+  return self:flag(t, "friction") and config.player.slippery_friction or 1.0
 end
 
 -- ==== rooms ====
@@ -346,9 +364,23 @@ function World:solid_for_arrow(x, y)
   end
   local t = self:tile(c, r)
   if t ~= 0 and self:arrow_pass(t) then return false end
+  -- a bounce tile is an arrow surface in its own right: arrows must
+  -- REACH it to reflect, so it is solid for arrows even when it was not
+  -- flagged solid (an author marking only "bounce" gets the reflection
+  -- they asked for, not an arrow sailing through). It still blocks
+  -- nothing but arrows -- bodies walk through unless "solid" is set too.
+  if t ~= 0 and self:bounce(t)
+  and not (self:is_phase(t) and not self.phase_solid) then
+    return true
+  end
   return self:solid_at(x, y)
 end
 
+-- Is the point (x, y) a surface arrows REFLECT from? Moving blocks and
+-- closed doors answer true for the same reason tiles flagged `bounce` do
+-- (see World:bounce): both are temporary solids, so an arrow embedded in
+-- one would hang in mid-air or in an opening doorway. The name keeps the
+-- legacy spelling; the flag behind it is `bounce`.
 function World:sticky_at(x, y)
   local c, r = math.floor(x/self.tw), math.floor(y/self.tw)
   -- moving blocks are bouncy surfaces too (they are temporary solids;
@@ -358,14 +390,14 @@ function World:sticky_at(x, y)
       return true
     end
   end
-  -- a closed door is a bouncy surface, like a sticky wall: doors are
+  -- a closed door is a bouncy surface, like a bounce wall: doors are
   -- temporary solids, so an arrow embedded in one would be left hanging
   -- in the doorway the moment a switch opens it
   for _, d in ipairs(self.doors) do
     if owns_2x2(d.tc, d.tr, c, r) then return not d.open end
   end
   local t = self:tile(c, r)
-  return t ~= 0 and self:sticky(t)
+  return t ~= 0 and self:bounce(t)
 end
 
 -- Open-fall depth below (x, y): the px distance down to the first ground

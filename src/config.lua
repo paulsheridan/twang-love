@@ -27,42 +27,38 @@ local Config = {
 
   tile_size = 8,
 
-  -- The entity art cell (px): sprites, entity hit boxes and tile-count
-  -- tunings stay anchored to the 16px art grid even though the terrain
-  -- grid is 8px (the terrain tileset subdivides each art cell into four
-  -- 8px sub-tiles; entity art never subdivides).
+  -- The character art cell (px): entity sprites, entity hit boxes and
+  -- tile-count tunings stay anchored to the 16px art grid, while
+  -- terrain is authored on the 8px grid. Entity art is drawn from its
+  -- own 16x16 tileset, never subdivided.
   art_size = 16,
+
+  -- The global character art: a 16x16 tileset whose tiles carry "kind"
+  -- properties naming the player animation frames (player_idle,
+  -- player_air, player_aim_down, player_land, player_run_0..3) and the
+  -- HUD icons (heart_full, heart_half, heart_empty). Loaded once at
+  -- boot; any level can override a role by declaring the same kind in
+  -- one of its own tilesets.
+  art_file = "maps/chars.tsx",
 
   -- The Tiled map driving the level (see src/tiled.lua for the format).
   -- The headless harness boots this level; a real launch boots the
-  -- level select's first entry (the intro level) instead.
-  map_file = "maps/level1.json",
+  -- level select's first entry too — there is only one level for now.
+  map_file = "maps/roomgrid.json",
 
   -- Levels offered by the launch level select (Game:select_step).
   -- `file` is the Tiled JSON map, `name` the menu row. The first entry
-  -- is the intro level a real launch opens on. `gold`/`par` are the
-  -- grade thresholds in seconds (<= gold: gold, <= par: silver, else
-  -- bronze — placeholders, retuned against real runs). Entries flagged
-  -- `hidden` stay out of the level select (the workshop levels: the
-  -- original cart's sandbox maps, kept for testing).
+  -- is the level a real launch opens on. `gold`/`par` are the grade
+  -- thresholds in seconds (<= gold: gold, <= par: silver, else bronze —
+  -- placeholders, retuned against real runs). Entries flagged `hidden`
+  -- stay out of the level select.
+  --
+  -- The room grid is the only shipping level. The original 14 levels
+  -- (the v1 ladder plus the workshop sandboxes) now live in
+  -- `maps/legacy/` and stay out of the menu; the test suite still boots
+  -- them as fixtures.
   levels = {
-    -- the v1 ladder (docs/gameplan.md): one new idea per level
-    { file = "maps/meadow.json",      name = "meadow",       gold = 50,  par = 120 },
-    { file = "maps/battlements.json", name = "battlements",  gold = 80,  par = 180 },
-    { file = "maps/crossing.json",    name = "the crossing", gold = 90,  par = 210 },
-    { file = "maps/springside.json",  name = "springside",   gold = 110, par = 240 },
-    { file = "maps/arrowslit.json",   name = "arrowslit",    gold = 130, par = 260 },
-    { file = "maps/winchyard.json",   name = "winchyard",    gold = 150, par = 280 },
-    { file = "maps/vault.json",       name = "the vault",    gold = 170, par = 300 },
-    { file = "maps/keep.json",        name = "the keep",     gold = 200, par = 340 },
-    { file = "maps/lv_forest.json",   name = "lv_forest",    gold = 240, par = 400 },
-    -- workshop levels: level 1 is a visible debug row (always unlocked,
-    -- outside the ladder's progression chain) — the sandboxes for testing
-    -- gameplay changes; the rest stay fully hidden
-    { file = "maps/level1.json",      name = "level 1",      gold = 90,  par = 180, debug = true },
-    { file = "maps/rooms_demo.json",  name = "rooms demo",   gold = 45,  par = 120, debug = true },
-    { file = "maps/farmhouse.json",   name = "farmhouse",    gold = 60,  par = 120, hidden = true },
-    { file = "maps/level2.json",      name = "level 2",      gold = 90,  par = 180, hidden = true },
+    { file = "maps/roomgrid.json", name = "room grid", gold = 45, par = 120 },
   },
 
   camera = {
@@ -96,6 +92,11 @@ local Config = {
   },
 
   player = {
+    -- the run animation is a role in the art table: player_run_0..N
+    -- (with player_run itself as the fallback). The other frames are
+    -- the plain roles player_idle / player_air / player_aim_down /
+    -- player_land. See art_file.
+    art_run = "player_run",
     width = 8,
     height = 12,
     hearts = 3,               -- health cap, in whole hearts (drawn top-left)
@@ -150,13 +151,13 @@ local Config = {
   -- jumps (jump still held) or keeps the momentum and falls. The ride y
   -- settles onto the band's centre line over settle_steps (the smooth
   -- transition in/out). The animation loop mirrors the ground run cycle;
-  -- sprite_base points at the ground-run frames until wall-run art lands.
+  -- `art` is the role whose _0.._N tiles are the frames.
   wallrun = {
     speed = 3,          -- px/world-step along the wall (walk-speed feel)
     settle_steps = 4,   -- world-steps easing the body onto the band's centre
     cycle_steps = 6,   -- animation cadence, in world-time steps
     cycle_frames = 4,   -- animation frames
-    sprite_base = 100,  -- first sprite index of the animation
+    art = "player_wallrun",  -- role whose _0.._N tiles are the frames
   },
 
   world = {
@@ -201,7 +202,7 @@ local Config = {
     colour = 10,                 -- PICO-8 palette index of the shaft
     lifetime = 300,              -- flight world-steps before expiring
     stuck_lifetime = 32000,      -- world-steps an embedded arrow persists
-    max_bounces = 2,             -- surviving bounces off sticky surfaces...
+    max_bounces = 2,             -- surviving bounces off bounce-flagged surfaces...
     spin_out_frames = 12,        -- ...then the next bounce spins out and vanishes
     spin_out_speed = 0.45,       -- spin-out rotation, radians per world-step
     grab_cooldown = 8,          -- world-steps before the player can re-grab a key
@@ -227,7 +228,7 @@ local Config = {
   },
 
   -- The bomb arrow (the swap cycle's fourth kind): a gravity-arced
-  -- arrow that detonates on ANY contact -- terrain, sticky surfaces,
+  -- arrow that detonates on ANY contact -- terrain, bounce surfaces,
   -- closed doors, enemies. A direct enemy hit kills the touched enemy
   -- (blood, instant) and then blasts; the blast itself is a point
   -- explosion that SHOVES everything in its radius -- the player
@@ -603,31 +604,6 @@ local Config = {
     fire_count = 4,
     fire_colour = 6,
     fire_life = { 4, 9 },
-  },
-
-  -- PICO-8 cart fallbacks for special tiles; a Tiled tileset that defines
-  -- "kind" properties overrides these per level (src/level.lua applies it).
-  -- Note: the spawn marker scan in the tile layer always uses spawn_tile
-  -- (a carried-over pico-8 cart wart, preserved deliberately).
-  tiles = {
-    spawn = 63,
-    key = 70,
-    lock = 71,
-    door = 72,
-    switch = 171,
-    spring = 16,
-    spring_ext = 32,  -- the extended spring's art (art cell 32)
-    archer = 90,
-    melee = 105,
-    laser = 138,  -- aiming rifleman (kind also defined in maps/twang.tsx)
-    rocketeer = 138,  -- rocket launcher (placeholder: shares the laser cell art)
-    bomber = 138,  -- explosive thrower (placeholder: shares the laser cell art)
-    winch = 133,  -- small blue star
-    pusher = 86,  -- arrow-struck push pad (updraft launches straight up,
-                  -- outdraft drains a cone above it up-and-away)
-    mover = 17,   -- plain orange block (the crate movers draw with)
-    exit = 172,   -- the level's exit flag (touching it clears the level)
-    checkpoint = 173,  -- green checkpoint flag (touch sets the respawn)
   },
 }
 

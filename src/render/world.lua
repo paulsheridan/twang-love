@@ -44,18 +44,18 @@ local function draw_map(ctx)
   local cur_alpha = 1
   for r = my, my + vh/tw do
     for c = mx, mx + vw/tw + 1 do
-      local t = world:tile(c, r)
-      if t ~= 0 then
+      local rec = world:tile_record(world:tile(c, r))
+      local q = rec and Sprites.quad(rec)
+      if q then
         -- non-solid phase tiles render translucent (draw alpha only
         -- changes when it has to, to keep the visible-tile loop cheap)
-        local alpha = (world:is_phase(t) and not world.phase_solid)
+        local alpha = (rec.phase and not world.phase_solid)
           and config.phase.alpha or 1
         if alpha ~= cur_alpha then
           love.graphics.setColor(1, 1, 1, alpha)
           cur_alpha = alpha
         end
-        love.graphics.draw(Sprites.sheet(), Sprites.tile_quad(t),
-          c*tw, r*tw)
+        love.graphics.draw(Sprites.image(rec.image), q, c*tw, r*tw)
       end
     end
   end
@@ -108,22 +108,20 @@ end
 
 local function draw_interactables(ctx)
   local ents = ctx.ents
-  local tiles = ctx.tiles
   for _, k in ipairs(ents.keys) do
-    if not k.taken then Sprites.draw(k.spr or tiles.key, k.x, k.y, false, k.rot) end
+    if not k.taken then Sprites.draw(k.art, k.x, k.y, false, k.rot) end
   end
   for _, l in ipairs(ents.locks) do
-    if not l.triggered then Sprites.draw(l.spr or tiles.lock, l.x, l.y, false, l.rot) end
+    if not l.triggered then Sprites.draw(l.art, l.x, l.y, false, l.rot) end
   end
   for _, d in ipairs(ents.doors) do
-    if not d.open then Sprites.draw(d.spr or tiles.door, d.x, d.y, false, d.rot) end
+    if not d.open then Sprites.draw(d.art, d.x, d.y, false, d.rot) end
   end
   for _, s in ipairs(ents.switches) do
-    Sprites.draw(s.on and (s.spr + 1) or s.spr, s.x, s.y, false, s.rot)
+    Sprites.draw(s.on and s.art_on or s.art, s.x, s.y, false, s.rot)
   end
   for _, s in ipairs(ents.springs) do
-    Sprites.draw(s.ext and tiles.spring_ext or (s.spr or tiles.spring),
-      s.x, s.y, false, s.rot)
+    Sprites.draw(s.ext and s.art_ext or s.art, s.x, s.y, false, s.rot)
   end
   for _, gg in ipairs(ents.guns) do
     if not gg.taken then
@@ -140,10 +138,10 @@ local function draw_interactables(ctx)
     end
   end
   for _, w in ipairs(ents.winches) do
-    Sprites.draw(w.spr or tiles.winch, w.x, w.y, false, w.rot)
+    Sprites.draw(w.art, w.x, w.y, false, w.rot)
   end
   for _, pu in ipairs(ents.pushers) do
-    Sprites.draw(pu.spr or tiles.pusher, pu.x, pu.y, false, pu.rot)
+    Sprites.draw(pu.art, pu.x, pu.y, false, pu.rot)
     draw_pusher_ticks(pu)
   end
   for _, m in ipairs(ents.movers) do
@@ -155,24 +153,26 @@ local function draw_interactables(ctx)
     -- the block's box lives on bx/by (not x/y): ease the box origin
     local bx = m._px and Util.lerp(m._px, m.bx, alpha or 1) or m.bx
     local by = m._py and Util.lerp(m._py, m.by, alpha or 1) or m.by
-    local spr = m.spr or tiles.mover
     local art = config.art_size
-    for gy = 0, math.ceil(m.bh / art) - 1 do
-      for gx = 0, math.ceil(m.bw / art) - 1 do
-        local wpx = math.min(art, m.bw - gx * art)
-        local hpx = math.min(art, m.bh - gy * art)
-        love.graphics.draw(Sprites.sheet(), Sprites.quad(spr),
-          math.floor(bx + gx * art), math.floor(by + gy * art),
-          0, wpx / art, hpx / art)
+    local q, img = Sprites.quad(m.art), m.art and Sprites.image(m.art.image)
+    if q and img then
+      for gy = 0, math.ceil(m.bh / art) - 1 do
+        for gx = 0, math.ceil(m.bw / art) - 1 do
+          local wpx = math.min(art, m.bw - gx * art)
+          local hpx = math.min(art, m.bh - gy * art)
+          love.graphics.draw(img, q,
+            math.floor(bx + gx * art), math.floor(by + gy * art),
+            0, wpx / art, hpx / art)
+        end
       end
     end
     draw_mover_ticks(m, bx, by)
   end
   for _, e in ipairs(ents.exits) do
-    Sprites.draw(e.spr or tiles.exit, e.x, e.y, false, e.rot)
+    Sprites.draw(e.art, e.x, e.y, false, e.rot)
   end
   for _, cp in ipairs(ents.checkpoints) do
-    Sprites.draw(cp.spr or tiles.checkpoint, cp.x, cp.y, false, cp.rot)
+    Sprites.draw(cp.art, cp.x, cp.y, false, cp.rot)
   end
 end
 
@@ -193,11 +193,10 @@ end
 
 local function draw_enemies(ctx, alpha)
   if not config.enemies.enabled then return end  -- toggled off: invisible
-  local ents, tiles = ctx.ents, ctx.tiles
+  local ents = ctx.ents
   for _, e in ipairs(ents.enemies) do
     local x, y = Util.render_pos(e, alpha)
-    Sprites.draw(e.spr or ((e.type == "melee") and tiles.melee or tiles.archer),
-      x, y, e.facing < 0, e.rot)
+    Sprites.draw(e.art, x, y, e.facing < 0, e.rot)
   end
 end
 
@@ -521,7 +520,7 @@ local function draw_arrows(ctx, alpha)
           end
         end
       end
-      if a.key then Sprites.draw(ctx.tiles.key, x - 8, y - 8) end
+      if a.key then Sprites.draw(ctx.art.key, x - 8, y - 8) end
     end
   end
 end
@@ -596,12 +595,12 @@ function Render.foreground(ctx)
   love.graphics.setColor(1, 1, 1, alpha)
   for r = my, my + vh_t do
     for c = mx, mx + vw_t + 1 do
-      local t = world:fg_tile(c, r)
-      if t ~= 0
+      local rec = world:tile_record(world:fg_tile(c, r))
+      local q = rec and Sprites.quad(rec)
+      if q
       and (not room or (c*tw >= room.x and c*tw < room.x + room.w
                    and r*tw >= room.y and r*tw < room.y + room.h)) then
-        love.graphics.draw(Sprites.sheet(), Sprites.tile_quad(t),
-          c*tw, r*tw)
+        love.graphics.draw(Sprites.image(rec.image), q, c*tw, r*tw)
       end
     end
   end

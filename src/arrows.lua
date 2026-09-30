@@ -3,8 +3,8 @@
 --
 -- Player arrows act as one-tile-wide platforms ONLY when embedded in a
 -- vertical wall (see check_platforms), can carry keys to locks, and
--- bounce off sticky surfaces a limited number of times before spinning
--- out. The bow's third arrow kind, the spirit, is not an arrow at all:
+-- bounce off bounce-flagged surfaces a limited number of times before
+-- spinning out. The bow's third arrow kind, the spirit, is not an arrow at all:
 -- fire() hands it to src/spirit.lua, a ghostly recoil-launch that
 -- flings the player along the OPPOSITE of the aim direction (a burst
 -- of particles marks the force) instead of sticking or killing. The
@@ -418,8 +418,8 @@ function Arrows.step_one(ctx, a)
     local ny = a.y + sy
 
     if world:solid_for_arrow(nx, ny) then
-      -- bomb arrows and gun shots detonate on any surface: sticky walls
-      -- (which would bounce other arrows) and solid terrain alike
+      -- bomb arrows and gun shots detonate on any surface: bounce walls
+      -- (which would reflect other arrows) and solid terrain alike
       if a.kind == "bomb" or a.kind == "gun" then
         Arrows.detonate_bomb(ctx, nx, ny)
         a.active = false
@@ -427,6 +427,8 @@ function Arrows.step_one(ctx, a)
       end
       local hx = world:solid_for_arrow(nx, a.y)
       local hy = world:solid_for_arrow(a.x, ny)
+      -- a bounce surface reflects the arrow instead of letting it embed
+      -- (a tile flagged `bounce`, a moving block, a closed door)
       local is_sticky = (hx and world:sticky_at(nx, a.y))
                      or (hy and world:sticky_at(a.x, ny))
                      or (not hx and not hy and world:sticky_at(nx, ny))

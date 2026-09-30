@@ -41,7 +41,7 @@ end
 -- ==== 1. meadow: the key/lock/door chain and the exit ====
 do
   local env = Harness.boot()
-  local g = load(env, "maps/meadow.json")
+  local g = load(env, "maps/legacy/meadow.json")
   local p, ents = g.ctx.player, g.ctx.ents
   assert_true(#ents.keys == 3 and #ents.locks == 2 and #ents.doors == 4,
     "the meadow carries two key/lock puzzles and two 2-tall doors")
@@ -84,7 +84,7 @@ end
 -- ==== 2. battlements: an arrow strike opens the switch gate ====
 do
   local env = Harness.boot()
-  local g = load(env, "maps/battlements.json")
+  local g = load(env, "maps/legacy/battlements.json")
   local ents = g.ctx.ents
   local door
   for _, d in ipairs(ents.doors) do door = d end
@@ -111,7 +111,7 @@ end
 -- ==== 3. crossing: the rigged swing lands on the far ledge ====
 do
   local env = Harness.boot()
-  local g = load(env, "maps/crossing.json")
+  local g = load(env, "maps/legacy/crossing.json")
   local p, keys = g.ctx.player, env.TWANG_TEST.keys_down
   p.x, p.y, p.vx, p.vy = 448, 116, 0, 0
   for _ = 1, 30 do step(env) if p.gr then break end end
@@ -152,7 +152,7 @@ end
 -- ==== 4. springside: landing-spring vault + phase dissolve ====
 do
   local env = Harness.boot()
-  local g = load(env, "maps/springside.json")
+  local g = load(env, "maps/legacy/springside.json")
   local p, ents, world = g.ctx.player, g.ctx.ents, g.ctx.world
   assert_true(world.phase_solid, "phase tiles start solid")
   -- step onto the intro spring; the landing itself vaults the player
@@ -196,7 +196,7 @@ end
 -- ==== 5. arrowslit: the slit hides from sight, passes arrows ====
 do
   local env = Harness.boot()
-  local g = load(env, "maps/arrowslit.json")
+  local g = load(env, "maps/legacy/arrowslit.json")
   local p, ents, world = g.ctx.player, g.ctx.ents, g.ctx.world
   -- stand just left of the first slit wall (x=42, slit at row 15)
   p.x, p.y, p.vx, p.vy = 40 * tw, 14 * tw, 0, 0
@@ -234,7 +234,7 @@ end
 -- ==== 6. winchyard: a rope arrow into the winch zips the player ====
 do
   local env = Harness.boot()
-  local g = load(env, "maps/winchyard.json")
+  local g = load(env, "maps/legacy/winchyard.json")
   local p, ents = g.ctx.player, g.ctx.ents
   assert_true(#ents.winches == 3, "the winchyard carries three winches")
   -- stand at the first void's left edge (the void spans cols 12..19)
@@ -271,7 +271,7 @@ end
 -- ==== 7. the vault: the bomb ride grabs the floating key ====
 do
   local env = Harness.boot()
-  local g = load(env, "maps/vault.json")
+  local g = load(env, "maps/legacy/vault.json")
   local p, ents = g.ctx.player, g.ctx.ents
   local shelf_key
   for _, k in ipairs(ents.keys) do

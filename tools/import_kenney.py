@@ -12,7 +12,7 @@ pixel becomes a 2x2 block and each tile slot is 16x16. Slot indices (the
 16x16 grid) are unchanged, so tile ids and Tiled GIDs stay put.
 
 Slots 0-127 preserve the cart-era layout: the Tiled map data (GIDs), the
-tileset properties in maps/level1.json and the sprite constants in main.lua
+tileset properties in maps/legacy/level1.json and the sprite constants in main.lua
 all reference those indices. Slots 128-255 hold every Kenney tile not
 already present (in ascending order), giving level editing the full pack
 vocabulary; unused slots stay blank.

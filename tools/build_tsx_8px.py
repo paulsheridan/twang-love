@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuilds maps/twang.tsx as the 8px terrain tileset.
+"""Rebuilds maps/legacy/twang.tsx as the 8px terrain tileset.
 
 The spritesheet stays byte-identical (256x256); the tileset merely
 re-indexes it as 32 columns of 8x8 cells (1024 tiles). Old 16px cell O
@@ -17,7 +17,7 @@ Per-tile property rules, from the 16px tileset's records:
     scans match floor(tile/4) == label)
   * kind on moved sprite art (137 archer, 138 laser, 140 melee,
     143 bomber) is NOT emitted here: cells 96-103 and 128-170 are
-    reserved for maps/chars16.tsx (the 16px sprite tileset) and the
+    reserved for maps/legacy/chars16.tsx (the 16px sprite tileset) and the
     loader rejects their use in terrain layers
   * slope records are dropped: slope collision is removed from the game
   * tile 32 keeps ONLY its spring_ext record (no solid): the 16px
@@ -31,7 +31,7 @@ import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TSX = os.path.join(HERE, "..", "maps", "twang.tsx")
+TSX = os.path.join(HERE, "..", "maps", "legacy", "twang.tsx")
 
 FLAGS = ("solid", "sticky", "friction", "arrow_pass", "runnable",
          "oneway", "phase")

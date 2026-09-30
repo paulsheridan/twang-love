@@ -10,7 +10,7 @@
      use of reserved cells is rejected by the loader. Slope tiles and
      the slope property are gone: slope collision was removed. -->
 <tileset version="1.10" tiledversion="1.11.0" name="twang" tilewidth="8" tileheight="8" tilecount="1024" columns="32">
- <image source="../spritesheet.png" width="256" height="256"/>
+ <image source="spritesheet.png" width="256" height="256"/>
  <tile id="2">
   <properties>
    <property name="solid" type="bool" value="true"/>

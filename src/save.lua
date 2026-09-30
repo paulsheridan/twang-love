@@ -1,5 +1,5 @@
 -- Per-level best results, persisted to the LÖVE save directory as a tiny
--- JSON file. Shape: { ["maps/farmhouse.json"] = { time = seconds,
+-- JSON file. Shape: { ["maps/roomgrid.json"] = { time = seconds,
 -- grade = "gold"|"silver"|"bronze" } }, keyed by the level's map file so
 -- reordering config.levels never invalidates progress.
 --

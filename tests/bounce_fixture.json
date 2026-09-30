@@ -1,0 +1,38 @@
+{
+  "type": "map",
+  "version": "1.10",
+  "tiledversion": "1.11.0",
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "infinite": false,
+  "width": 4,
+  "height": 3,
+  "tilewidth": 8,
+  "tileheight": 8,
+  "nextlayerid": 2,
+  "nextobjectid": 1,
+  "tilesets": [
+    {
+      "firstgid": 1,
+      "source": "bounce_tiles.tsx"
+    }
+  ],
+  "layers": [
+    {
+      "id": 1,
+      "name": "ground",
+      "type": "tilelayer",
+      "width": 4,
+      "height": 3,
+      "x": 0,
+      "y": 0,
+      "visible": true,
+      "opacity": 1,
+      "data": [
+        1, 0, 0, 0,
+        0, 2, 0, 3,
+        0, 4, 0, 0
+      ]
+    }
+  ]
+}

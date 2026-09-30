@@ -44,9 +44,9 @@ local function setup()
   -- the spring pad standing on the spawn area's floor (row 14 top),
   -- with its group's switch mounted in the sky tile above it
   local spring = { x = 10*16, y = 13*16, g = "springtest", ext = nil,
-    spr = g.ctx.tiles.spring, rot = nil }
+    art = g.ctx.art.spring, rot = nil }
   local switch = { x = 10*16, y = 12*16, g = "springtest", on = false,
-    spr = g.ctx.tiles.switch, rot = nil }
+    art = g.ctx.art.switch, rot = nil }
   table.insert(g.ctx.ents.springs, spring)
   table.insert(g.ctx.ents.switches, switch)
   return env, g, spring, switch
@@ -104,14 +104,21 @@ do
   -- region (its four 8px sub-cells at (16..17, 16..17))
   local c, r = 8, 8
   local px, py = c*16 + 8, r*16 + 8
-  -- art 135's linear sub ids: TL = (135//16)*64 + (135%16)*2 = 526
-  local phase_base = 526
-  for dc = 0, 1 do
-    for dr = 0, 1 do
-      w:set_tile(c*2 + dc, r*2 + dr, phase_base + dc + dr*32)
-    end
+  -- Phase tiles are native 8x8 terrain tiles flagged with "phase" in the
+  -- tileset: no art-cell subdivision, so just find the ones the level's
+  -- own tilesets declare and lay four of them over the 16x16 block.
+  local phase_keys = {}
+  for key, rec in pairs(g.world.tiles_by_key) do
+    if rec.phase then phase_keys[#phase_keys + 1] = key end
   end
-  assert_true(w:is_phase(phase_base), "tile 135 is flagged as a phase tile")
+  table.sort(phase_keys)
+  assert_true(#phase_keys >= 4,
+    "the level's tilesets declare phase tiles (got " .. #phase_keys .. ")")
+  for i = 0, 3 do
+    w:set_tile(c*2 + (i % 2), r*2 + math.floor(i / 2), phase_keys[i + 1])
+  end
+  local phase_base = phase_keys[1]
+  assert_true(w:is_phase(phase_base), "a declared phase tile is flagged")
   assert_true(w.phase_solid, "phase tiles start solid on level load")
   assert_true(w:solid_at(px, py),
     "a placed phase tile blocks bodies while solid")

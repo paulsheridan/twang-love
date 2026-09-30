@@ -27,7 +27,7 @@ end
 
 local env = Harness.boot()
 local g = env.TWANG_TEST.game
-g:load_level("maps/farmhouse.json")
+g:load_level("maps/legacy/farmhouse.json")
 local w = g.ctx.world
 local p = g.ctx.player
 
@@ -73,7 +73,7 @@ step_at(fc*8, fr*8, 12)  -- 12 steps: past the ~8-step full fade
 assert_true(fga(w) == 0, "the layer fades fully out while behind it")
 
 -- the fade eases rather than snapping
-g:load_level("maps/farmhouse.json")
+g:load_level("maps/legacy/farmhouse.json")
 w = g.ctx.world
 p = g.ctx.player
 step_at(fc*8, fr*8, 2)

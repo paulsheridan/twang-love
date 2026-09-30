@@ -25,7 +25,7 @@ Per map:
   * .tx templates get the same gid remap and point at chars16.tsx
 
 usage:
-    python3 tools/migrate_maps_8px.py maps/level1.json [more ...]
+    python3 tools/migrate_maps_8px.py maps/legacy/level1.json [more ...]
     python3 tools/migrate_maps_8px.py   # all maps + rooms fixture + templates
 """
 import json
