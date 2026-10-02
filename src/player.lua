@@ -454,9 +454,8 @@ function Player.physics(ctx)
       p.vy = Util.move_toward(p.vy, cfg.jump_velocity, cfg.jump_accel_initial * dt)
       p.coy, p.jbuf = 0, 0
       p.j_frames = cfg.jump_hold_frames
-      -- takeoff dust + a small camera thud (juice: jumping reads)
+      -- takeoff dust
       Particles.dust(ents, p.x + p.w/2, p.y + p.h, 0.25)
-      Camera.thud(ctx.cam, config.camera.thud_jump)
     end
 
     -- THE WALL LEAP: the perch's jump, always launched AWAY from the
@@ -474,7 +473,6 @@ function Player.physics(ctx)
       p.vx = -(side or p.facing or 1) * cfg.walljump_push
       p.facing = -(side or p.facing or 1)
       p.arrow_stand = nil
-      Camera.thud(ctx.cam, config.camera.thud_jump)
       Particles.dust(ctx.ents, p.x + p.w/2, p.y + p.h, 0.4)
     end
 
@@ -658,13 +656,10 @@ function Player.physics(ctx)
     p.aimed_down = false
     if not p.prev_gr then
       p.land_frames = cfg.landing_frames
-      -- hard landings kick up dust (and a camera thud: see Camera.thud)
+      -- hard landings kick up dust
       local fall = p.vy
       Particles.dust(ents, p.x + p.w/2, p.y + p.h,
         math.min(1, fall / config.physics.max_fall_speed))
-      local strength = config.camera.thud_land
-        * math.min(1, fall / config.physics.max_fall_speed)
-      if strength > 0.2 then Camera.thud(ctx.cam, strength) end
       -- landing on a spring pad fires it: the vault replaces the landing
       for _, spring in ipairs(ents.springs) do
         if Interactables.spring_vault(ents, spring, p) then
@@ -882,8 +877,7 @@ function Player.aim_step(ctx)
       if p.arrow_kind ~= "spirit" then
         ctx.input:ignore_stick(cfg.stick_ignore_frames)
         -- juice: the shot's report -- a small puff along the aim. The
-        -- bow deliberately does not shake the camera (the bow hand
-        -- stays steady; only explosions move the frame)
+        -- bow never moves the camera (nor does anything else)
         Particles.fire_puff(ctx.ents, p.x + p.w/2, p.y + p.h/2,
           Util.p8cos(p.aim_angle), Util.p8sin(p.aim_angle))
       end

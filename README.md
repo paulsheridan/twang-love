@@ -1,7 +1,7 @@
 # twang
 
 An archer side-scroller: a LÖVE 11 port of the twang pico-8 cart. Native
-480x320 pixel rendering (8x8 terrain tiles over the untouched 2x2
+320x180 pixel rendering (8x8 terrain tiles over the untouched 2x2
 upscaled sheet; 16x16 entity art cells), a 60hz fixed-timestep
 simulation with render interpolation (smooth on any refresh rate) and a
 smooth camera. Levels are edited in Tiled (see `docs/tiled-format.md`).
@@ -92,7 +92,7 @@ speed between a quarter and the power level's full speed, so a light
 push lobs a slow, heavily arcing arrow while full tilt keeps the
 maximum. The preview arc shows exactly where the shot will land.
 
-The window opens at 3x the native 480x320 view (1440x960) and is
+The window opens at 4x the native 320x180 view (1280x720) and is
 resizable; fullscreen (F11) keeps your desktop resolution. The game
 always blits at a whole-number scale, so pixels stay square and sharp —
 in fullscreen the image is centred and letterboxed rather than
@@ -129,17 +129,16 @@ a monitor with a different resolution, so it stays crisp everywhere.
   fall if you let go.
 - **Impacts read as set pieces**: enemy arrows, rockets and grenades
   slamming into terrain throw scorched chunks off platforms, walls,
-  ceilings and floors, a laser beam blasts grit off whatever stops it,
-  and every enemy detonation shakes the camera (harder for bigger booms).
-  The carnage lingers, too: a laser's wall end keeps throwing sparks
+  ceilings and floors, and a laser beam blasts grit off whatever stops
+  it. The carnage lingers, too: a laser's wall end keeps throwing sparks
   for a second or so, and blasts near terrain leave a burnt face
   crackling with embers under a column of rising black smoke — simple
   dots standing in for the burnt-wall art. Your own arrows stay
   deliberately small and quiet when they hit surfaces — no chunks, and
-  no shake at all: neither the bow's release nor anything it lands on
-  moves the frame, not even a bomb arrow's blast or a pusher's flash
-  ring. You're the calm one in the fight; only the enemies' explosions
-  shake.
+  nothing moves the frame: neither the bow's release nor anything it
+  lands on, not even a bomb arrow's blast or a pusher's flash ring. The
+  camera never shakes at all, enemy booms included — you always know
+  exactly where you are on screen.
 - Arrows stick into walls and bounce off sticky surfaces and closed
   doors (nothing is left embedded in a doorway once a switch opens it).
   A stuck arrow buries its tip a couple of pixels in the surface and the
@@ -218,9 +217,9 @@ a monitor with a different resolution, so it stays crisp everywhere.
   longer answer switches: they fire on landing (see above).
 - **Juice**: every hit freezes the world for a few frames (hitstop —
   you feel arrow kills and take damage as a stuck beat), jumps and
-  landings kick up dust and tiny camera thuds (bigger enemy booms shake
-  harder), and the bow's release throws a small report along the aim —
-  a report, not a shake: firing never moves the frame.
+  landings kick up dust, and the bow's release throws a small report
+  along the aim. The camera itself never shakes — the frame is a plain
+  damped follow, so all the juice lands on the world, not the view.
 - **Rooms**: a level may be split into camera-framed rooms (rectangles
   flagged `room` in Tiled — see `docs/tiled-format.md` for the full
   step-by-step authoring walkthrough; `maps/legacy/rooms_demo.json`, a

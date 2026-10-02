@@ -50,10 +50,10 @@ return function(ctx, blit)
   else
     love.graphics.setColor(pcol(7))
   end
-  love.graphics.print(label, vw - 40, 2)
+  love.graphics.print(label, vw - 44, 2)
   if ctx.input:down("aim") then
     love.graphics.setColor(pcol(POWER_COLOURS[p.aim_power]))
-    love.graphics.print("pwr:" .. POWER_LABELS[p.aim_power], vw - 40, 10)
+    love.graphics.print("pwr:" .. POWER_LABELS[p.aim_power], vw - 44, 10)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.print("z:aim  lr:ang  ud:pwr", 2, vh - 12)
   else

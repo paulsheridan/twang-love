@@ -3,12 +3,14 @@
 -- Covers the multi-room system (docs/tiled-format.md "Rooms"; the
 -- camera frames in src/camera.lua, the wipe in src/game.lua, the
 -- simulation gating in the system update loops), exercised on
--- tests/rooms_fixture.json (three one-screen rooms, open borders,
--- a foreground block in room B, a spawn in room A, an archer in C):
+-- tests/rooms_fixture.json (three rooms LARGER than the view, open
+-- borders, a foreground block in room B, a spawn in room A, an archer
+-- in C):
 --   1. roomless maps behave exactly as before (clamp rect = world,
 --      everything simulates, no wipe)
 --   2. the fixture resolves its rooms and the spawn picks room A
---   3. the camera clamps to the active room (one-screen rooms: pinned)
+--   3. the camera clamps to the active room (rooms wider and taller
+--      than the view: a pan range, not a pinned frame)
 --   4. a hysteresis-checked border crossing starts the wipe; the room
 --      switches at full black with the camera snapped into the new room
 --   5. per-room foreground fade: only the room you're behind fades
@@ -82,12 +84,14 @@ end
 -- ==== 3. the camera clamps to the active room ====
 do
   local w, cam = g.ctx.world, g.ctx.cam
-  assert_true(cam.x == 0 and cam.y == 0,
-    "the camera sits at room A's origin (one-screen room)")
+  -- the spawn sits at the room's bottom-left, so the clamp pins x to the
+  -- room's left edge and parks y at the room's bottom pan limit
+  assert_true(cam.x == 0 and cam.y == 320 - config.view.height,
+    "the camera clamps into room A (a pan range, not a pinned frame)")
   w.active_room = room_named(w, "room_c")
   local lox, hix = w:clamp_rect()
-  assert_true(lox == 960 and hix == 960,
-    "room C clamps the camera to its origin")
+  assert_true(lox == 960 and hix == 960 + 480 - config.view.width,
+    "room C clamps the camera to its own pan range")
   w.active_room = nil
   lox, hix = w:clamp_rect()
   assert_true(lox == 0 and hix == w.px_w - config.view.width,
@@ -108,7 +112,7 @@ do
   for _ = 1, config.rooms.fade_steps do step(env) end
   assert_true(w.active_room == room_named(w, "room_b"),
     "the switch lands at full black")
-  assert_true(g.cam.x == 480 and g.cam.y == 0,
+  assert_true(g.cam.x == 480 and g.cam.y == 320 - config.view.height,
     "the camera snapped into the new room")
   for _ = 1, config.rooms.fade_steps do step(env) end
   assert_true(g.room_fade == nil, "the wipe completes")

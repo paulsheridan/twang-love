@@ -20,7 +20,8 @@
 --  10. the blast knocks rockets, bombs and darts off course
 --  11. bomb arrows never carry or pick up keys
 --  12. a bomb arrow and its boom render without error
---  13. the blast's flash ring draws but never shakes the camera (an
+--  13. the bomb arrow's blast draws but leaves the frame on its pure
+--      follow (and so does an enemy rocket blast)
 --      enemy rocket blast through the same booms list still does)
 --
 -- Usage (from the project root): luajit tests/bomb_arrow_test.lua
@@ -43,6 +44,14 @@ local blast = config.bomb_arrow
 
 local function step(env)
   env.love.update(1/30)
+  env.love.draw()
+end
+
+-- One raw sim tick (1/60s of real time). A 1/30 step is two ticks, and
+-- the camera follows once per tick, so pinning a single camera move
+-- needs tick granularity.
+local function tick(env)
+  env.love.update(1/60)
   env.love.draw()
 end
 
@@ -437,40 +446,45 @@ do
   assert_true(true, "the draw path survives a bomb arrow and boom")
 end
 
--- ==== 13. the bomb arrow's blast draws, but never shakes the camera ====
--- The bow is the calm one in the fight: the boom entry carries
--- no_shake, so Game:step leaves the frame alone. Enemy explosives go
--- through Rockets.blast instead and keep their shake.
+-- ==== 13. the bomb arrow's blast draws, but the frame stays steady ====
+-- The bow is the calm one in the fight. The boom entry still appends its
+-- flash ring, and the camera still sits exactly on its damped follow --
+-- there is no shake left in the game to opt out of.
 do
   local env = Harness.boot()
   local g = env.TWANG_TEST.game
+  local ctx = g.ctx
+  local config = env.require("src.config")
   local p = settle(env, 200, 100)
-  g.ctx.ents.booms = {}
-  g.cam.shake_t = nil
+  ctx.ents.booms = {}
   local Arrows = env.require("src.arrows")
-  Arrows.detonate_bomb(g.ctx, p.x + 60, p.y)
-  step(env)
-  local b = g.ctx.ents.booms[1]
+  local pre = Harness.cam_snapshot(g.cam, p)
+  Arrows.detonate_bomb(ctx, p.x + 60, p.y)
+  tick(env)
+  local b = ctx.ents.booms[1]
   assert_true(b ~= nil, "the blast still appends its flash ring")
-  assert_true(b.no_shake == true, "the bow's boom opts out of the shake")
-  assert_true(g.cam.shake_t == nil,
-    "the bow's detonation left the camera steady (shake_t "
-      .. tostring(g.cam.shake_t) .. ")")
+  assert_true(Harness.camera_steady(g.cam, pre, p, ctx.world, config, ctx.dt),
+    "the bow's detonation left the camera steady (cam "
+      .. tostring(g.cam.x) .. "," .. tostring(g.cam.y) .. ")")
 end
 do
-  -- the control: an enemy rocket blast through the shared blast still
-  -- shakes, so the guard above is pinning the bow's silence and not
-  -- the shake machinery itself
+  -- the control: an enemy rocket blast through the shared blast draws
+  -- just the same, and is just as steady. Nothing shakes now, so the
+  -- guard above pins one of two shake-free paths rather than the only
+  -- one.
   local env = Harness.boot()
   local g = env.TWANG_TEST.game
+  local ctx = g.ctx
+  local config = env.require("src.config")
   local p = settle(env, 200, 100)
-  g.ctx.ents.booms = {}
-  g.cam.shake_t = nil
-  env.require("src.rockets").blast(g.ctx, p.x + 300, p.y, 24, 1)
-  step(env)
-  assert_true(g.cam.shake_t ~= nil,
-    "an enemy blast still shakes the camera (shake_t "
-      .. tostring(g.cam.shake_t) .. ")")
+  ctx.ents.booms = {}
+  local pre = Harness.cam_snapshot(g.cam, p)
+  env.require("src.rockets").blast(ctx, p.x + 300, p.y, 24, 1)
+  tick(env)
+  assert_true(ctx.ents.booms[1] ~= nil, "the enemy blast still appends its ring")
+  assert_true(Harness.camera_steady(g.cam, pre, p, ctx.world, config, ctx.dt),
+    "an enemy blast left the camera steady too (cam "
+      .. tostring(g.cam.x) .. "," .. tostring(g.cam.y) .. ")")
 end
 
 print(("bomb arrow tests: %d passed, %d failed"):format(PASS, FAIL))

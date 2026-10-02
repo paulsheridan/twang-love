@@ -51,6 +51,13 @@ local function run_steps(env, n)
   end
 end
 
+-- One raw sim tick (1/60s of real time): the camera follows once per
+-- tick, so pinning a single camera move needs tick granularity.
+local function tick(env)
+  env.love.update(1/60)
+  env.love.draw()
+end
+
 -- Rigs a player arrow mid-flight one step from the device's tile.
 local function rig_arrow(g, kind, vx, vy)
   local pu = g.ctx.ents.pushers[1]
@@ -349,26 +356,30 @@ do
     "the two shoves stack for a bigger launch (vy " .. p.vy .. ")")
 end
 
--- ==== 9. the strike fires the device without shaking the camera ====
--- The flash ring is the device's own light, not a blast: it flags
--- no_shake, so an arrow striking the device leaves the frame steady.
+-- ==== 9. the strike fires the device and leaves the frame steady ====
+-- The flash ring is the device's own light, not a blast: an arrow
+-- striking the device spawns the ring, and the camera still sits exactly
+-- on its damped follow.
 do
   local env = Harness.boot()
   local g = env.TWANG_TEST.game
   local ctx = g.ctx
+  local config = env.require("src.config")
   local pu = test_device(g)
   ctx.player.x, ctx.player.y = pu.x + 4, pu.y - 13
   run_steps(env, 2)
   ctx.ents.booms = {}
-  g.cam.shake_t = nil
   local a = rig_arrow(g, "normal", 0, 6)
   run_until_consumed(env, a, 5)
   local b = ctx.ents.booms[1]
   assert_true(b ~= nil, "the strike still spawns the device's flash ring")
-  assert_true(b.no_shake == true, "the strike boom opts out of the shake")
-  assert_true(g.cam.shake_t == nil,
-    "striking the device left the camera steady (shake_t "
-      .. tostring(g.cam.shake_t) .. ")")
+  -- snapshot only now, so the one tick below is the strike's own frame
+  local pre = Harness.cam_snapshot(g.cam, ctx.player)
+  tick(env)
+  assert_true(Harness.camera_steady(g.cam, pre, ctx.player, ctx.world,
+    config, ctx.dt),
+    "striking the device left the camera steady (cam "
+      .. tostring(g.cam.x) .. "," .. tostring(g.cam.y) .. ")")
 end
 
 print("pusher tests: " .. PASS .. " passed, " .. FAIL .. " failed")

@@ -14,6 +14,7 @@ re-cut tilesets without touching the game.
 |-----------|------|-------------------------------------------------------|
 | 8x8       | **terrain** | paints the collision grid and carries the gameplay flags |
 | 16x16     | **art** | characters, objects and numbers: placed as objects, or as tile objects, never as terrain |
+| 32x32     | **art** | as 16x16, for a device drawn bigger than its 16px block (see [Art by role name](#art-by-role-name)) |
 
 Both of Tiled's tileset shapes work:
 
@@ -58,20 +59,41 @@ a property straight off it.
 
 ## Art by role name
 
-16x16 art is resolved two ways, and the placed tile always wins:
+Entity art is resolved two ways, and the placed tile always wins:
 
-1. **the placed tile** — if you drop a 16x16 tile as a tile object, the
+1. **the placed tile** — if you drop an art tile as a tile object, the
    entity draws that exact cell;
 2. **the role name** — otherwise the entity takes the art whose `kind`
    property matches its role, so you can restyle a whole level's
    interactables from the tileset without re-placing them.
 
 `level.art` is the role table, gathered from every non-terrain tileset
-in the map. `config.art_file` (`maps/chars.tsx`) is a **global**
-character tileset, loaded once at boot, supplying the player animation
-frames and the HUD icons. `Level.build` merges the level's own art
+in the map. `config.art_files` is the list of **global** character
+tilesets, loaded once at boot and merged in order (a later file wins a
+kind an earlier one declared), supplying the player animation frames,
+the HUD icons and the devices. `Level.build` merges the level's own art
 **over** the global art, so any level can override a role just by
 declaring the same `kind` in one of its tilesets.
+
+Two sheets ship today, because a Tiled tileset has exactly one cell size:
+
+| art tileset         | cell    | roles |
+|----------------------|---------|-------|
+| `maps/chars.tsx`     | 16x16   | the player frames, the HUD icons, and the 16x16 devices (spring, key, lock, door, winch, gun, switch) |
+| `maps/drafts32.tsx`  | 32x32   | the big devices: `updraft`, `outdraft` |
+
+Any cell size other than 8x8 counts as character art, so a level may also
+declare its own 16x16 or 32x32 art tileset. A cell **larger** than an
+entity's 16px block is drawn centred across the block and standing on its
+bottom edge, so a 32x32 device reaches one block further *up* — which is
+where its launch is drawn — while its collision block stays 16px. The
+device's own block is the sprite's own middle: rows 16-31, columns 8-23 of
+a 32x32 cell.
+
+A pusher's art is chosen by its **variant**, so `updraft` and `outdraft`
+can be drawn differently. A sheet that declares only the shared legacy
+`pusher` role still works: that art is the fallback. As everywhere, a
+tile placed on the object beats the role name.
 
 Player frames and HUD icons are named roles, not fixed cells:
 
@@ -206,6 +228,10 @@ pass-through — nothing collides with them; they are pure markers.
   homing rocket straight up (a full heart of blast damage, enemies in
   the blast die too); a player arrow tip detonates the rocket in
   flight; tuning lives in `config.enemies.rocket_*`
+- **`bomber`** — bomber enemy: hunts like an archer but lobs a fused
+  grenade that bounces off terrain and air-bursts near an airborne
+  player; a player arrow tip can detonate it early; tuning lives in
+  `config.enemies.bomb_*`
 - **`switch`** — struck by arrows (no key needed); each strike toggles it and
   re-evaluates its group: all switches on -> the group's doors open, any
   off -> they close. The off art is the kind tile, the on art the next tile
@@ -256,7 +282,8 @@ pass-through — nothing collides with them; they are pure markers.
   projectile, so it cannot strike anything). Per-instance
   overrides (`push`, `shove_grace`; updraft `reach`, `side`; outdraft
   `cone`, `radius` object properties) beat the defaults.
-- **`mover` family** (`mover`, `mover_trigger` Classes; sprite art 17,
+- **`mover` family** (`mover`, `mover_trigger` Classes — the underscore-
+  free `movertrigger` is accepted as a legacy alias — sprite art 17,
   the plain orange block) — the moving blocks: a solid block of 1..3
   art tiles (16px cells) a way that travels back and forth along a
   tile-aligned line (8px map tiles) from its rest position, pausing the
@@ -288,15 +315,52 @@ pass-through — nothing collides with them; they are pure markers.
 
 ## Entities on Object Layers
 
-Entities (spawn/key/lock/door/archer/melee/laser/rocketeer/switch/
-spring/winch/exit/checkpoint) live as tile objects on Object Layers in
-Tiled (e.g. `items` and `entities`).
+Entities (spawn/key/lock/door/archer/melee/laser/rocketeer/bomber/switch/
+spring/winch/gun/exit/checkpoint/mover/pusher) live on Object Layers in
+Tiled (e.g. `items` and `entities`). An entity can be a **tile object**
+(the placed tile supplies both art and, usually, the role) or a bare
+**Point** (no tile): a Point marks the entity's **feet**, so just drop a
+point on the ground where the entity should stand.
 
 The object's role comes from, in order:
 
 1. a `kind` custom property on the object
 2. the placed tile's `kind` property on the tileset
 3. the object's Class field (case-insensitive: `Door` -> `door`)
+
+The Class field is read from either spelling: modern Tiled (1.9+) writes
+`"class"`, older files and `tools/p8_to_tiled.lua` write the legacy
+`"type"`. Both work, so a map can be re-saved through a newer Tiled
+without losing its entities.
+
+### The role vocabulary
+
+| Class / `kind` | What it is | Extras it needs |
+| --- | --- | --- |
+| `spawn` | player spawn / fallback respawn | — |
+| `exit` | level exit flag | — |
+| `checkpoint` | respawn flag set on touch | — |
+| `archer` `melee` `laser` `rocketeer` `bomber` | enemies | — |
+| `key` `lock` `door` `switch` | puzzle chain | `group` (else from the name); a `switch` may set `phase` |
+| `spring` | landing pad that vaults the player up | — |
+| `winch` | rope/anchor point | — |
+| `gun` | placed gun pickup | — |
+| `updraft` | arrow-struck launcher, straight up | optional `push`/`reach` |
+| `outdraft` | arrow-struck launcher, up-and-away cone | optional `push`/`radius`/`cone`/`side` |
+| `pusher` | legacy alias for the updraft | — |
+| `mover` `mover_trigger` | moving block (trigger is switch-driven) | `distance` (tiles) and `dir` (up/down/left/right); optional `tiles_w`/`tiles_h` |
+
+Stand-in art ships for every one of these roles: the 16x16 devices in
+`maps/chars.png`, and the 32x32 `updraft`/`outdraft` in
+`maps/drafts32.png` — see [Art by role name](#art-by-role-name). Painting
+over a cell is all it takes to start real art.
+
+`room` is the one role that must be a **rectangle**, not a Point (it
+frames the camera — see the Rooms section); every other role may be a
+Point. A Point placed from Tiled has no `width`/`height`; if an object
+carries a `point` flag *and* explicit `width`/`height` (some exporters
+emit `0`/`0`), the loader treats it as a plain top-left rectangle and the
+entity loses its feet offset — delete the size to get a true Point.
 
 A key/lock/door object's puzzle group comes from, in order:
 
@@ -368,10 +432,12 @@ the bottom-left cell and an exit in the top-right one.
 3. Select the **Insert Rectangle** tool (`R`). Draw a rectangle:
    - its **top-left must sit on a tile corner** — turn on the 8px grid
      and snap (the loader warns and snaps otherwise),
-   - size it a **multiple of the 480x320 view** (480 wide x 320 tall
-     for one screen; 960x320 for a two-screen-wide room). A room
-     smaller than the view instead centres the camera (a load warning
-     notes it).
+   - size it a **multiple of the 320x180 view** (320 wide x 180 tall
+     for one screen; 640x180 for a two-screen-wide room). Larger is
+     fine too — a room bigger than the view gives the camera a pan
+     range inside it instead of a pinned frame, which is what the
+     shipped room grid does (480x320 cells). A room smaller than the
+     view instead centres the camera (a load warning notes it).
 4. With the rectangle selected, set its **Class** (the `type` field in
    older Tiled) to `room`. Case-insensitive — `Room` works.
 5. Optionally set the rectangle's **Name** (`room_a`, `lower_vault`…).
@@ -388,7 +454,8 @@ Rules the loader enforces / warns about:
 At runtime:
 
 - **Camera** — clamped to the active room's bounds (the room containing
-  the player's centre).
+  the player's centre). A room the size of the view pins the frame; a
+  bigger one pans within itself.
 - **Transitions** — crossing into another room (hysteresis-checked,
   `config.rooms.hysteresis_px`) wipes the screen (`config.rooms.fade_steps`):
   fade out, the room switches with the camera snapped to the player at
@@ -406,11 +473,17 @@ At runtime:
 ## No cart fallbacks
 
 There is **no built-in fallback table**. Art and roles come from the
-tilesets a map references, plus the global character tileset
-(`config.art_file`) for the player and HUD. A role that no tileset
-declares simply has no art and draws nothing — that is the intended
-signal that the tileset is missing something, rather than a silent
-substitute from a legacy sprite label.
+tilesets a map references, plus the global character tilesets
+(`config.art_files`) for the player, the HUD and the devices. A role that
+no tileset declares simply has no art and draws nothing — that is the
+intended signal that the tileset is missing something, rather than a
+silent substitute from a legacy sprite label.
+
+The placeholder device art (the 16x16 cells in `maps/chars.png` and the
+32x32 `maps/drafts32.png`) is drawn by `tools/make_standins.py`. Re-run it
+to regenerate the placeholders; to replace one with real art, edit the
+cell in the PNG (or point the `kind` at a tile of your own) and leave the
+tool alone.
 
 ## Legacy maps
 

@@ -5,7 +5,7 @@ local Config = {
   window = {
     title = "twang",
     identity = "twang",
-    scale = 3,        -- windowed default: 3x the 480x320 view (1440x960)
+    scale = 4,        -- windowed default: 4x the 320x180 view (1280x720)
     vsync = 1,
     fullscreen = false,       -- start windowed; fullscreen_key toggles live
     fullscreen_key = "f11",
@@ -13,8 +13,8 @@ local Config = {
   },
 
   view = {
-    width = 480,  -- native render width in pixels
-    height = 320, -- native render height in pixels
+    width = 320,  -- native render width in pixels
+    height = 180, -- native render height in pixels
   },
 
   sim = {
@@ -33,13 +33,25 @@ local Config = {
   -- own 16x16 tileset, never subdivided.
   art_size = 16,
 
-  -- The global character art: a 16x16 tileset whose tiles carry "kind"
-  -- properties naming the player animation frames (player_idle,
-  -- player_air, player_aim_down, player_land, player_run_0..3) and the
-  -- HUD icons (heart_full, heart_half, heart_empty). Loaded once at
-  -- boot; any level can override a role by declaring the same kind in
-  -- one of its own tilesets.
-  art_file = "maps/chars.tsx",
+  -- The global character art, one entry per art tileset, loaded in order
+  -- (a later file wins a kind an earlier one already declared). Each is
+  -- a tileset whose tiles carry "kind" properties naming a role, drawn at
+  -- its own cell size:
+  --
+  --   maps/chars.tsx   16x16  the player animation frames
+  --                            (player_idle, player_air, player_aim_down,
+  --                            player_land, player_run_0..3), the HUD
+  --                            icons (heart_full, heart_half,
+  --                            heart_empty) and the 16x16 devices;
+  --   maps/drafts32.tsx 32x32 the big devices (updraft, outdraft),
+  --                            centred on their 16px block.
+  --
+  -- Loaded once at boot; any level can override a role by declaring the
+  -- same kind in one of its own tilesets.
+  art_files = {
+    "maps/chars.tsx",
+    "maps/drafts32.tsx",
+  },
 
   -- The Tiled map driving the level (see src/tiled.lua for the format).
   -- The headless harness boots this level; a real launch boots the
@@ -65,12 +77,6 @@ local Config = {
     follow = 0.15, -- fraction of the remaining distance per world-step
                    -- (while the player rides a moving block, the camera
                    -- also feed-forwards their motion -- see src/camera.lua)
-    shake_steps = 8, -- world-steps a detonation's shake decays over
-    -- small "thud" shakes: jump/land feedback — a short, tiny
-    -- decaying offset distinct from the big blast shakes
-    thud_steps = 3,   -- world-steps a thud decays over
-    thud_jump = 1.5,  -- strength of a jump thud (px)
-    thud_land = 3.0,  -- strength of a landing thud at full fall speed (px)
   },
 
   -- Rooms: camera-framed regions authored as "room" rectangles in the
@@ -95,7 +101,7 @@ local Config = {
     -- the run animation is a role in the art table: player_run_0..N
     -- (with player_run itself as the fallback). The other frames are
     -- the plain roles player_idle / player_air / player_aim_down /
-    -- player_land. See art_file.
+    -- player_land. See art_files.
     art_run = "player_run",
     width = 8,
     height = 12,
@@ -253,7 +259,7 @@ local Config = {
   -- gun itself as the projectile (an "gun arrow"): it flies like an
   -- arrow but detonates on ANY contact exactly like the bomb arrow's
   -- blast (ents.booms' red ring -- the "red bang" on contact -- the
-  -- camera shake and the proximity-falloff shove ride along). One gun
+  -- proximity-falloff shove rides along). One gun
   -- = one shot; normal physics otherwise. Placeholder art: the pickup
   -- draws as a chunky dark slab, the flying gun as a dark shell with a
   -- red tip.

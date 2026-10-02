@@ -1,0 +1,886 @@
+{
+ "type": "map",
+ "version": "1.10",
+ "tiledversion": "1.11.0",
+ "orientation": "orthogonal",
+ "renderorder": "right-down",
+ "infinite": false,
+ "width": 200,
+ "height": 120,
+ "tilewidth": 8,
+ "tileheight": 8,
+ "nextlayerid": 4,
+ "nextobjectid": 64,
+ "tilesets": [
+  {
+   "firstgid": 1,
+   "source": "../maps/legacy/twang.tsx"
+  }
+ ],
+ "layers": [
+  {
+   "id": 1,
+   "type": "tilelayer",
+   "name": "Ground",
+   "width": 200,
+   "height": 120,
+   "x": 0,
+   "y": 0,
+   "opacity": 1,
+   "visible": true,
+   "data": []
+  },
+  {
+   "id": 2,
+   "name": "Objects",
+   "type": "objectgroup",
+   "draworder": "index",
+   "opacity": 1,
+   "visible": true,
+   "x": 0,
+   "y": 0,
+   "objects": [
+    {
+     "id": 1,
+     "name": "",
+     "type": "",
+     "class": "Spawn",
+     "point": true,
+     "x": 208.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 2,
+     "name": "",
+     "type": "",
+     "class": "Key",
+     "point": true,
+     "x": 216.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 3,
+     "name": "",
+     "type": "",
+     "class": "Lock",
+     "point": true,
+     "x": 224.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 4,
+     "name": "",
+     "type": "",
+     "class": "Door",
+     "point": true,
+     "x": 232.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 5,
+     "name": "",
+     "type": "",
+     "class": "Switch",
+     "point": true,
+     "x": 240.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 6,
+     "name": "",
+     "type": "",
+     "class": "Spring",
+     "point": true,
+     "x": 248.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 7,
+     "name": "",
+     "type": "",
+     "class": "Winch",
+     "point": true,
+     "x": 256.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 8,
+     "name": "",
+     "type": "",
+     "class": "Gun",
+     "point": true,
+     "x": 264.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 9,
+     "name": "",
+     "type": "",
+     "class": "Pusher",
+     "point": true,
+     "x": 272.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 10,
+     "name": "",
+     "type": "",
+     "class": "Updraft",
+     "point": true,
+     "x": 280.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 11,
+     "name": "",
+     "type": "",
+     "class": "Outdraft",
+     "point": true,
+     "x": 288.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 12,
+     "name": "",
+     "type": "",
+     "class": "Mover",
+     "point": true,
+     "x": 296.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 13,
+     "name": "",
+     "type": "",
+     "class": "Mover_trigger",
+     "point": true,
+     "x": 304.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 14,
+     "name": "",
+     "type": "",
+     "class": "Movertrigger",
+     "point": true,
+     "x": 312.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 15,
+     "name": "",
+     "type": "",
+     "class": "Exit",
+     "point": true,
+     "x": 320.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 16,
+     "name": "",
+     "type": "",
+     "class": "Checkpoint",
+     "point": true,
+     "x": 328.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 17,
+     "name": "",
+     "type": "",
+     "class": "Archer",
+     "point": true,
+     "x": 336.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 18,
+     "name": "",
+     "type": "",
+     "class": "Melee",
+     "point": true,
+     "x": 344.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 19,
+     "name": "",
+     "type": "",
+     "class": "Laser",
+     "point": true,
+     "x": 352.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 20,
+     "name": "",
+     "type": "",
+     "class": "Rocketeer",
+     "point": true,
+     "x": 360.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 21,
+     "name": "",
+     "type": "",
+     "class": "Bomber",
+     "point": true,
+     "x": 368.0,
+     "y": 100.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 22,
+     "name": "",
+     "type": "Spawn",
+     "class": "",
+     "point": true,
+     "x": 376.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 23,
+     "name": "",
+     "type": "Key",
+     "class": "",
+     "point": true,
+     "x": 384.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 24,
+     "name": "",
+     "type": "Lock",
+     "class": "",
+     "point": true,
+     "x": 392.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 25,
+     "name": "",
+     "type": "Door",
+     "class": "",
+     "point": true,
+     "x": 400.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 26,
+     "name": "",
+     "type": "Switch",
+     "class": "",
+     "point": true,
+     "x": 408.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 27,
+     "name": "",
+     "type": "Spring",
+     "class": "",
+     "point": true,
+     "x": 416.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 28,
+     "name": "",
+     "type": "Winch",
+     "class": "",
+     "point": true,
+     "x": 424.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 29,
+     "name": "",
+     "type": "Gun",
+     "class": "",
+     "point": true,
+     "x": 432.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 30,
+     "name": "",
+     "type": "Pusher",
+     "class": "",
+     "point": true,
+     "x": 440.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 31,
+     "name": "",
+     "type": "Updraft",
+     "class": "",
+     "point": true,
+     "x": 448.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 32,
+     "name": "",
+     "type": "Outdraft",
+     "class": "",
+     "point": true,
+     "x": 456.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 33,
+     "name": "",
+     "type": "Mover",
+     "class": "",
+     "point": true,
+     "x": 464.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 34,
+     "name": "",
+     "type": "Mover_trigger",
+     "class": "",
+     "point": true,
+     "x": 472.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 35,
+     "name": "",
+     "type": "Movertrigger",
+     "class": "",
+     "point": true,
+     "x": 480.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 36,
+     "name": "",
+     "type": "Exit",
+     "class": "",
+     "point": true,
+     "x": 488.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 37,
+     "name": "",
+     "type": "Checkpoint",
+     "class": "",
+     "point": true,
+     "x": 496.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 38,
+     "name": "",
+     "type": "Archer",
+     "class": "",
+     "point": true,
+     "x": 504.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 39,
+     "name": "",
+     "type": "Melee",
+     "class": "",
+     "point": true,
+     "x": 512.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 40,
+     "name": "",
+     "type": "Laser",
+     "class": "",
+     "point": true,
+     "x": 520.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 41,
+     "name": "",
+     "type": "Rocketeer",
+     "class": "",
+     "point": true,
+     "x": 528.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 42,
+     "name": "",
+     "type": "Bomber",
+     "class": "",
+     "point": true,
+     "x": 536.0,
+     "y": 300.0,
+     "rotation": 0,
+     "visible": true
+    },
+    {
+     "id": 43,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 544.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "spawn"
+      }
+     ]
+    },
+    {
+     "id": 44,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 552.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "key"
+      }
+     ]
+    },
+    {
+     "id": 45,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 560.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "lock"
+      }
+     ]
+    },
+    {
+     "id": 46,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 568.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "door"
+      }
+     ]
+    },
+    {
+     "id": 47,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 576.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "switch"
+      }
+     ]
+    },
+    {
+     "id": 48,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 584.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "spring"
+      }
+     ]
+    },
+    {
+     "id": 49,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 592.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "winch"
+      }
+     ]
+    },
+    {
+     "id": 50,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 600.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "gun"
+      }
+     ]
+    },
+    {
+     "id": 51,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 608.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "pusher"
+      }
+     ]
+    },
+    {
+     "id": 52,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 616.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "updraft"
+      }
+     ]
+    },
+    {
+     "id": 53,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 624.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "outdraft"
+      }
+     ]
+    },
+    {
+     "id": 54,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 632.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "mover"
+      }
+     ]
+    },
+    {
+     "id": 55,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 640.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "mover_trigger"
+      }
+     ]
+    },
+    {
+     "id": 56,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 648.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "movertrigger"
+      }
+     ]
+    },
+    {
+     "id": 57,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 656.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "exit"
+      }
+     ]
+    },
+    {
+     "id": 58,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 664.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "checkpoint"
+      }
+     ]
+    },
+    {
+     "id": 59,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 672.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "archer"
+      }
+     ]
+    },
+    {
+     "id": 60,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 680.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "melee"
+      }
+     ]
+    },
+    {
+     "id": 61,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 688.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "laser"
+      }
+     ]
+    },
+    {
+     "id": 62,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 696.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "rocketeer"
+      }
+     ]
+    },
+    {
+     "id": 63,
+     "name": "",
+     "type": "",
+     "class": "",
+     "point": true,
+     "x": 704.0,
+     "y": 500.0,
+     "rotation": 0,
+     "visible": true,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "bomber"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

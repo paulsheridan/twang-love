@@ -15,8 +15,8 @@
 -- falloff -- the bow's movement bomb. The shared zone-driven shove
 -- (Arrows.shove) also powers the pusher device's two variants: the
 -- updraft's straight-up column and the outdraft's up-and-away cone.
--- None of the bow's own work moves the camera: the blasts and the
--- pusher's flash ring flag their boom no_shake (see Game:step).
+-- None of the bow's own work moves the camera: the frame never shakes
+-- (see src/camera.lua).
 
 local config = require("src.config")
 local Util   = require("src.util")
@@ -207,8 +207,7 @@ function Arrows.detonate_bomb(ctx, x, y)
   local ents = ctx.ents
   local cfg = ctx.config.bomb_arrow
   table.insert(ents.booms, { x = x, y = y,
-    t = ctx.config.enemies.boom_frames, r = cfg.blast_radius,
-    no_shake = true })
+    t = ctx.config.enemies.boom_frames, r = cfg.blast_radius })
   Particles.boom(ents, x, y)
   Particles.poof(ents, x, y)
   -- the burnt remains: the bomb arrow always detonates against a
@@ -228,8 +227,7 @@ end
 -- the arrow is consumed by the strike site): the shared flash ring --
 -- sized to the variant's catch radius -- and a spark burst, then the
 -- variant's shove at CONSTANT strength everywhere in its catch zone: a
--- predictable launcher. The ring flags no_shake: striking a device
--- never shakes the camera.
+-- predictable launcher. The ring draws, but the camera never shakes.
 --
 --   updraft: everything inside the box over the device's column plus
 --   `side` tiles to either side, from the device's top edge up to
@@ -280,7 +278,7 @@ function Arrows.trigger_pusher(ctx, pu)
   end
 
   table.insert(ents.booms, { x = cx, y = cy,
-    t = ctx.config.enemies.boom_frames, r = joy, no_shake = true })
+    t = ctx.config.enemies.boom_frames, r = joy })
   Particles.boom(ents, cx, cy)
   Particles.poof(ents, cx, cy)
   Arrows.shove(ctx, zone, grace)

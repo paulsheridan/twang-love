@@ -1,4 +1,4 @@
--- Level-clear results panel, drawn on the 480x320 canvas (pixelated)
+-- Level-clear results panel, drawn on the 320x180 canvas (pixelated)
 -- over the frozen world (see Game:complete_step). Shows the finished
 -- run's time, deaths and grade, the recorded best, and the continue
 -- controls. The run summary lives on the Game (ctx.menu.result).
@@ -21,7 +21,7 @@ return function(ctx)
   if not r then return end
 
   -- centred panel, test-menu styling
-  local px, py, pw, ph = 130, 92, 220, 124
+  local px, py, pw, ph = 48, 31, 224, 118
   love.graphics.setColor(0, 0, 0, 0.78)
   love.graphics.rectangle("fill", px, py, pw, ph)
   love.graphics.setColor(pcol(6))

@@ -30,8 +30,8 @@
 --  15. one press, one jump: holding jump never re-jumps on landing
 --  16. one press, one cycle: holding swap never spins the arrow cycle
 -- plus the camera:
---  17. the bow never shakes the camera (every arrow kind, gun shots
---      included), while a jump still thuds
+--  17. the frame never shakes (every arrow kind, gun shots, jumps and
+--      hard landings included leave the camera on its pure follow)
 --
 -- Usage (from the project root): luajit tests/player_test.lua
 
@@ -606,47 +606,64 @@ do
     .. changes .. " times)")
 end
 
--- ==== 17. the bow never shakes the camera ====
--- The bow is deliberately steady: firing (every kind, gun shots
--- included) leaves no shake on the frame. A jump still thuds, so the
--- guard is not vacuous -- the thud machinery is alive, the bow just
--- no longer uses it.
+-- ==== 17. the frame never shakes ====
+-- Nothing moves the camera off its damped follow: firing (every kind,
+-- gun shots included), jumping and hard landings all leave cam.x/cam.y
+-- exactly where the pure follow predicts. The check is against
+-- Harness.pure_follow, an independent reimplementation of the follow, so
+-- ANY re-introduced offset -- a jump thud, a blast shake, a stray jitter
+-- -- fails it, not just the fields the old code used to set.
 do
   local env = Harness.boot()
   local g = env.TWANG_TEST.game
+  local ctx = g.ctx
   local cam = g.cam
-  g.ctx.config.enemies.enabled = false
-  local p = g.ctx.player
+  local config = env.require("src.config")
+  ctx.config.enemies.enabled = false
+  local p = ctx.player
   local keys = env.TWANG_TEST.keys_down
   place_player(g, 720, 148)
   run_steps(env, 4)
+
+  -- one sim tick, then assert the camera landed exactly on the pure
+  -- follow. ctx.dt is the world-time the tick actually ran with (slow
+  -- motion scales it), and hitstop early-returns before Camera.update,
+  -- so skip any tick the freeze swallowed.
+  local function steady(label)
+    if ctx.freeze and ctx.freeze > 0 then return end
+    local pre = Harness.cam_snapshot(cam, p)
+    tick(env)
+    assert_true(Harness.camera_steady(cam, pre, p, ctx.world, config, ctx.dt),
+      label .. " (cam " .. tostring(cam.x) .. "," .. tostring(cam.y) .. ")")
+  end
+
   for _, kind in ipairs({ "normal", "rope", "bomb" }) do
-    cam.shake_t = nil
     keys.z = true
     run_steps(env, 2)
     keys.z = nil
-    run_steps(env, 1)
-    assert_true(cam.shake_t == nil,
-      "firing a " .. kind .. " arrow left the camera steady")
+    steady("firing a " .. kind .. " arrow left the camera steady")
   end
   -- the spirit fires through Spirit.fire, which never touched the
   -- camera either; a gun shot (thud_gun's old home) is the same branch
   g.settings.no_special = false
   p.guns = 1
   p.arrow_kind = "normal"
-  cam.shake_t = nil
   keys.z = true
   run_steps(env, 2)
   keys.z = nil
-  run_steps(env, 1)
-  assert_true(cam.shake_t == nil, "firing a gun shot left the camera steady")
-  -- and the jump thud the bow used to share a decay length with
-  cam.shake_t = nil
+  steady("firing a gun shot left the camera steady")
+  -- the jump thud and the fall-speed-scaled landing thud are both gone:
+  -- the takeoff and the touchdown leave the follow untouched
+  p.y = p.y - 60
+  p.vy = 0
+  run_steps(env, 20)  -- fall, then land
   keys.x = true
   run_steps(env, 1)
   keys.x = nil
-  assert_true(cam.shake_t ~= nil,
-    "a jump still thuds (shake_t " .. tostring(cam.shake_t) .. ")")
+  steady("a jump left the camera steady")
+  p.vy = -config.physics.max_fall_speed
+  run_steps(env, 40)  -- a full-speed fall into the landing
+  steady("a hard landing left the camera steady")
 end
 
 print(("player tests: %d passed, %d failed"):format(PASS, FAIL))

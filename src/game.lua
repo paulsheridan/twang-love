@@ -67,10 +67,17 @@ end
 
 function Game:load()
   math.randomseed(os.time())
-  -- The global character art (player frames, HUD icons): one tileset
-  -- loaded once, resolvable by role name. Levels override any of these
-  -- roles by declaring the same kinds in their own tilesets.
-  self.global_art = tiled.load_artset(config.art_file)
+  -- The global character art (player frames, HUD icons, devices), one
+  -- tileset per entry in config.art_files and merged in order, so a
+  -- later file wins a kind an earlier one declared. Every role is
+  -- resolvable by name. Levels override any of these roles by declaring
+  -- the same kinds in their own tilesets.
+  self.global_art = {}
+  for _, art_file in ipairs(config.art_files) do
+    for kind, rec in pairs(tiled.load_artset(art_file)) do
+      self.global_art[kind] = rec
+    end
+  end
   Blit.init()
 
   -- best times/grades gate the level select
@@ -141,7 +148,7 @@ end
 
 -- ==== window fitting ====
 
--- Keeps the window at an integer multiple of the 480x320 view that fits
+-- Keeps the window at an integer multiple of the 320x180 view that fits
 -- the desktop it is currently on. Monitors differ in resolution and DPI
 -- scale: a window sized for one screen gets clamped by the window
 -- manager on the next (fractionally scaling the framebuffer -> blurry
@@ -250,18 +257,6 @@ function Game:step()
   -- alpha the player left it at until they return
   if not self.room_fade then
     ctx.world:foreground_step(ctx.player, dt)
-  end
-  -- explosions shake the camera: any detonation this step (rockets,
-  -- grenades, the bow's bomb arrows all append to the booms list) kicks
-  -- a decaying shake scaled to its blast radius. The bow's own blasts
-  -- opt out with no_shake: the red bang on contact and the pusher's
-  -- flash ring still draw, but the player's arrows never move the frame
-  -- (you are the calm one in the fight -- see README.md)
-  for _, b in ipairs(ctx.ents.booms) do
-    if not b.shaken and not b.no_shake then
-      b.shaken = true
-      Camera.shake(ctx.cam, b.r or config.enemies.rocket_blast_radius)
-    end
   end
   Camera.update(ctx.cam, ctx.player, ctx.world, dt)
 

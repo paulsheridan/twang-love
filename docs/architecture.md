@@ -1,6 +1,6 @@
 # twang architecture
 
-A LÖVE 11 port of the twang pico-8 cart: a 480x320 native render (8x8
+A LÖVE 11 port of the twang pico-8 cart: a 320x180 native render (8x8
 terrain tiles over the untouched 2x2-upscaled sheet; 16x16 entity art
 cells, each an exact 2x2 upscale of the original 8x8 art) at a 60hz
 fixed-timestep simulation with render interpolation and a smooth
@@ -54,9 +54,8 @@ src/
    particles.lua          poofs, blood, sparks, smoke, explosion bursts,
                           heavy-hit debris shards, scorch chunks and the
                           burning aftermath anchored at impact sites
-    camera.lua             smooth follow, clamped to the world, with a
-                           decaying random shake for explosions (never
-                           the player's own shots)
+     camera.lua             smooth follow, clamped to the world; the
+                            frame never shakes (a pure damped follow)
    sprites.lua            spritesheet quads + draw helper (flip/rot) --
                           16x16 art cells; 8px terrain sub-tile quads
   palette.lua            the 16-colour pico-8 palette
@@ -118,7 +117,7 @@ Each sim step (`Game:step`, 1/30s) runs:
    turning) do not.
 
 Rendering is a pure read of the same state: `render/blit.lua` draws the
-world into the 480x320 canvas (world pass, then the player on top, then
+world into the 320x180 canvas (world pass, then the player on top, then
 the controls-panel overlay), blits it to the window preserving aspect,
 and anchors the HUD to the blit rect. The blit scale is always a whole
 number (letterboxing the remainder, fullscreen included), so game
@@ -199,7 +198,7 @@ which is what keeps the trace baseline stable.
   pixel blocks (`dot` helpers in `render/world.lua` / `render/player.lua`)
   and world-pass lines are 2px thick (set in `render/blit.lua`).
 - **The window fits its monitor.** `Game:fit_window` re-fits the window
-  to an integer multiple of the 480x320 view whenever it lands on a
+  to an integer multiple of the 320x180 view whenever it lands on a
   different display (monitors differ in resolution and DPI scale, which
   otherwise leaves an oversized window for the WM to clamp — blurry,
   letterboxed). The blit always scales by a whole number.
@@ -300,16 +299,13 @@ which is what keeps the trace baseline stable.
   with embers, sprayed back off the impact). The player's own arrows
   deliberately spawn nothing when they hit terrain — their hits stay
   small and quiet against the enemies' carnage (the game never damages
-  level geometry either; the chunks are pure dressing). Every
-  detonation that appends to `ents.booms` (rockets, grenades, the bow's
-  bomb arrows, the pusher's flash ring) also kicks a **decaying camera
-  shake** (`Camera.shake`, strength scaled to the blast's radius,
-  decaying over `camera.shake_steps`; the jitter rides the clamped
-  follow so the shake self-corrects, and a room-wipe snap clears it) —
-  unless the boom opts out with `no_shake`, which the bow's own work
-  always does: firing is silent, and neither a bomb arrow's blast nor a
-  pusher's flash ring moves the frame. Only the enemies' explosives
-  shake.
+  level geometry either; the chunks are pure dressing). Everything that
+  appends to `ents.booms` (rockets, grenades, the bow's bomb arrows, the
+  pusher's flash ring) draws its flash ring and throws particles, and
+  that is the whole of the effect: **the camera never shakes**, enemy
+  detonations included. `Camera` is a pure damped follow of the
+  player's clamped target, with no offset applied anywhere, so every
+  boom — the bow's included — lands in a frame that does not move.
 - **Burning aftermath.** A laser's wall end — or any blast anchored
   close to terrain (the `ents.burns` probe checks the eight surrounding
   directions for the nearest surface within 24px) — leaves a short-lived
@@ -444,15 +440,11 @@ which is what keeps the trace baseline stable.
   time) — then resets. Named kicks: a player hit (`Player.hurt`),
   any player-arrow enemy kill (in `Arrows.step_one`). Cleared by
   death (`Player.die`) and level load.
-- **Juice: thuds and dust.** `Camera.thud` is Camera.shake's little
-  sibling (random jitter on the clamped follow, own decay length
-  `camera.thud_steps`): jumps and hard landings (scaled by fall speed)
-  kick one; a live blast shake is never overridden by a thud. The bow
-  is not a thud source at all — releasing it, gun shot or not, is
-  deliberately steady. `Particles.dust` throws grey footfall puffs on
-  jumps, landings and wall leaps (strength-scaled), and
-  `Particles.fire_puff` blows a small report along the aim on every
-  bow release.
+- **Juice: dust, not shake.** Takeoff, landing and wall-leap all throw
+  `Particles.dust` (grey footfall puffs, strength-scaled by fall speed),
+  and `Particles.fire_puff` blows a small report along the aim on every
+  bow release. None of it touches the camera — jumps, landings and
+  detonations alike leave the frame exactly on its follow.
 - **Post-fire deaf window.** `aiming.stick_ignore_frames` (12) now also
   covers HELD movement: the walk motor zeroes its push while
   `Input.stick_deaf > 0` (the alias `ignore_stick` maintains), so a held
@@ -694,8 +686,7 @@ straight up, the **outdraft** drains a cone above it up-and-away.
   fires the push again.
 - **The push** (`Arrows.trigger_pusher` through the shared zone-driven
   `Arrows.shove`, also used by `detonate_bomb`): the flash ring sized to
-  the variant's catch radius (it flags `no_shake`, so striking the
-  device never shakes the camera) plus a
+  the variant's catch radius plus a
   spark burst, then a shove on everything the variant's catch zone
   accepts, at CONSTANT strength (a predictable launcher). The player's
   knock is ADDED to their velocity — it stacks with jump and swing
@@ -1001,8 +992,9 @@ luajit tests/trace_diff.lua tests/trace_baseline.txt /tmp/trace.txt
    with the blast's enemy kill, the 2-bomb burst cadence, the airborne
    cap and the toggle disarm); `tests/player_test.lua` covers
    the hearts system (i-frame-gated melee drain, arrow hits, fatal
-   refill, void death) and the steady bow (no camera shake on any
-   arrow kind or gun shot, while a jump still thuds);    `tests/rope_test.lua` covers the rope arrow
+   refill, void death) and the never-shaking frame (the camera sits on
+   its pure follow through every arrow kind, gun shots, jumps and hard
+   landings);    `tests/rope_test.lua` covers the rope arrow
    (attach + hang, pendulum swing bounds, detach-preserving-velocity,
    winching, max-range expiry, platform exemption, swap, anchor loss)
    and the arrow perch (rope arrows give no platform, only wall arrows

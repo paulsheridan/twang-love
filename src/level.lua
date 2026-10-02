@@ -171,12 +171,18 @@ function Level.build(level, config, global_art)
       -- position. The kind IS
       -- the variant ("updraft" launches straight up, "outdraft" drains
       -- a cone above it up-and-away); legacy "pusher" objects default
-      -- to the updraft behaviour.
+      -- to the updraft behaviour. The block stays 16px whatever the art
+      -- measures — a 32x32 device sprite is drawn centred on it.
       local wx, wy = snap_tile(o.x, tw), snap_tile(o.y, tw)
+      -- art by the VARIANT, so updraft and outdraft can be drawn
+      -- differently (they are different devices). Legacy sheets that
+      -- declare only the shared "pusher" role still draw through the
+      -- fallback, as does a plain 16x16 tile the author placed.
+      local art_rec = pick(o, k == "pusher" and "updraft" or k) or art.pusher
       local e = {x = wx, y = wy, g = o.g,
         tc = math.floor(wx/tw), tr = math.floor(wy/tw),
         variant = k == "pusher" and "updraft" or k,
-        art = pick(o, "pusher"), rot = o.rot}
+        art = art_rec, rot = o.rot}
       -- per-instance overrides (push, reach, side, cone, radius,
       -- shove_grace) ride the object props
       for _, prop in ipairs({"push", "radius", "shove_grace",

@@ -1,4 +1,4 @@
--- Heart HUD: the player's remaining health, drawn on the 480x320 canvas
+-- Heart HUD: the player's remaining health, drawn on the 320x180 canvas
 -- top-left. The three heart states are named roles in the level's art
 -- ("heart_full" / "heart_half" / "heart_empty"), so the HUD restyles
 -- with the tilesets. Health is tracked in half-hearts; each hit drains

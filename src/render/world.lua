@@ -64,6 +64,17 @@ end
 
 -- ==== interactables ====
 
+-- Where to put a sprite that is bigger than the block it belongs to (a
+-- 32x32 device cell on its 16px block): centred across the block and
+-- standing on its bottom edge, so the device sits on the same spot and
+-- the same floor whatever its cell size, with the extra room above it
+-- where an updraft's column is drawn. A 16x16 cell is unaffected.
+local function grounded_art(art, x, y)
+  if not art then return x, y end
+  return x - math.max(0, (art.w - config.art_size) / 2),
+         y - math.max(0, art.h - config.art_size)
+end
+
 -- The pusher variants' direction hints, drawn over the device sprite so
 -- the launch they promise is readable at a glance:
 --
@@ -71,6 +82,9 @@ end
 --   drag above it);
 --   outdraft: a three-tick fan splayed 0/±45 degrees, tracing the cone
 --   the drain covers.
+--
+-- The ticks are anchored to the block, not the sprite, so a device drawn
+-- taller than its block keeps promising its launch from its own tile.
 local function draw_pusher_ticks(pu)
   local cx = math.floor(pu.x + config.art_size/2)
   local top = math.floor(pu.y) - 2
@@ -141,7 +155,8 @@ local function draw_interactables(ctx)
     Sprites.draw(w.art, w.x, w.y, false, w.rot)
   end
   for _, pu in ipairs(ents.pushers) do
-    Sprites.draw(pu.art, pu.x, pu.y, false, pu.rot)
+    local ax, ay = grounded_art(pu.art, pu.x, pu.y)
+    Sprites.draw(pu.art, ax, ay, false, pu.rot)
     draw_pusher_ticks(pu)
   end
   for _, m in ipairs(ents.movers) do

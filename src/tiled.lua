@@ -19,8 +19,12 @@
 -- * a 16x16 tile with a "kind" property supplies that role's art by
 --   name (level.art[kind]); "on_id"/"ext_id" name a sibling tile in the
 --   same tileset for the switch-on / spring-extended states
--- * entities (spawn/key/lock/door/archer/melee/switch/spring) live as
---   tile objects on Object Layers, anchored at their 16px art box
+-- * entities (spawn/key/lock/door/archer/melee/switch/spring/...) live
+--   on Object Layers either as tile objects (anchored at their 16px art
+--   box) or as bare Points (the point marks the entity's feet). The role
+--   comes from the object's "kind" property, the placed tile's kind, or
+--   the object's Class field -- read from either the modern "class" key
+--   (Tiled 1.9+) or the legacy "type" key
 -- * any number of visible tile layers; layers named "background" /
 --   "foreground" (case-insensitive) are purely visual backdrop/overlay
 --   grids, every other visible layer merges into the terrain grid (later
@@ -184,10 +188,17 @@ end
 function tiled.load_artset(path)
   local ts = parse_tsx(read_file(path))
   local dir = path:match("^(.-)[^/\\]*$") or ""
-  assert(ts.tilewidth == ART and ts.tileheight == ART,
-    "tiled: the character art tileset must be " .. ART .. "x" .. ART
-    .. " (got " .. tostring(ts.tilewidth) .. "x" .. tostring(ts.tileheight)
-    .. ") in " .. path)
+  -- Character art draws at whatever cell size its tileset declares, so
+  -- a device painted at double scale (a 32x32 updraft column) needs no
+  -- special case here: only 8x8 is refused, because that is a terrain
+  -- sheet (paints the collision grid), never art.
+  assert(ts.tilewidth and ts.tileheight and ts.tilewidth > 0
+    and ts.tileheight > 0,
+    "tiled: the character art tileset declares no tile size in " .. path)
+  assert(not (ts.tilewidth == 8 and ts.tileheight == 8),
+    "tiled: " .. path .. " is an 8x8 terrain tileset; the character art "
+    .. "tileset needs its own cell size (" .. ART .. "x" .. ART
+    .. ", or larger for a device drawn at double size)")
   if not ts.columns then
     ts.columns = math.floor((ts.imagewidth - 2 * (ts.margin or 0))
                             / ts.tilewidth)
@@ -200,7 +211,7 @@ function tiled.load_artset(path)
       local sx, sy = source_rect(ts, tt.id)
       art[p.kind] = {
         image = ts.image, columns = ts.columns, id = tt.id, sx = sx, sy = sy,
-        w = ART, h = ART, kind = p.kind,
+        w = ts.tilewidth, h = ts.tileheight, kind = p.kind,
       }
     end
   end
@@ -219,8 +230,10 @@ function tiled.load(path)
 
   -- Tilesets: any number, each with its own image and geometry. An 8px
   -- tileset is TERRAIN (paints the collision grid, carries the gameplay
-  -- flags); a 16px tileset is CHARACTER ART (placed as objects). Gids
-  -- are dispatched to whichever tileset's firstgid range they fall in.
+  -- flags); any other cell size is CHARACTER ART (placed as objects, and
+  -- drawn at that size -- 16px is the norm, 32px for a big device).
+  -- Gids are dispatched to whichever tileset's firstgid range they fall
+  -- in.
   assert(m.tilesets and #m.tilesets >= 1,
     "tiled: the map must reference at least one tileset")
   local sets = {}
@@ -233,16 +246,16 @@ function tiled.load(path)
       ts = parse_tsx(read_file(dir .. ref.source))
       ts.firstgid = ref.firstgid
     end
-    assert(ts.tilewidth and ts.tileheight,
+    assert(ts.tilewidth and ts.tileheight and ts.tilewidth > 0
+      and ts.tileheight > 0,
       "tiled: a tileset in " .. path .. " declares no tile size")
     if ts.tilewidth == 8 and ts.tileheight == 8 then
       ts.terrain = true
-    elseif ts.tilewidth == ART and ts.tileheight == ART then
-      ts.terrain = false
     else
-      error("tiled: unsupported tileset geometry "
-        .. tostring(ts.tilewidth) .. "x" .. tostring(ts.tileheight)
-        .. " in " .. path .. " (expected 8x8 terrain or 16x16 art)")
+      -- CHARACTER ART at whatever cell size it declares: 16x16 is the
+      -- norm, but a level may restyle a device with a bigger cell (a
+      -- 32x32 updraft) and the record carries that size to the draw.
+      ts.terrain = false
     end
     -- Tiled omits `columns` only for a single-row sheet tileset; derive
     -- it from the image otherwise so hand-written .tsx files still load.
@@ -493,17 +506,38 @@ function tiled.load(path)
           -- object art: the placed tile IS the art (any tileset, 8px or
           -- 16px); its "kind" property names the role. A plain object
           -- with no gid falls back to the role's art by name.
+          --
+          -- Role resolution, in order: the object's own "kind" custom
+          -- property, then the placed tile's "kind", then the Class
+          -- field. Tiled 1.9 renamed the object's "Type" field to
+          -- "Class" and now SERIALISES it as "class"; older files (and
+          -- tools/p8_to_tiled.lua) still carry the legacy "type". Read
+          -- both so a map round-tripped through modern Tiled does not
+          -- silently lose every entity.
           local gid = o.gid
           local tile, kind
+          if type(p.kind) == "string" and KIND_NAMES[p.kind:lower()] then
+            kind = p.kind:lower()
+          end
           if gid then
             -- Tiled flips the high bit of gid for y-flipped objects
             tile = resolve(gid % 0x20000000, "object '" .. tostring(o.name) .. "'")
-            kind = tile and tile.kind
+            if not kind then kind = tile and tile.kind end
           end
-          if not kind and o.type then
-            -- Class field: "Door"/"Key"/... (case-insensitive)
-            local tclass = o.type:lower()
-            if KIND_NAMES[tclass] then kind = tclass end
+          if not kind then
+            -- Class field: "Door"/"Key"/... (case-insensitive). Modern
+            -- Tiled writes "class"; the legacy key is "type". Take
+            -- whichever is actually set, so a file carrying both (an
+            -- old "type" plus Tiled's always-present empty "class")
+            -- still resolves.
+            local tclass = o.class
+            if type(tclass) ~= "string" or tclass == "" then
+              tclass = o.type
+            end
+            if type(tclass) == "string" then
+              tclass = tclass:lower()
+              if KIND_NAMES[tclass] then kind = tclass end
+            end
           end
           if kind and KIND_NAMES[kind] then
             -- tile objects anchor at their bottom edge in Tiled; plain

@@ -128,7 +128,8 @@ do
   assert_true(art.w == 16 and art.h == 16,
     "the winch's art is a 16x16 cell (got " .. tostring(art.w) .. "x"
       .. tostring(art.h) .. ")")
-  assert_true(art.image == config.art_file:gsub("%.tsx$", ".png"),
+  assert_true(art.image
+      == config.art_files[1]:gsub("%.tsx$", ".png"),
     "the winch's art came from the character art tileset (got "
       .. tostring(art.image) .. ")")
 end

@@ -198,4 +198,45 @@ function Harness.boot(map_file)
   return env
 end
 
+-- Captures the camera's pre-step state so pure_follow can predict where
+-- the camera lands after a step. Take the snapshot BEFORE stepping, then
+-- hand it to camera_steady together with the POST-step player.
+function Harness.cam_snapshot(cam, player)
+  return {
+    cx = cam.x, cy = cam.y,
+    ptx = cam.ptx, pty = cam.pty,
+    had_ptx = cam.ptx ~= nil, ride = player.ride,
+  }
+end
+
+-- The camera's position after one step, computed independently of
+-- src/camera.lua: a pure damped follow of the player's clamped target,
+-- plus the moving-block feed-forward, and NOTHING else.
+--
+-- The frame never shakes, so a camera sitting anywhere other than this
+-- value means something has re-introduced an offset into cam.x/cam.y.
+function Harness.pure_follow(pre, player, world, config, dt)
+  local vw, vh = config.view.width, config.view.height
+  local lo_x, hi_x, lo_y, hi_y = world:clamp_rect()
+  local tx = math.max(lo_x, math.min(hi_x, player.x + player.w/2 - vw/2))
+  local ty = math.max(lo_y, math.min(hi_y, player.y + player.h/2 - vh/2))
+  local ride_dx, ride_dy = 0, 0
+  if pre.ride and pre.had_ptx then
+    ride_dx, ride_dy = tx - pre.ptx, ty - pre.pty
+  end
+  local f = 1 - (1 - config.camera.follow) ^ dt
+  return pre.cx + (tx - pre.cx) * f + ride_dx * (1 - f),
+         pre.cy + (ty - pre.cy) * f + ride_dy * (1 - f)
+end
+
+-- True when `cam` sits exactly on the pure follow (see pure_follow) and
+-- carries no leftover shake state.
+function Harness.camera_steady(cam, pre, player, world, config, dt)
+  if cam.shake_t ~= nil or cam.shake_s ~= nil or cam.shake_len ~= nil then
+    return false
+  end
+  local ex, ey = Harness.pure_follow(pre, player, world, config, dt)
+  return cam.x == ex and cam.y == ey
+end
+
 return Harness

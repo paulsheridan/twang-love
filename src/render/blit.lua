@@ -1,4 +1,4 @@
--- Canvas blit: renders the world into the 480x320 native canvas, then
+-- Canvas blit: renders the world into the 320x180 native canvas, then
 -- blits it to the window preserving aspect ratio, remembering the blit
 -- rect so HUD text can anchor to it (see src/render/hud.lua).
 

@@ -1,6 +1,6 @@
 -- Camera: smooth follow with pixel clamping to the active room's bounds
--- (the whole map on roomless maps -- see World:clamp_rect), plus a
--- decaying random shake for explosions.
+-- (the whole map on roomless maps -- see World:clamp_rect). The frame
+-- never shakes: the view is a pure damped follow of the player.
 
 local config = require("src.config")
 
@@ -28,31 +28,6 @@ function Camera.snap(cam, player, world)
   cam.y = math.max(lo_y, math.min(hi_y, player.y + player.h/2 - vh/2))
   cam.px, cam.py = cam.x, cam.y
   cam.ptx, cam.pty = cam.x, cam.y
-  cam.shake_t, cam.shake_s, cam.shake_len = nil, nil, nil  -- a snap clears any shake
-end
-
--- Kicks off a decaying shake for a detonation: `radius` is the blast's
--- radius (px) -- the bigger the boom, the harder the frame shakes. The
--- jitter rides the clamped follow (see update) and decays over
--- `camera.shake_steps`, ending on its own.
-function Camera.shake(cam, radius)
-  cam.shake_t = config.camera.shake_steps
-  cam.shake_len = config.camera.shake_steps
-  cam.shake_s = math.max(3, math.min(9, radius * 0.15))
-end
-
--- A small "thud" shake: jump/land feedback. Same decay mechanics
--- as the blast shake (random jitter re-rolled per step on top of the
--- clamped follow), but a shorter decay and a much smaller offset.
--- Calling while a blast shake is live keeps the blast (the stronger
--- read wins; thuds never override one). The bow is deliberately not a
--- thud source — firing and striking stay steady (see Game:step).
-function Camera.thud(cam, strength)
-  if strength <= 0 then return end
-  if cam.shake_t and cam.shake_t > 0 then return end
-  cam.shake_t = config.camera.thud_steps
-  cam.shake_len = config.camera.thud_steps
-  cam.shake_s = strength
 end
 
 -- Smooth follow: eases toward the player each step, clamped to the
@@ -87,21 +62,6 @@ function Camera.update(cam, player, world, dt)
   local f = 1 - (1 - config.camera.follow) ^ dt
   cam.x = cam.x + (tx - cam.x) * f + ride_dx * (1 - f)
   cam.y = cam.y + (ty - cam.y) * f + ride_dy * (1 - f)
-  -- shake/thud: random jitter re-rolled every step on top of the
-  -- clamped follow position, decaying linearly to nothing (the follow
-  -- absorbs the offset, so the shake self-corrects as it decays).
-  -- Each kick carries its own decay length: blasts ride shake_steps,
-  -- thuds ride thud_steps (the shorter decay).
-  if cam.shake_t and cam.shake_t > 0 then
-    local k = math.min(1, cam.shake_t / (cam.shake_len or config.camera.shake_steps))
-    local s = (cam.shake_s or 0) * k
-    cam.x = cam.x + (math.random() * 2 - 1) * s
-    cam.y = cam.y + (math.random() * 2 - 1) * s
-    cam.shake_t = cam.shake_t - dt
-    if cam.shake_t <= 0 then
-      cam.shake_t, cam.shake_s, cam.shake_len = nil, nil, nil
-    end
-  end
 end
 
 return Camera
